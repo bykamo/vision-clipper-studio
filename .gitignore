@@ -6,3 +6,4 @@ source/
 *.mov
 *.wav
 *.m4a
+.env

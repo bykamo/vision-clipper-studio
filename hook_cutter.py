@@ -39,9 +39,19 @@ import urllib.request
 # Configuration
 # --------------------------------------------------------------------------- #
 
-DEFAULT_ENDPOINT = os.environ.get("ROUTER_API_ENDPOINT", "YOUR_API_ENDPOINT_HERE")
+# Load .env file locally if it exists
+env_path = os.path.join(os.getcwd(), ".env")
+if os.path.exists(env_path):
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                key, val = line.split("=", 1)
+                os.environ[key.strip()] = val.strip()
+
+DEFAULT_ENDPOINT = os.environ.get("ROUTER_API_ENDPOINT", "")
 DEFAULT_OUT_DIR = os.path.join(os.getcwd(), "clips")
-DEFAULT_API_KEY = os.environ.get("ROUTER_API_KEY", "YOUR_API_KEY_HERE")
+DEFAULT_API_KEY = os.environ.get("ROUTER_API_KEY", "")
 DEFAULT_LLM_MODEL = "ag/gemini-3.5-flash-low(high)"
 
 # Output resolution untuk 9:16 vertical short-form
