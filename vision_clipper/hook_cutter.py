@@ -69,6 +69,12 @@ DEFAULT_OUT_DIR = os.path.join(os.getcwd(), "clips")
 DEFAULT_API_KEY = os.environ.get("ROUTER_API_KEY", "")
 DEFAULT_LLM_MODEL = "ag/gemini-3.5-flash-low"
 
+# Setup a dedicated project-level temp directory
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_script_dir)
+TEMP_DIR = os.path.join(_project_root, "temp")
+os.makedirs(TEMP_DIR, exist_ok=True)
+
 # Output resolution untuk 9:16 vertical short-form
 VERTICAL_WIDTH = 1080
 VERTICAL_HEIGHT = 1920
@@ -152,7 +158,7 @@ def transcribe_video(video_path, model_size="small"):
     import torch
 
     log("Extracting audio to .wav to prevent VRAM leak and speed up Whisper...")
-    temp_audio_path = tempfile.mktemp(suffix=".wav")
+    temp_audio_path = tempfile.mktemp(suffix=".wav", dir=TEMP_DIR)
     extract_cmd = [
         "ffmpeg", "-y", "-i", video_path, 
         "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", 
@@ -255,7 +261,6 @@ WrapStyle: 1
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: ViralStyle,Impact,115,&H00FFFFFF,&H000000FF,&H00000000,&H99000000,-1,0,0,0,100,100,0,0,1,12,7,2,60,60,650,1
-Style: TitleHookStyle,Impact,140,&H0000FFFF,&H000000FF,&H00000000,&H99000000,-1,0,0,0,100,100,0,0,1,15,10,8,60,60,300,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -263,11 +268,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     with open(out_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header)
         
-        if title_hook and title_hook.strip():
-            # Add the title hook for the first 1.5 seconds at the top (Alignment 8)
-            safe_title_hook = title_hook.strip().upper().replace("\n", "\\N")
-            f.write(f"Dialogue: 0,0:00:00.00,0:00:01.50,TitleHookStyle,,0,0,0,,{safe_title_hook}\n")
-            
         words = []
         for seg in segments:
             if seg["end"] < clip_start or seg["start"] > clip_end: continue
@@ -539,7 +539,7 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir):
     
     safe_title = "".join(c if c.isalnum() else "_" for c in title).strip("_")
     out_file = os.path.join(out_dir, f"{index:02d}_{safe_title}.mov")
-    temp_crop_file = os.path.join(out_dir, f"temp_crop_{index}.mov")
+    temp_crop_file = os.path.join(TEMP_DIR, f"temp_crop_{index}.mov")
     caption_file = os.path.join(out_dir, f"{index:02d}_{safe_title}.txt")
     
     # Simpan caption dan hashtag ke file teks
@@ -551,7 +551,7 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir):
     with open(caption_file, "w", encoding="utf-8") as f:
         f.write(f"Title Options:\n{titles_text}\n\nTitle Hook (0-1s): {title_hook}\n\nCaption:\n{caption_text}\n\nHashtags:\n{hashtags_text}")
     
-    ass_file = os.path.join(out_dir, f"temp_{index}.ass")
+    ass_file = os.path.join(TEMP_DIR, f"temp_{index}.ass")
     generate_ass_subtitles(segments, ass_file, start, end, title_hook=title_hook)
     
     escaped_ass = ass_file.replace('\\', '/').replace(':', '\\:')

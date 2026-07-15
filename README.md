@@ -19,7 +19,7 @@
 | 2 | **Audio Enhancer** | Jernihin audio otomatis pakai *Highpass Filter* + *Compressor* untuk volume yang seimbang. |
 | 3 | **CapCut-style Subtitles** | Generate subtitle per-kata menggunakan **Whisper AI**, langsung di-burn ke video. |
 | 4 | **Viral Segment Analysis** | AI (via 9Router/OpenRouter LLM) menganalisa transkrip dan menemukan momen dengan *hook* paling menarik. |
-| 5 | **Clickbait Title & SEO** | Auto-generate judul clickbait + hashtags SEO-friendly untuk setiap klip. |
+| 5 | **Viral Metadata & SEO** | Auto-generate judul opsi, deskripsi caption viral, hashtags, serta ide title hook disimpan dalam file `.txt` terpisah untuk tiap klip. |
 | 6 | **Web Dashboard (GUI)** | Kontrol semuanya lewat tampilan web yang premium di `localhost:5000`. |
 
 ---
@@ -39,8 +39,7 @@ vision-clipper-studio/
 │   └── static/
 │       ├── style.css          # Dashboard styling
 │       └── script.js          # Dashboard client-side logic
-├── clips/                     # Output folder untuk video hasil kliping
-├── source/                    # (Opsional) Folder video sumber
+├── temp/                      # Folder file proses / temporary (auto-created & gitignored)
 ├── setup.py                   # Instalasi paket & entry points
 ├── install.bat                # Script instalasi Windows
 ├── vision-clipper.bat         # Script launcher Windows
@@ -165,7 +164,8 @@ Mode alternatif — Dioptimalkan untuk konten *affiliate/review*, memotong segme
 
 ## 📝 Catatan Penting
 
-- Semua video hasil kliping disimpan dalam folder **`clips/`** di directory tempat lo menjalankan terminal.
+- **Output Folder (`clips/`)**: Folder ini akan otomatis dibuat di folder tempat terminal dijalankan saat proses rendering klip pertama dimulai.
+- **Temp Folder (`temp/`)**: Semua file sampah/temporary (.wav extractor, temp crop .mov, dan subtitle .ass) dipusatkan di sini, dibersihkan otomatis, dan sudah ter-exclude dari git repository.
 - File `.env` sudah masuk `.gitignore` — API key lo aman dan nggak akan ter-upload ke GitHub.
 - Dashboard web berjalan di `localhost:5000` secara default.
 

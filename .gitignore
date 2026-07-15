@@ -7,3 +7,4 @@ source/
 *.wav
 *.m4a
 .env
+temp/

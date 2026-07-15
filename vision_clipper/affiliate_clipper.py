@@ -69,6 +69,12 @@ DEFAULT_OUT_DIR = os.path.join(os.getcwd(), "clips")
 DEFAULT_API_KEY = os.environ.get("ROUTER_API_KEY", "")
 DEFAULT_LLM_MODEL = "comboPro"
 
+# Setup a dedicated project-level temp directory
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_script_dir)
+TEMP_DIR = os.path.join(_project_root, "temp")
+os.makedirs(TEMP_DIR, exist_ok=True)
+
 # Output resolution untuk 9:16 vertical short-form
 VERTICAL_WIDTH = 1080
 VERTICAL_HEIGHT = 1920
@@ -149,7 +155,7 @@ def transcribe_video(video_path, model_size="small"):
     import torch
 
     log("Extracting audio to .wav to prevent VRAM leak and speed up Whisper...")
-    temp_audio_path = tempfile.mktemp(suffix=".wav")
+    temp_audio_path = tempfile.mktemp(suffix=".wav", dir=TEMP_DIR)
     extract_cmd = [
         "ffmpeg", "-y", "-i", video_path, 
         "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", 
@@ -519,7 +525,7 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir):
     
     safe_title = "".join(c if c.isalnum() else "_" for c in title).strip("_")
     out_file = os.path.join(out_dir, f"{index:02d}_{safe_title}.mov")
-    temp_crop_file = os.path.join(out_dir, f"temp_crop_{index}.mov")
+    temp_crop_file = os.path.join(TEMP_DIR, f"temp_crop_{index}.mov")
     caption_file = os.path.join(out_dir, f"{index:02d}_{safe_title}.txt")
     
     # Simpan caption dan hashtag ke file teks
@@ -528,7 +534,7 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir):
     with open(caption_file, "w", encoding="utf-8") as f:
         f.write(f"Judul: {title}\n\nCaption:\n{caption_text}\n\nHashtags:\n{hashtags_text}")
     
-    ass_file = os.path.join(out_dir, f"temp_{index}.ass")
+    ass_file = os.path.join(TEMP_DIR, f"temp_{index}.ass")
     generate_ass_subtitles(segments, ass_file, start, end)
     
     escaped_ass = ass_file.replace('\\', '/').replace(':', '\\:')
