@@ -39,15 +39,30 @@ import urllib.request
 # Configuration
 # --------------------------------------------------------------------------- #
 
-# Load .env file locally if it exists
-env_path = os.path.join(os.getcwd(), ".env")
-if os.path.exists(env_path):
-    with open(env_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#"):
-                key, val = line.split("=", 1)
-                os.environ[key.strip()] = val.strip()
+# Load .env file — check project root first, then cwd
+def _load_env():
+    """Load .env from project root (where this script lives) or cwd."""
+    # Project root = parent of vision_clipper/ folder
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
+    
+    candidates = [
+        os.path.join(project_root, ".env"),   # e.g. clip tools test/.env
+        os.path.join(os.getcwd(), ".env"),     # fallback: current working dir
+    ]
+    
+    for env_path in candidates:
+        if os.path.exists(env_path):
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        parts = line.split("=", 1)
+                        if len(parts) == 2:
+                            os.environ[parts[0].strip()] = parts[1].strip()
+            break  # Only load the first .env found
+
+_load_env()
 
 DEFAULT_ENDPOINT = os.environ.get("ROUTER_API_ENDPOINT", "")
 DEFAULT_OUT_DIR = os.path.join(os.getcwd(), "clips")
@@ -333,6 +348,10 @@ Transcript:
 
 
 def call_llm_api(prompt, model_name, endpoint, api_key):
+    # Auto-append /chat/completions if the endpoint is just a base URL
+    if not endpoint.rstrip('/').endswith('/chat/completions'):
+        endpoint = endpoint.rstrip('/') + '/chat/completions'
+    
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
