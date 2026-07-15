@@ -1,0 +1,8 @@
+clips/
+__pycache__/
+source/
+*.tflite
+*.mp4
+*.mov
+*.wav
+*.m4a
