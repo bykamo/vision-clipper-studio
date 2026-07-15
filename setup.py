@@ -20,6 +20,7 @@ setup(
     entry_points={
         "console_scripts": [
             "vision-clipper=vision_clipper.cli:main",
+            "visionclipper=vision_clipper.cli:main",
         ],
     },
     classifiers=[

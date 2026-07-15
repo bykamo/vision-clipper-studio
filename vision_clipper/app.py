@@ -38,6 +38,12 @@ def shutdown():
             subprocess.run(['taskkill', '/F', '/T', '/PID', str(current_process.pid)], capture_output=True)
         except:
             pass
+    # Clean up PID file so CLI knows the server is gone
+    pid_file = os.path.join(os.path.expanduser("~"), ".visionclipper.pid")
+    try:
+        os.remove(pid_file)
+    except OSError:
+        pass
     os._exit(0)
     return jsonify({"status": "shutting_down"})
 

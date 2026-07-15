@@ -273,7 +273,7 @@ input[type="number"]:focus {
     padding: 1rem;
     font-family: 'Consolas', 'Courier New', monospace;
     font-size: 0.9rem;
-    color: #10b981; /* Hacker green */
+    color: #facc15; /* Yellow */
     line-height: 1.5;
 }
 
@@ -285,10 +285,10 @@ input[type="number"]:focus {
     color: #666;
 }
 .text-primary {
-    color: var(--primary); /* Blue */
+    color: #facc15; /* Yellow */
 }
 .text-warning {
-    color: #ffffff; /* White */
+    color: #fde68a; /* Light Yellow */
 }
 .text-error {
     color: var(--danger); /* Red */

@@ -8,7 +8,7 @@ pip install -e .
 
 echo.
 echo Configuring System PATH...
-for /f "delims=" %%i in ('python -c "import os, sysconfig; print(sysconfig.get_path('scripts'))"') do set SCRIPTS_DIR=%%i
+for /f "delims=" %%i in ('python -c "import sysconfig, os; print(sysconfig.get_path('scripts', f'{os.name}_user'))"') do set SCRIPTS_DIR=%%i
 
 echo Python Scripts directory: %SCRIPTS_DIR%
 

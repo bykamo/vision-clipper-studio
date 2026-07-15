@@ -1,2 +1,2 @@
 @echo off
-python vision_clipper\cli.py %*
+python -m vision_clipper.cli %*
