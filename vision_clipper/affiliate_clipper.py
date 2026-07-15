@@ -388,7 +388,7 @@ def extract_json_block(raw_text):
 # Step 5: Render and Cut
 # --------------------------------------------------------------------------- #
 
-MODEL_PATH = "blaze_face_short_range.tflite"
+MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "blaze_face_short_range.tflite")
 
 def download_model():
     if not os.path.exists(MODEL_PATH):

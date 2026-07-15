@@ -63,10 +63,12 @@ def stream():
     source = request.args.get('source')
     num_clips = request.args.get('num_clips', '5')
     
-    script = "affiliate_clipper.py" if mode == "affiliate" else "hook_cutter.py"
+    import sys
+    script_name = "affiliate_clipper.py" if mode == "affiliate" else "hook_cutter.py"
+    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), script_name)
     
     # Run with -u for unbuffered stdout
-    cmd = ["python", "-u", script, f"--{source_type}", source, "--num-clips", str(num_clips)]
+    cmd = [sys.executable, "-u", script_path, f"--{source_type}", source, "--num-clips", str(num_clips)]
     
     def generate():
         global current_process

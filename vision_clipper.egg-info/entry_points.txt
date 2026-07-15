@@ -1,0 +1,2 @@
+[console_scripts]
+vision-clipper = vision_clipper.cli:main

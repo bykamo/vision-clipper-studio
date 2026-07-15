@@ -1,0 +1,2 @@
+recursive-include vision_clipper/templates *
+recursive-include vision_clipper/static *

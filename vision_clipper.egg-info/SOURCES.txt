@@ -1,0 +1,17 @@
+MANIFEST.in
+README.md
+setup.py
+vision_clipper/__init__.py
+vision_clipper/affiliate_clipper.py
+vision_clipper/app.py
+vision_clipper/cli.py
+vision_clipper/hook_cutter.py
+vision_clipper.egg-info/PKG-INFO
+vision_clipper.egg-info/SOURCES.txt
+vision_clipper.egg-info/dependency_links.txt
+vision_clipper.egg-info/entry_points.txt
+vision_clipper.egg-info/requires.txt
+vision_clipper.egg-info/top_level.txt
+vision_clipper/static/script.js
+vision_clipper/static/style.css
+vision_clipper/templates/index.html

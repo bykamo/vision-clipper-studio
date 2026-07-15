@@ -1,0 +1,8 @@
+flask
+requests
+opencv-python
+mediapipe
+moviepy
+yt-dlp
+faster-whisper
+torch
