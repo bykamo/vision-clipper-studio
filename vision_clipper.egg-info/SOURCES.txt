@@ -12,6 +12,9 @@ backend/renderer.py
 backend/transcriber.py
 backend/utils.py
 backend/worker.py
+frontend/app.js
+frontend/index.html
+frontend/styles.css
 vision_clipper.egg-info/PKG-INFO
 vision_clipper.egg-info/SOURCES.txt
 vision_clipper.egg-info/dependency_links.txt

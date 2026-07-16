@@ -151,10 +151,10 @@
 <div class="space-y-8 relative z-10">
 <!-- Local Video Path -->
 <div class="space-y-3">
-<label class="text-sm font-semibold text-slate-300 uppercase tracking-wider ml-1">Local Video Path</label>
+<label class="text-sm font-semibold text-slate-300 uppercase tracking-wider ml-1">Video File Path or YouTube URL</label>
 <div class="flex gap-3">
 <div class="relative flex-1">
-<input id="source" name="source" class="w-full glass-input rounded-2xl px-5 py-4 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-400/50 transition-all placeholder-slate-500" type="text" placeholder="C:\Users\USER\..." required/>
+<input id="source" name="source" class="w-full glass-input rounded-2xl px-5 py-4 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-400/50 transition-all placeholder-slate-500" type="text" placeholder="Paste local file path or YouTube URL here..." required/>
 </div>
 <button type="button" id="browse-btn" class="glass-button w-14 h-14 flex items-center justify-center rounded-2xl text-white">
 <svg class="lucide lucide-folder" fill="none" height="24" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path></svg>
@@ -174,7 +174,11 @@
 <div class="flex gap-4 mt-6 w-full">
     <button id="generate-btn" type="submit" class="flex-[7] py-5 rounded-2xl text-xl font-bold text-white gradient-btn shadow-2xl flex items-center justify-center gap-3 transition-all">
         <span class="btn-text">Generate Clips</span>
-        <span class="loader hidden material-symbols-outlined animate-spin text-2xl">refresh</span>
+        <div class="loader hidden">
+            <svg class="mat-spinner" viewBox="25 25 50 50">
+                <circle cx="50" cy="50" r="20"></circle>
+            </svg>
+        </div>
     </button>
     <button type="button" id="cancel-btn" class="hidden flex-[3] py-5 rounded-2xl text-xl font-bold text-red-200 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 backdrop-blur-lg shadow-xl transition-all flex items-center justify-center gap-3">
         <span class="btn-text">STOP</span>

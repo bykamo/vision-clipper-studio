@@ -8,3 +8,5 @@ moviepy
 yt-dlp
 faster-whisper
 torch
+youtube-transcript-api
+webvtt-py

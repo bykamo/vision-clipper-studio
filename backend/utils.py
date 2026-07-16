@@ -60,7 +60,7 @@ def log(message, job_id=None):
         from .database import append_job_log
         append_job_log(job_id, msg)
 
-def run_command(cmd_list, description="", job_id=None):
+def run_command(cmd_list, description="", job_id=None, duration=None):
     if description:
         log(description, job_id=job_id)
     log("Running: " + " ".join(str(c) for c in cmd_list), job_id=job_id)
@@ -69,17 +69,52 @@ def run_command(cmd_list, description="", job_id=None):
     if os.name == 'nt':
         kwargs['creationflags'] = 0x08000000
         
-    result = subprocess.run(
+    import subprocess
+    process = subprocess.Popen(
         cmd_list,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        bufsize=1,
         **kwargs
     )
-    if result.returncode != 0:
-        log("Command failed with output:\n" + result.stdout, job_id=job_id)
+    
+    output = []
+    import time
+    import re
+    start_time = time.time()
+    last_log_time = 0
+    
+    for line in process.stdout:
+        line = line.strip()
+        if not line: continue
+        output.append(line)
+        
+        # Parse FFmpeg progress
+        if line.startswith("frame=") or "time=" in line:
+            time_match = re.search(r"time=(\d{2}):(\d{2}):(\d{2}\.\d{2})", line)
+            if time_match:
+                current_time = time.time()
+                if current_time - last_log_time >= 1.0: # Log every 1s
+                    h, m, s = float(time_match.group(1)), float(time_match.group(2)), float(time_match.group(3))
+                    curr_sec = h * 3600 + m * 60 + s
+                    if duration and duration > 0:
+                        percent = min(100, (curr_sec / duration) * 100)
+                        elapsed = current_time - start_time
+                        if percent > 0:
+                            eta = elapsed / (percent / 100) - elapsed
+                            eta_str = format_timestamp(eta).split('.')[0]
+                            log(f"Progress Rendering: {percent:.1f}% | Sisa Waktu (ETA): {eta_str}", job_id=job_id)
+                    else:
+                        log(f"Progress FFmpeg: {time_match.group(0)}", job_id=job_id)
+                    last_log_time = current_time
+
+    process.wait()
+    if process.returncode != 0:
+        full_out = "\n".join(output)
+        log("Command failed with output:\n" + full_out, job_id=job_id)
         raise RuntimeError(f"Command failed: {' '.join(str(c) for c in cmd_list)}")
-    return result.stdout
+    return "\n".join(output)
 
 def format_timestamp(seconds):
     hrs = int(seconds // 3600)

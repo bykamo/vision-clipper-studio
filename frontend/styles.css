@@ -212,14 +212,31 @@ input[type="number"]:focus {
     box-shadow: 0 8px 20px rgba(239, 68, 68, 0.25) !important;
 }
 
-/* Loader */
-.loader {
-    border: 3px solid rgba(255,255,255,0.3);
-    border-radius: 50%;
-    border-top: 3px solid white;
-    width: 20px;
-    height: 20px;
-    animation: spin 1s linear infinite;
+/* Smooth Material Spinner */
+.mat-spinner {
+  width: 28px;
+  height: 28px;
+  animation: mat-rotate 2s linear infinite;
+}
+
+.mat-spinner circle {
+  stroke: white;
+  stroke-width: 3;
+  stroke-dasharray: 1, 200;
+  stroke-dashoffset: 0;
+  animation: mat-dash 1.5s ease-in-out infinite;
+  stroke-linecap: round;
+  fill: none;
+}
+
+@keyframes mat-rotate {
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes mat-dash {
+  0% { stroke-dasharray: 1, 200; stroke-dashoffset: 0; }
+  50% { stroke-dasharray: 89, 200; stroke-dashoffset: -35px; }
+  100% { stroke-dasharray: 89, 200; stroke-dashoffset: -124px; }
 }
 
 .hidden {

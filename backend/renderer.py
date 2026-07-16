@@ -70,6 +70,32 @@ def download_model(job_id=None):
         url = "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite"
         urllib.request.urlretrieve(url, MODEL_PATH)
 
+from proglog import ProgressBarLogger
+
+class MoviePyLogger(ProgressBarLogger):
+    def __init__(self, job_id=None):
+        super().__init__()
+        self.job_id = job_id
+        import time
+        self.start_time = time.time()
+        self.last_log_time = 0
+
+    def bars_callback(self, bar, attr, value, old_value=None):
+        import time
+        current_time = time.time()
+        if current_time - self.last_log_time < 1.0: return
+        
+        total = self.bars[bar]['total']
+        if total > 0:
+            percent = (value / total) * 100
+            elapsed = current_time - self.start_time
+            if percent > 0:
+                eta = elapsed / (percent / 100) - elapsed
+                from backend.utils import format_timestamp
+                eta_str = format_timestamp(eta).split('.')[0]
+                log(f"Progress Smart Crop: {percent:.1f}% | Sisa Waktu (ETA): {eta_str}", job_id=self.job_id)
+                self.last_log_time = current_time
+
 def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None):
     download_model(job_id=job_id)
     log(f"Applying AI Smart Crop (Tracking Face with Cinematic Gimbal)...", job_id=job_id)
@@ -128,6 +154,7 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
         return frame[:, x1:x2]
 
     cropped_clip = clip.image_transform(process_frame)
+    my_logger = MoviePyLogger(job_id=job_id)
     
     try:
         cropped_clip.write_videofile(
@@ -138,7 +165,7 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
             temp_audiofile=output_path.replace(".mov", "_temp.m4a"),
             remove_temp=True,
             ffmpeg_params=["-pix_fmt", "yuv420p"],
-            logger="bar"
+            logger=my_logger
         )
     except Exception as e:
         log(f"NVENC failed ({e}), falling back to safer NVENC preset (p2)...", job_id=job_id)
@@ -151,7 +178,7 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                 temp_audiofile=output_path.replace(".mov", "_temp.m4a"),
                 remove_temp=True,
                 ffmpeg_params=["-pix_fmt", "yuv420p", "-preset", "p2", "-profile:v", "main"],
-                logger="bar"
+                logger=my_logger
             )
         except Exception as e2:
             log(f"Safer NVENC also failed ({e2}), falling back to CPU (libx264)...", job_id=job_id)
@@ -163,7 +190,7 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                 temp_audiofile=output_path.replace(".mov", "_temp.m4a"),
                 remove_temp=True,
                 ffmpeg_params=["-pix_fmt", "yuv420p", "-preset", "fast"],
-                logger="bar"
+                logger=my_logger
             )
     
     clip.close()
@@ -216,7 +243,7 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
         ]
         
         try:
-            run_command(cmd, f"Burning subtitles (NVENC)...", job_id=job_id)
+            run_command(cmd, f"Burning subtitles (NVENC)...", job_id=job_id, duration=duration)
         except Exception as e:
             log(f"NVENC Encoding failed: {e}. Falling back to safer NVENC preset...", job_id=job_id)
             cmd = [
@@ -228,7 +255,7 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
                 out_file
             ]
             try:
-                run_command(cmd, f"Burning subtitles (Safer NVENC)...", job_id=job_id)
+                run_command(cmd, f"Burning subtitles (Safer NVENC)...", job_id=job_id, duration=duration)
             except Exception as e2:
                 log(f"Safer NVENC failed: {e2}. Falling back to libx264 (CPU)...", job_id=job_id)
                 cmd = [
@@ -239,7 +266,7 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
                     "-c:a", "aac", "-b:a", "192k",
                     out_file
                 ]
-                run_command(cmd, f"Burning subtitles (libx264)...", job_id=job_id)
+                run_command(cmd, f"Burning subtitles (libx264)...", job_id=job_id, duration=duration)
             
     except Exception as e:
         log(f"Face tracking error, using simple ffmpeg center crop: {e}", job_id=job_id)
@@ -253,14 +280,14 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
             ] + codec_params + [out_file]
 
         try:
-            run_command(build_fallback_cmd(["-c:v", "h264_nvenc", "-preset", "p6", "-cq", "18", "-b:v", "8M", "-c:a", "aac", "-b:a", "192k"]), f"Fallback processing for Clip {index} (NVENC)...", job_id=job_id)
+            run_command(build_fallback_cmd(["-c:v", "h264_nvenc", "-preset", "p6", "-cq", "18", "-b:v", "8M", "-c:a", "aac", "-b:a", "192k"]), f"Fallback processing for Clip {index} (NVENC)...", job_id=job_id, duration=duration)
         except Exception as err:
             log(f"Fallback NVENC failed, trying safer preset... {err}", job_id=job_id)
             try:
-                run_command(build_fallback_cmd(["-c:v", "h264_nvenc", "-preset", "p2", "-profile:v", "main", "-b:v", "8M", "-c:a", "aac", "-b:a", "192k"]), f"Fallback processing for Clip {index} (Safer NVENC)...", job_id=job_id)
+                run_command(build_fallback_cmd(["-c:v", "h264_nvenc", "-preset", "p2", "-profile:v", "main", "-b:v", "8M", "-c:a", "aac", "-b:a", "192k"]), f"Fallback processing for Clip {index} (Safer NVENC)...", job_id=job_id, duration=duration)
             except Exception as err2:
                 log(f"Safer NVENC failed, trying libx264... {err2}", job_id=job_id)
-                run_command(build_fallback_cmd(["-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "aac", "-b:a", "192k"]), f"Fallback processing for Clip {index} (libx264)...", job_id=job_id)
+                run_command(build_fallback_cmd(["-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "aac", "-b:a", "192k"]), f"Fallback processing for Clip {index} (libx264)...", job_id=job_id, duration=duration)
     
     for tmp in [ass_file, temp_crop_file]:
         try:

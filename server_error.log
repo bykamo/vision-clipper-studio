@@ -19,3 +19,8 @@ INFO:     127.0.0.1:52074 - "GET /api/list-dir?path=C%3A%5CUsers%5CUSER%5CDownlo
 INFO:     127.0.0.1:52074 - "GET /api/list-dir?path=C%3A%5CUsers%5CUSER%5CDownloads%5CHikam HTTP/1.1" 200 OK
 INFO:     127.0.0.1:52074 - "GET /stream?mode=hook&source_type=file&source=C%3A%5CUsers%5CUSER%5CDownloads%5CHikam%5CKonten_Lu_Mau_VIRAL_Nonton_Podcast_Ini_DariNol_ft_Donny_Sucahya.mp4&num_clips=4 HTTP/1.1" 200 OK
 INFO:     127.0.0.1:55534 - "POST /cancel HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52746 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52746 - "GET /styles.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:52746 - "GET /app.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:64890 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50061 - "GET /stream?mode=hook&source_type=file&source=C%3A%5CUsers%5CUSER%5CDownloads%5CHikam%5Cclip%20tools%20test%5Csource%5CTeman%20Sefrekuensi%20Dokter%20Tirta_xSQ34klbwqU.mp4&num_clips=4 HTTP/1.1" 200 OK

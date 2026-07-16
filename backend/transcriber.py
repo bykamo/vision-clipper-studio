@@ -1,11 +1,130 @@
 import os
 import tempfile
 import time
+import re
 from backend.utils import log, run_command, format_timestamp, TEMP_DIR
 
 _whisper_model = None
 
-def transcribe_video(video_path, model_size="small", job_id=None):
+def extract_youtube_id(url):
+    pattern = r'(?:v=|\/)([0-9A-Za-z_-]{11}).*'
+    match = re.search(pattern, url)
+    return match.group(1) if match else None
+
+def fetch_youtube_transcript(video_id, job_id=None):
+    from youtube_transcript_api import YouTubeTranscriptApi
+    
+    log(f"Mencoba mengambil subtitle langsung dari InnerTube API untuk video ID: {video_id}...", job_id=job_id)
+    try:
+        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        
+        try:
+            # Prioritize Indonesian or English manual/auto transcripts
+            transcript_obj = transcript_list.find_transcript(['id', 'en'])
+            transcript = transcript_obj.fetch()
+        except:
+            # Fallback to generated translated or any available
+            transcript_obj = transcript_list.find_generated_transcript(['id', 'en'])
+            transcript = transcript_obj.fetch()
+            
+        segments = []
+        for t in transcript:
+            start = t['start']
+            end = start + t['duration']
+            text = t['text'].replace('\n', ' ')
+            
+            # Format to match Whisper segments array format
+            segments.append({
+                "start": start,
+                "end": end,
+                "text": text,
+                "words": [{"word": text, "start": start, "end": end}]
+            })
+            
+        log("Berhasil mendapatkan subtitle dari InnerTube API! (0 detik transkripsi)", job_id=job_id)
+        return segments
+    except Exception as e:
+        log(f"Gagal mengambil subtitle dari InnerTube API: {e}", job_id=job_id)
+        return None
+
+def fetch_ytdlp_subs(url, job_id=None):
+    import yt_dlp
+    import webvtt
+    
+    log("Mencoba mengambil subtitle via yt-dlp...", job_id=job_id)
+    
+    sub_path = os.path.join(TEMP_DIR, "temp_sub")
+    
+    ydl_opts = {
+        'skip_download': True,
+        'writesubtitles': True,
+        'writeautomaticsub': True,
+        'subtitleslangs': ['id', 'en'],
+        'outtmpl': sub_path,
+        'quiet': True,
+        'no_warnings': True,
+    }
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+            
+        # Find the downloaded .vtt file
+        vtt_file = None
+        for file in os.listdir(TEMP_DIR):
+            if file.startswith("temp_sub") and file.endswith(".vtt"):
+                vtt_file = os.path.join(TEMP_DIR, file)
+                break
+                
+        if not vtt_file:
+            log("yt-dlp tidak menemukan file subtitle (.vtt).", job_id=job_id)
+            return None
+            
+        segments = []
+        for caption in webvtt.read(vtt_file):
+            # Parse webvtt timestamp: HH:MM:SS.mmm
+            def parse_vtt_time(time_str):
+                parts = time_str.replace(',', '.').split(':')
+                return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+                
+            start = parse_vtt_time(caption.start)
+            end = parse_vtt_time(caption.end)
+            text = caption.text.replace('\n', ' ')
+            
+            segments.append({
+                "start": start,
+                "end": end,
+                "text": text,
+                "words": [{"word": text, "start": start, "end": end}]
+            })
+            
+        os.remove(vtt_file)
+        
+        if segments:
+            log("Berhasil mendapatkan subtitle via yt-dlp!", job_id=job_id)
+            return segments
+        return None
+        
+    except Exception as e:
+        log(f"Gagal mengambil subtitle via yt-dlp: {e}", job_id=job_id)
+        return None
+
+def transcribe_video(video_path, source_url=None, model_size="small", job_id=None):
+    # FALLBACK CHAIN: 1. InnerTube API -> 2. yt-dlp -> 3. Faster-Whisper
+    if source_url and ("youtube.com" in source_url or "youtu.be" in source_url):
+        video_id = extract_youtube_id(source_url)
+        if video_id:
+            # Step 1: InnerTube API
+            segments = fetch_youtube_transcript(video_id, job_id=job_id)
+            if segments: return segments
+            
+            # Step 2: yt-dlp Subs
+            segments = fetch_ytdlp_subs(source_url, job_id=job_id)
+            if segments: return segments
+            
+            log("Fallback ke transkripsi lokal (Faster-Whisper)...", job_id=job_id)
+
+    # Step 3: Faster-Whisper
     from faster_whisper import WhisperModel
     import torch
     global _whisper_model

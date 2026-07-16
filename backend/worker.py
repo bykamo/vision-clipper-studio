@@ -28,7 +28,7 @@ def main():
     try:
         video_path = get_video_file(args.file, job_id=job_id)
         
-        segments = transcribe_video(video_path, model_size=args.model, job_id=job_id)
+        segments = transcribe_video(video_path, source_url=args.file, model_size=args.model, job_id=job_id)
         transcript_text = build_transcript_text(segments)
         
         prompt = build_viral_prompt(transcript_text, args.num_clips, args.min_len, args.max_len, mode=args.mode)

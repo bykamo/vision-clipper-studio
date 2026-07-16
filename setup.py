@@ -17,7 +17,9 @@ setup(
         "moviepy",
         "yt-dlp",
         "faster-whisper",
-        "torch"
+        "torch",
+        "youtube-transcript-api",
+        "webvtt-py"
     ],
     entry_points={
         "console_scripts": [

@@ -349,6 +349,7 @@ document.addEventListener('DOMContentLoaded', () => {
         generateBtn.disabled = true;
         
         // Hide standard btn text and icon, show loader
+        btnText.textContent = 'Sedang memproses...';
         loader.classList.remove('hidden');
         cancelBtn.classList.remove('hidden');
 
@@ -389,6 +390,7 @@ document.addEventListener('DOMContentLoaded', () => {
             eventSource = null;
         }
         generateBtn.disabled = false;
+        btnText.textContent = 'Generate Clips';
         loader.classList.add('hidden');
         cancelBtn.classList.add('hidden');
         if(workerStatus) workerStatus.textContent = 'WORKER_NODE_IDLE';

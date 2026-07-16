@@ -17,6 +17,8 @@ Requires-Dist: moviepy
 Requires-Dist: yt-dlp
 Requires-Dist: faster-whisper
 Requires-Dist: torch
+Requires-Dist: youtube-transcript-api
+Requires-Dist: webvtt-py
 Dynamic: author
 Dynamic: classifier
 Dynamic: requires-dist
