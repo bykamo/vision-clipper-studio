@@ -5,7 +5,7 @@
 > Potong video panjang (podcast, interview, dll) menjadi klip vertikal pendek (TikTok, Reels, Shorts) secara otomatis menggunakan kekuatan AI.
 
 ![Python](https://img.shields.io/badge/Python-3.8+-blue?logo=python&logoColor=white)
-![Flask](https://img.shields.io/badge/Flask-Web_Dashboard-black?logo=flask)
+![FastAPI](https://img.shields.io/badge/FastAPI-Web_Dashboard-009688?logo=fastapi&logoColor=white)
 ![FFmpeg](https://img.shields.io/badge/FFmpeg-Required-green?logo=ffmpeg)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
@@ -20,31 +20,35 @@
 | 3 | **CapCut-style Subtitles** | Generate subtitle per-kata menggunakan **Whisper AI**, langsung di-burn ke video. |
 | 4 | **Viral Segment Analysis** | AI (via 9Router/OpenRouter LLM) menganalisa transkrip dan menemukan momen dengan *hook* paling menarik. |
 | 5 | **Viral Metadata & SEO** | Auto-generate judul opsi, deskripsi caption viral, hashtags, serta ide title hook disimpan dalam file `.txt` terpisah untuk tiap klip. |
-| 6 | **Web Dashboard (GUI)** | Kontrol semuanya lewat tampilan web yang premium di `localhost:5000`. |
+| 6 | **Web Dashboard (GUI)** | Kontrol semuanya lewat tampilan web yang premium dengan **FastAPI** di `localhost:5000`. |
 
 ---
 
-## 🗂️ Struktur Proyek
+## 🗂️ Struktur Proyek (Modular Architecture)
 
 ```
 vision-clipper-studio/
-├── vision_clipper/
-│   ├── __init__.py
-│   ├── app.py                 # Flask web server & SSE streaming
-│   ├── cli.py                 # CLI entry point (perintah `vision-clipper`)
-│   ├── hook_cutter.py         # Engine utama: Hook Cutter pipeline
-│   ├── affiliate_clipper.py   # Engine alternatif: Affiliate Clipper
-│   ├── templates/
-│   │   └── index.html         # Dashboard HTML template
-│   └── static/
-│       ├── style.css          # Dashboard styling
-│       └── script.js          # Dashboard client-side logic
-├── temp/                      # Folder file proses / temporary (auto-created & gitignored)
-├── setup.py                   # Instalasi paket & entry points
-├── install.bat                # Script instalasi Windows
-├── vision-clipper.bat         # Script launcher Windows
-├── .env.example               # Contoh konfigurasi environment
-└── README.md
+├── backend/               # FastAPI Backend & Pipeline Logika
+│   ├── main.py            # API Server & Endpoints
+│   ├── cli.py             # CLI Entry Point (`vision-clipper`)
+│   ├── worker.py          # Background Worker Process (Subprocess)
+│   ├── transcriber.py     # Logika Whisper AI Transcript
+│   ├── analyzer.py        # Logika LLM Prompting
+│   ├── renderer.py        # Rendering FFmpeg & Subtitle
+│   ├── downloader.py      # Downloader & Validasi File
+│   ├── database.py        # SQLite Session Manager
+│   ├── utils.py           # Log Utilities
+│   └── bg_server.py       # Background Server Launcher
+├── frontend/              # HTML/JS/CSS Assets
+│   ├── index.html         # Dashboard HTML
+│   ├── app.js             # Client-side Logic (SSE)
+│   └── styles.css         # CSS UI Design
+├── scripts/               # Helper Scripts
+│   ├── install.bat        # Windows Installer
+│   └── vision-clipper.bat # Fallback CLI Launcher
+├── .env.example           # Contoh Environment Config
+├── setup.py               # Package Setup
+└── MANIFEST.in            # Package Manifest
 ```
 
 ---
@@ -58,14 +62,15 @@ Pastikan komputer lo udah punya:
 
 ### Cara Install
 
-**Opsi 1: Pakai `install.bat` (Windows)**
-```
-Klik 2x file install.bat
+**Opsi 1: Pakai Installer (Windows)**
+```bash
+# Buka folder `scripts/` dan jalankan:
+scripts\install.bat
 ```
 
 **Opsi 2: Manual via Terminal**
 ```bash
-# Clone / download repo ini, lalu buka terminal di folder-nya
+# Buka terminal di root folder project ini
 pip install -e .
 ```
 
@@ -90,7 +95,7 @@ ROUTER_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ### 🖥️ Cara 1 — Web Dashboard (Recommended)
 
-Buka terminal di mana saja, lalu ketik:
+Buka terminal di mana saja, lalu ketik perintah CLI ini:
 
 ```bash
 vision-clipper
@@ -120,10 +125,12 @@ Dashboard menyediakan:
 - 📊 **Live processing log** — pantau proses secara real-time (teks kuning!)
 - ⏹️ **Cancel/Stop** — hentikan proses kapan saja
 
-### ⌨️ Cara 2 — Command Line
+### ⌨️ Cara 2 — Command Line Worker
+
+Jika lo mau menjalankan secara manual tanpa Dashboard GUI, lo bisa langsung panggil *worker* file:
 
 ```bash
-python vision_clipper/hook_cutter.py --file "video_podcast.mp4" --num-clips 5
+python -m backend.worker --file "video_podcast.mp4" --num-clips 5 --mode hook
 ```
 
 ---
@@ -142,12 +149,12 @@ Mode alternatif — Dioptimalkan untuk konten *affiliate/review*, memotong segme
 
 | Komponen | Teknologi |
 |----------|-----------|
-| Web Server | Flask + SSE (Server-Sent Events) |
+| Web Server | **FastAPI** + **Uvicorn** + Server-Sent Events (SSE) |
 | Speech-to-Text | Faster Whisper |
 | Video Processing | FFmpeg + MoviePy + OpenCV |
 | Face Detection | MediaPipe (BlazeFace) |
 | AI Analysis | LLM via 9Router / OpenRouter API |
-| Video Download | yt-dlp (opsional) |
+| Database Storage | SQLite3 |
 
 ---
 
@@ -159,13 +166,14 @@ Mode alternatif — Dioptimalkan untuk konten *affiliate/review*, memotong segme
 | `vision-clipper` command not found | Jalankan ulang `pip install -e .` dan pastikan Python Scripts folder ada di PATH. |
 | Proses macet / freeze | Klik tombol **STOP** di dashboard, atau tekan `Ctrl+C` di terminal. |
 | API Error / timeout | Cek file `.env` — pastikan endpoint dan API key sudah benar. |
+| Server gagal startup | Cek apakah Port 5000 sudah dipakai oleh program lain. |
 
 ---
 
 ## 📝 Catatan Penting
 
-- **Output Folder (`clips/`)**: Folder ini akan otomatis dibuat di folder tempat terminal dijalankan saat proses rendering klip pertama dimulai.
-- **Temp Folder (`temp/`)**: Semua file sampah/temporary (.wav extractor, temp crop .mov, dan subtitle .ass) dipusatkan di sini, dibersihkan otomatis, dan sudah ter-exclude dari git repository.
+- **Output Folder (`clips/`)**: Folder output sekarang digenerate secara otomatis dengan rapi berdasarkan nama video aslinya.
+- **SQLite Database (`vision_clipper.db`)**: Database ini menyimpan status dan log agar sistem dapat berjalan di latar belakang (background worker) tanpa masalah jika web UI dimatikan/direfresh.
 - File `.env` sudah masuk `.gitignore` — API key lo aman dan nggak akan ter-upload ke GitHub.
 - Dashboard web berjalan di `localhost:5000` secara default.
 

@@ -4,7 +4,7 @@ echo   VISION CLIPPER STUDIO INSTALLER
 echo =========================================
 echo.
 echo Installing dependencies and CLI tool...
-pip install -e .
+pip install -e ..
 
 echo.
 echo Configuring System PATH...

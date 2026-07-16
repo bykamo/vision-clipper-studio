@@ -99,7 +99,7 @@ def start_server():
         pythonw = sys.executable
 
     # The background server script
-    server_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_bg_server.py")
+    server_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bg_server.py")
 
     print(f"[START] Meluncurkan server di background...")
     print(f"[INFO]  PID file: {PID_FILE}")

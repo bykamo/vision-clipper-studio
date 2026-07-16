@@ -1,1 +1,0 @@
-# Initialize vision_clipper package

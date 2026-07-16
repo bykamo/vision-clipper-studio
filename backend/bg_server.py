@@ -7,6 +7,13 @@ import os
 import sys
 import atexit
 
+# Fix sys.path so 'vision_clipper' module can be found
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(script_dir)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+
 PID_FILE = os.path.join(os.path.expanduser("~"), ".visionclipper.pid")
 
 def cleanup_pid():
@@ -23,6 +30,14 @@ atexit.register(cleanup_pid)
 with open(PID_FILE, "w") as f:
     f.write(str(os.getpid()))
 
-# Import and run the Flask app
-from vision_clipper.app import app
-app.run(host='127.0.0.1', port=5000, debug=False, use_reloader=False)
+# Redirect stdout/stderr to a log file to capture the crash reason
+log_file = open(os.path.join(project_root, "server_error.log"), 'w', buffering=1)
+sys.stdout = log_file
+sys.stderr = log_file
+
+import uvicorn
+try:
+    uvicorn.run("backend.main:app", host='127.0.0.1', port=5000, reload=False)
+except Exception as e:
+    import traceback
+    traceback.print_exc()

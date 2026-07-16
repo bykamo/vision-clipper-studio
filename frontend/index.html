@@ -111,6 +111,14 @@
         .material-symbols-outlined {
           font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
         }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.98); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
 </style>
 </head>
 <body class="p-6 flex flex-col items-center">
@@ -197,11 +205,73 @@
 </div>
 </section>
 </form>
+
+<!-- Local File Explorer Modal -->
+<div id="explorer-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md hidden animate-fade-in">
+    <div class="w-full max-w-3xl glass-card-heavy rounded-[2.5rem] overflow-hidden flex flex-col max-h-[85vh] shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-white/10">
+        <!-- Header -->
+        <div class="px-8 py-5 border-b border-white/10 flex justify-between items-center bg-white/5">
+            <div class="flex items-center gap-3">
+                <span class="text-xl">📁</span>
+                <h3 class="text-lg font-bold text-white tracking-tight">Local File Explorer</h3>
+            </div>
+            <button type="button" id="explorer-close" class="w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white transition-all">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+
+        <!-- Toolbar / Path and Navigation -->
+        <div class="px-8 py-4 bg-black/20 border-b border-white/10 space-y-4">
+            <div class="flex gap-3">
+                <button type="button" id="explorer-up-btn" class="glass-button w-12 h-12 flex items-center justify-center rounded-xl text-white flex-shrink-0" title="Go Up One Folder">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
+                </button>
+                <div class="flex-1 relative">
+                    <input id="explorer-path" type="text" class="w-full glass-input rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-400/50 transition-all font-mono" placeholder="Folder Path" />
+                </div>
+                <button type="button" id="explorer-go-btn" class="glass-button px-5 h-12 flex items-center justify-center rounded-xl text-white text-sm font-semibold">
+                    Go
+                </button>
+            </div>
+
+            <!-- Quick Access / Drives -->
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+                <span class="text-slate-400 font-semibold uppercase tracking-wider mr-2">Quick Access:</span>
+                <button type="button" data-dir="home" class="quick-access-btn px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all">🏠 Home</button>
+                <button type="button" data-dir="desktop" class="quick-access-btn px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all">🖥️ Desktop</button>
+                <button type="button" data-dir="downloads" class="quick-access-btn px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all">📥 Downloads</button>
+                <button type="button" data-dir="documents" class="quick-access-btn px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all">📄 Documents</button>
+                
+                <span class="text-slate-400 font-semibold uppercase tracking-wider mx-2">|</span>
+                
+                <div id="explorer-drives" class="flex gap-1">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content (List Area) -->
+        <div class="flex-1 overflow-y-auto p-8 terminal-scroll space-y-2 bg-black/40 min-h-[350px] max-h-[50vh]" id="explorer-list">
+            <!-- Populated dynamically -->
+        </div>
+
+        <!-- Footer -->
+        <div class="px-8 py-5 border-t border-white/10 bg-white/5 flex justify-between items-center">
+            <span class="text-xs text-slate-400 font-mono select-none" id="explorer-status">0 folders, 0 videos found</span>
+            <div class="flex gap-3">
+                <button type="button" id="explorer-cancel" class="px-5 py-2.5 rounded-xl text-sm font-semibold text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-all">Cancel</button>
+                <button type="button" id="explorer-select" class="px-6 py-2.5 rounded-xl text-sm font-semibold text-white gradient-btn transition-all">Select</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Footer -->
 <footer class="mt-16 mb-8 text-center space-y-3 opacity-60 hover:opacity-100 transition-opacity relative z-10">
 <p class="text-sm font-medium">VisionClipper Studio © 2026</p>
 <button type="button" id="shutdown-server" class="text-xs font-semibold px-4 py-2 rounded-lg bg-red-500/10 text-red-300 border border-red-500/20 hover:bg-red-500/20 hover:text-red-200 transition-colors">Shut Down Background Server</button>
 </footer>
 
-<script src="{{ url_for('static', filename='script.js') }}"></script>
+<link rel="stylesheet" href="/styles.css">
+<script src="/app.js"></script>
 </body></html>

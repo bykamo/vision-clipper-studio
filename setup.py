@@ -8,7 +8,9 @@ setup(
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
-        "flask",
+        "fastapi",
+        "uvicorn",
+        "pydantic",
         "requests",
         "opencv-python",
         "mediapipe",
@@ -19,8 +21,8 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "vision-clipper=vision_clipper.cli:main",
-            "visionclipper=vision_clipper.cli:main",
+            "vision-clipper=backend.cli:main",
+            "visionclipper=backend.cli:main",
         ],
     },
     classifiers=[
