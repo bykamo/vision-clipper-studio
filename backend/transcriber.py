@@ -76,10 +76,13 @@ def fetch_youtube_transcript(video_id, job_id=None):
 def fetch_ytdlp_subs(url, job_id=None):
     import yt_dlp
     import webvtt
+    import uuid
     
     log("Mencoba mengambil subtitle via yt-dlp...", job_id=job_id)
     
-    sub_path = os.path.join(TEMP_DIR, "temp_sub")
+    unique_id = uuid.uuid4().hex[:8]
+    sub_base_name = f"temp_sub_{unique_id}"
+    sub_path = os.path.join(TEMP_DIR, sub_base_name)
     
     ydl_opts = {
         'skip_download': True,
@@ -98,7 +101,7 @@ def fetch_ytdlp_subs(url, job_id=None):
         # Find the downloaded .vtt file
         vtt_file = None
         for file in os.listdir(TEMP_DIR):
-            if file.startswith("temp_sub") and file.endswith(".vtt"):
+            if file.startswith(sub_base_name) and file.endswith(".vtt"):
                 vtt_file = os.path.join(TEMP_DIR, file)
                 break
                 
@@ -124,7 +127,10 @@ def fetch_ytdlp_subs(url, job_id=None):
                 "words": split_segment_into_words(text, start, end)
             })
             
-        os.remove(vtt_file)
+        try:
+            os.remove(vtt_file)
+        except Exception:
+            pass
         
         if segments:
             log("Berhasil mendapatkan subtitle via yt-dlp!", job_id=job_id)
@@ -331,7 +337,47 @@ def transcribe_video(video_path, source_url=None, model_size="large-v3-turbo", j
     model_path_or_size = model_size
     if model_size == "large-v3-turbo":
         from backend.utils import PROJECT_ROOT
-        model_dir = os.path.join(PROJECT_ROOT, "downloads", "whisper_models", "large-v3-turbo")
+        import shutil
+        
+        # Tentukan folder data aplikasi yang aman (AppData/Local di Windows, .local/share di Linux/macOS)
+        if os.name == 'nt':
+            app_data_dir = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or os.path.expanduser("~")
+        else:
+            app_data_dir = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+            
+        new_model_dir = os.path.join(app_data_dir, "vision-clipper", "whisper_models", "large-v3-turbo")
+        
+        # Lokasi-lokasi lama untuk migrasi
+        old_proj_dir = os.path.join(PROJECT_ROOT, "downloads", "whisper_models", "large-v3-turbo")
+        old_cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "whisper_models", "large-v3-turbo")
+        
+        # Migrasikan model lama jika ada di salah satu folder lama
+        for old_dir in [old_proj_dir, old_cache_dir]:
+            if os.path.exists(old_dir) and not os.path.exists(new_model_dir):
+                try:
+                    log(f"[INFO] Memindahkan model Whisper lama dari {old_dir} ke {new_model_dir}...", job_id=job_id)
+                    os.makedirs(os.path.dirname(new_model_dir), exist_ok=True)
+                    shutil.move(old_dir, new_model_dir)
+                    
+                    # Bersihkan folder parent lama jika kosong
+                    parent_dir = os.path.dirname(old_dir)
+                    if os.path.exists(parent_dir) and not os.listdir(parent_dir):
+                        os.rmdir(parent_dir)
+                    log("[SUCCESS] Migrasi model Whisper selesai!", job_id=job_id)
+                except Exception as e:
+                    log(f"[WARNING] Gagal memindahkan model Whisper dari {old_dir}: {e}", job_id=job_id)
+                    
+            # Hapus jika duplikat/tersisa di lokasi lama
+            if os.path.exists(old_dir) and os.path.exists(new_model_dir):
+                try:
+                    shutil.rmtree(old_dir)
+                    parent_dir = os.path.dirname(old_dir)
+                    if os.path.exists(parent_dir) and not os.listdir(parent_dir):
+                        os.rmdir(parent_dir)
+                except Exception:
+                    pass
+                    
+        model_dir = new_model_dir
         repo_id = "deepdml/faster-whisper-large-v3-turbo-ct2"
         try:
             download_custom_whisper_model(model_dir, repo_id, job_id=job_id)

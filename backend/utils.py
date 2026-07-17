@@ -36,7 +36,7 @@ TEMP_DIR = os.path.join(PROJECT_ROOT, "temp")
 os.makedirs(TEMP_DIR, exist_ok=True)
 DEFAULT_OUT_DIR = os.path.join(PROJECT_ROOT, "clips")
 
-for _pattern in ["tmp*.wav", "temp_crop_*.mov", "temp_*.ass"]:
+for _pattern in ["tmp*.wav", "temp_crop_*.mov", "temp_*.ass", "temp_sub*.vtt"]:
     for _f in glob.glob(os.path.join(TEMP_DIR, _pattern)):
         try:
             os.remove(_f)
