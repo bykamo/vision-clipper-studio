@@ -12,9 +12,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressLabel = document.getElementById('progress-label');
     const statusDot = document.getElementById('status-dot');
     const statusText = document.getElementById('status-text');
+    const outputGrid = document.getElementById('output-grid');
     
     let currentMode = 'hook';
     let eventSource = null;
+    let outputDir = '';
 
     // ── File Explorer Modal Elements ──
     const explorerModal = document.getElementById('explorer-modal');
@@ -361,6 +363,12 @@ document.addEventListener('DOMContentLoaded', () => {
         loader.classList.remove('hidden');
         cancelBtn.classList.remove('hidden');
 
+        // Reset output grid
+        if (outputGrid) {
+            outputGrid.innerHTML = '<span class="output-empty">Memproses video... Klip sedang dibuat.</span>';
+        }
+        outputDir = '';
+
         const subStyle = document.querySelector('input[name="sub_style"]:checked')?.value || 'tiktok_viral';
         const whisperModel = document.getElementById('whisper_model')?.value || 'small';
         const streamUrl = `/stream?mode=${encodeURIComponent(currentMode)}&source_type=${encodeURIComponent(sourceType)}&source=${encodeURIComponent(source)}&num_clips=${encodeURIComponent(numClips)}&sub_style=${encodeURIComponent(subStyle)}&whisper_model=${encodeURIComponent(whisperModel)}`;
@@ -374,12 +382,61 @@ document.addEventListener('DOMContentLoaded', () => {
                 setProgress(100);
                 setStatus('complete');
                 finishProcess();
+                
+                // Show output folder link in grid
+                if (outputGrid && outputDir) {
+                    outputGrid.innerHTML = `
+                        <div class="output-folder-card animate-in">
+                            <div class="output-folder-icon">📂</div>
+                            <div class="output-folder-info">
+                                <span class="output-folder-title">Folder Output Siap</span>
+                                <span class="output-folder-path">${outputDir}</span>
+                            </div>
+                            <button type="button" id="open-folder-btn" class="btn-open-folder">
+                                Buka Folder
+                            </button>
+                        </div>
+                    `;
+                    const openFolderBtn = document.getElementById('open-folder-btn');
+                    if (openFolderBtn) {
+                        openFolderBtn.addEventListener('click', () => {
+                            fetch('/api/open-folder', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ path: outputDir })
+                            })
+                            .then(res => res.json())
+                            .then(resData => {
+                                if (resData.error) {
+                                    alert("Gagal membuka folder: " + resData.error);
+                                }
+                            })
+                            .catch(err => {
+                                alert("Error: " + err);
+                            });
+                        });
+                    }
+                } else if (outputGrid) {
+                    outputGrid.innerHTML = '<span class="output-empty">Proses selesai! (Folder output tidak ditemukan)</span>';
+                }
             } else if (data === '[PROCESS_FAILED]') {
                 appendLog('[SYSTEM] ❌ Sequence failed. Check logs.', 'error');
                 setStatus('error');
                 finishProcess();
+                if (outputGrid) {
+                    outputGrid.innerHTML = '<span class="output-empty" style="color: var(--rose-500)">Gagal memproses video. Periksa log konsol.</span>';
+                }
             } else {
                 if (data === '[HEARTBEAT]') return;
+                
+                // Parse output directory from log message
+                if (data.includes('Outputs will be saved to:')) {
+                    const match = data.match(/Outputs will be saved to:\s*(.*)/);
+                    if (match && match[1]) {
+                        outputDir = match[1].trim();
+                    }
+                }
+                
                 const isProgress = data.includes('Progress') || data.includes('%|');
                 let logType = 'normal';
                 if (data.includes('WARNING') || data.includes('Warning')) {
@@ -418,7 +475,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         appendLog('[SYSTEM] Transmitting abort signal...', 'highlight');
         cancelBtn.disabled = true;
-        cancelBtn.querySelector('.btn-text').textContent = '⏳ ABORTING...';
+        cancelBtn.querySelector('.btn-text').textContent = '⏳';
         
         fetch('/cancel', { method: 'POST' })
             .then(res => res.json())
@@ -428,12 +485,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 finishProcess();
                 cancelBtn.disabled = false;
-                cancelBtn.querySelector('.btn-text').textContent = '■ STOP PROCESSING';
+                cancelBtn.querySelector('.btn-text').textContent = '■';
             })
             .catch(err => {
                 appendLog('[SYSTEM] Failed to abort: ' + err, 'error');
                 cancelBtn.disabled = false;
-                cancelBtn.querySelector('.btn-text').textContent = '■ STOP PROCESSING';
+                cancelBtn.querySelector('.btn-text').textContent = '■';
             });
     });
 

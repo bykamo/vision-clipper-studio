@@ -115,6 +115,31 @@ async def list_dir_api(path: str = ""):
             "files": []
         }
 
+@app.post("/api/open-folder")
+async def open_folder(request: Request):
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "Invalid JSON body"})
+        
+    path = data.get("path")
+    if not path:
+        return JSONResponse(status_code=400, content={"error": "Path parameter is empty"})
+        
+    path = os.path.normpath(path)
+    if os.path.exists(path):
+        try:
+            if os.name == 'nt':
+                os.startfile(path)
+            elif sys.platform == 'darwin':
+                subprocess.Popen(['open', path])
+            else:
+                subprocess.Popen(['xdg-open', path])
+            return {"status": "opened"}
+        except Exception as e:
+            return JSONResponse(status_code=500, content={"error": str(e)})
+    return JSONResponse(status_code=404, content={"error": f"Folder tidak ditemukan: {path}"})
+
 @app.post("/cancel")
 async def cancel():
     global current_process

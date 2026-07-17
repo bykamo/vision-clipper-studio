@@ -42,7 +42,7 @@ def fetch_youtube_transcript(video_id, job_id=None):
     
     log(f"Mencoba mengambil subtitle langsung dari InnerTube API untuk video ID: {video_id}...", job_id=job_id)
     try:
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        transcript_list = YouTubeTranscriptApi().list(video_id)
         
         try:
             # Prioritize Indonesian manual transcripts
@@ -136,8 +136,58 @@ def fetch_ytdlp_subs(url, job_id=None):
         return None
 
 def transcribe_video(video_path, source_url=None, model_size="small", job_id=None):
-    # FALLBACK CHAIN: 1. InnerTube API -> 2. yt-dlp -> 3. Faster-Whisper
-    if source_url and ("youtube.com" in source_url or "youtu.be" in source_url):
+    is_youtube_url = source_url and ("youtube.com" in source_url or "youtu.be" in source_url)
+    
+    if model_size == "youtube":
+        if not is_youtube_url:
+            raise ValueError("Model transkripsi YouTube dipilih, tetapi video sumber bukan video YouTube.")
+            
+        video_id = extract_youtube_id(source_url)
+        if not video_id:
+            raise ValueError("Gagal mengekstrak ID video YouTube dari URL.")
+            
+        # Check local cache first
+        from backend.utils import PROJECT_ROOT
+        import json
+        cache_dir = os.path.join(PROJECT_ROOT, "downloads", "transcripts")
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_path = os.path.join(cache_dir, f"{video_id}.json")
+        
+        if os.path.exists(cache_path):
+            log(f"Memuat transkrip dari cache lokal: {cache_path}", job_id=job_id)
+            try:
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    segments = json.load(f)
+                return segments
+            except Exception as e:
+                log(f"Gagal memuat cache transkrip: {e}, melakukan fetch ulang...", job_id=job_id)
+                
+        # Step 1: InnerTube API
+        segments = fetch_youtube_transcript(video_id, job_id=job_id)
+        if segments:
+            try:
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    json.dump(segments, f, indent=2, ensure_ascii=False)
+                log(f"Transkrip disimpan ke cache lokal: {cache_path}", job_id=job_id)
+            except Exception as e:
+                log(f"Gagal menyimpan cache transkrip: {e}", job_id=job_id)
+            return segments
+            
+        # Step 2: yt-dlp Subs
+        segments = fetch_ytdlp_subs(source_url, job_id=job_id)
+        if segments:
+            try:
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    json.dump(segments, f, indent=2, ensure_ascii=False)
+                log(f"Transkrip disimpan ke cache lokal: {cache_path}", job_id=job_id)
+            except Exception as e:
+                log(f"Gagal menyimpan cache transkrip: {e}", job_id=job_id)
+            return segments
+            
+        raise RuntimeError("Gagal mendapatkan transkrip/subtitle Bahasa Indonesia dari YouTube (dan mode YouTube saja dipilih).")
+
+    # FALLBACK CHAIN FOR WHISPER MODELS: 1. InnerTube API -> 2. yt-dlp -> 3. Faster-Whisper
+    if is_youtube_url:
         video_id = extract_youtube_id(source_url)
         if video_id:
             # Check local cache first
