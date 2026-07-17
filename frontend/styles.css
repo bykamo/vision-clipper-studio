@@ -7,51 +7,51 @@
 
 /* ── CSS Custom Properties ── */
 :root {
-    /* Base Colors */
-    --bg-deep: #0a0e1a;
-    --bg-surface: #0f1423;
-    --bg-elevated: #161c2e;
-    --bg-card: rgba(22, 28, 46, 0.85);
-    --bg-card-hover: rgba(30, 38, 60, 0.9);
+    /* Base Colors — Light Theme */
+    --bg-deep: #f0f2f5;
+    --bg-surface: #ffffff;
+    --bg-elevated: #f8f9fb;
+    --bg-card: rgba(255, 255, 255, 0.95);
+    --bg-card-hover: rgba(245, 247, 250, 1);
 
-    /* Glass */
-    --glass-bg: rgba(255, 255, 255, 0.04);
-    --glass-bg-heavy: rgba(255, 255, 255, 0.06);
-    --glass-border: rgba(255, 255, 255, 0.08);
-    --glass-border-light: rgba(255, 255, 255, 0.12);
-    --glass-border-active: rgba(255, 255, 255, 0.2);
+    /* Glass — Light */
+    --glass-bg: rgba(255, 255, 255, 0.7);
+    --glass-bg-heavy: rgba(255, 255, 255, 0.85);
+    --glass-border: rgba(0, 0, 0, 0.08);
+    --glass-border-light: rgba(0, 0, 0, 0.12);
+    --glass-border-active: rgba(0, 0, 0, 0.2);
 
     /* Accent Colors */
-    --violet-400: #a78bfa;
-    --violet-500: #8b5cf6;
-    --violet-600: #7c3aed;
-    --violet-700: #6d28d9;
-    --cyan-400: #22d3ee;
-    --cyan-500: #06b6d4;
-    --blue-400: #60a5fa;
-    --blue-500: #3b82f6;
-    --emerald-400: #34d399;
-    --emerald-500: #10b981;
-    --amber-400: #fbbf24;
-    --rose-400: #fb7185;
-    --rose-500: #f43f5e;
-    --red-400: #f87171;
-    --red-500: #ef4444;
+    --violet-400: #8b5cf6;
+    --violet-500: #7c3aed;
+    --violet-600: #6d28d9;
+    --violet-700: #5b21b6;
+    --cyan-400: #06b6d4;
+    --cyan-500: #0891b2;
+    --blue-400: #3b82f6;
+    --blue-500: #2563eb;
+    --emerald-400: #10b981;
+    --emerald-500: #059669;
+    --amber-400: #f59e0b;
+    --rose-400: #f43f5e;
+    --rose-500: #e11d48;
+    --red-400: #ef4444;
+    --red-500: #dc2626;
 
-    /* Text */
-    --text-primary: #f1f5f9;
-    --text-secondary: #94a3b8;
+    /* Text — Dark on Light */
+    --text-primary: #1e293b;
+    --text-secondary: #475569;
     --text-tertiary: #64748b;
-    --text-muted: #475569;
+    --text-muted: #94a3b8;
 
     /* Gradients */
     --gradient-primary: linear-gradient(135deg, var(--violet-500), var(--blue-500));
     --gradient-primary-hover: linear-gradient(135deg, var(--violet-600), var(--blue-400));
-    --gradient-glow: linear-gradient(135deg, rgba(139, 92, 246, 0.5), rgba(59, 130, 246, 0.5));
+    --gradient-glow: linear-gradient(135deg, rgba(124, 58, 237, 0.15), rgba(37, 99, 235, 0.15));
     --gradient-mesh: 
-        radial-gradient(ellipse at 15% 10%, rgba(139, 92, 246, 0.12) 0%, transparent 50%),
-        radial-gradient(ellipse at 85% 80%, rgba(6, 182, 212, 0.08) 0%, transparent 50%),
-        radial-gradient(ellipse at 50% 50%, rgba(59, 130, 246, 0.05) 0%, transparent 60%);
+        radial-gradient(ellipse at 15% 10%, rgba(124, 58, 237, 0.06) 0%, transparent 50%),
+        radial-gradient(ellipse at 85% 80%, rgba(6, 182, 212, 0.05) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 50%, rgba(37, 99, 235, 0.03) 0%, transparent 60%);
 
     /* Spacing */
     --space-xs: 4px;
@@ -70,13 +70,13 @@
     --radius-2xl: 24px;
     --radius-full: 999px;
 
-    /* Shadows */
-    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.15);
-    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.2);
-    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.3);
-    --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.4);
-    --shadow-glow-violet: 0 0 30px rgba(139, 92, 246, 0.25);
-    --shadow-glow-cyan: 0 0 20px rgba(6, 182, 212, 0.2);
+    /* Shadows — Lighter */
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.1);
+    --shadow-xl: 0 16px 40px rgba(0, 0, 0, 0.12);
+    --shadow-glow-violet: 0 0 20px rgba(124, 58, 237, 0.15);
+    --shadow-glow-cyan: 0 0 16px rgba(6, 182, 212, 0.12);
 
     /* Transitions */
     --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -118,16 +118,6 @@ body {
     line-height: 1.5;
 }
 
-/* Animated background noise overlay */
-body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.015'/%3E%3C/svg%3E");
-    pointer-events: none;
-    z-index: 0;
-}
-
 /* ── App Shell ── */
 .app-shell {
     display: flex;
@@ -146,7 +136,7 @@ body::before {
     justify-content: space-between;
     padding: var(--space-lg) var(--space-2xl);
     border-bottom: 1px solid var(--glass-border);
-    background: rgba(10, 14, 26, 0.8);
+    background: rgba(255, 255, 255, 0.85);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
     position: sticky;
@@ -183,7 +173,7 @@ body::before {
     font-size: 1.25rem;
     font-weight: 700;
     letter-spacing: -0.02em;
-    background: linear-gradient(135deg, #fff 30%, var(--violet-400));
+    background: linear-gradient(135deg, var(--text-primary) 30%, var(--violet-500));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -205,7 +195,7 @@ body::before {
 /* Tab Switcher */
 .topbar-tabs {
     display: flex;
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(0, 0, 0, 0.04);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-full);
     padding: 4px;
@@ -229,14 +219,14 @@ body::before {
 
 .tab-btn:hover {
     color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(0, 0, 0, 0.05);
 }
 
 .tab-btn.active {
-    color: #fff;
-    background: var(--gradient-primary);
-    box-shadow: 0 2px 12px rgba(139, 92, 246, 0.35);
-    font-weight: 600;
+    background: rgba(124, 58, 237, 0.1);
+    color: var(--text-primary);
+    border-color: var(--glass-border-active);
+    transform: translateY(-1px);
 }
 
 /* Status Indicator */
@@ -295,7 +285,7 @@ body::before {
     display: flex;
     flex-direction: column;
     border-right: 1px solid var(--glass-border);
-    background: rgba(15, 20, 35, 0.6);
+    background: rgba(255, 255, 255, 0.6);
     backdrop-filter: blur(12px);
     overflow-y: auto;
 }
@@ -363,8 +353,8 @@ body::before {
 .form-input {
     flex: 1;
     padding: var(--space-md) var(--space-lg);
-    background: rgba(0, 0, 0, 0.25);
-    border: 1px solid var(--glass-border);
+    background: rgba(0, 0, 0, 0.03);
+    border: 1px solid var(--glass-border-light);
     border-radius: var(--radius-md);
     color: var(--text-primary);
     font-family: var(--font-body);
@@ -380,7 +370,7 @@ body::before {
 
 .form-input:focus {
     border-color: var(--violet-500);
-    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15), inset 0 1px 4px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
 }
 
 /* Icon Button */
@@ -416,7 +406,7 @@ body::before {
     display: flex;
     align-items: center;
     gap: 2px;
-    background: rgba(0, 0, 0, 0.25);
+    background: rgba(0, 0, 0, 0.05);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-md);
     padding: 3px;
@@ -478,7 +468,7 @@ body::before {
     align-items: flex-start;
     gap: var(--space-sm);
     padding: var(--space-md);
-    background: rgba(0, 0, 0, 0.2);
+    background: rgba(0, 0, 0, 0.02);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-md);
     cursor: pointer;
@@ -487,14 +477,14 @@ body::before {
 }
 
 .style-card:hover {
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(124, 58, 237, 0.04);
     border-color: var(--glass-border-light);
 }
 
 .style-card.active {
-    background: rgba(139, 92, 246, 0.1);
-    border-color: rgba(139, 92, 246, 0.4);
-    box-shadow: 0 0 12px rgba(139, 92, 246, 0.15);
+    background: rgba(124, 58, 237, 0.08);
+    border-color: rgba(124, 58, 237, 0.4);
+    box-shadow: 0 0 12px rgba(124, 58, 237, 0.1);
 }
 
 .style-card-icon {
@@ -571,7 +561,7 @@ body::before {
 
 .btn-generate:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(139, 92, 246, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 24px rgba(124, 58, 237, 0.3);
 }
 
 .btn-generate:hover::before {
@@ -627,7 +617,7 @@ body::before {
     display: flex;
     flex-direction: column;
     min-height: 0;
-    background: rgba(10, 14, 26, 0.4);
+    background: rgba(248, 249, 251, 0.6);
 }
 
 /* Terminal Section */
@@ -644,7 +634,7 @@ body::before {
     justify-content: space-between;
     padding: var(--space-md) var(--space-xl);
     border-bottom: 1px solid var(--glass-border);
-    background: rgba(0, 0, 0, 0.3);
+    background: #1e293b;
     flex-shrink: 0;
 }
 
@@ -725,7 +715,7 @@ body::before {
     font-family: var(--font-mono);
     font-size: 0.8rem;
     line-height: 1.8;
-    background: rgba(0, 0, 0, 0.15);
+    background: #0f172a;
     min-height: 0;
 }
 
@@ -740,20 +730,20 @@ body::before {
     to { opacity: 1; transform: translateX(0); }
 }
 
-/* Log Colors */
-.log-muted { color: var(--text-muted); }
-.log-normal { color: var(--amber-400); }
-.log-info { color: var(--blue-400); }
-.log-highlight { color: var(--cyan-400); }
-.log-success { color: var(--emerald-400); }
+/* Log Colors — Terminal uses dark bg so keep bright colors */
+.log-muted { color: #64748b; }
+.log-normal { color: #fbbf24; }
+.log-info { color: #60a5fa; }
+.log-highlight { color: #22d3ee; }
+.log-success { color: #34d399; }
 .log-warning { color: #fde68a; }
-.log-error { color: var(--rose-400); }
+.log-error { color: #fb7185; }
 
 /* Output Section */
 .output-section {
     border-top: 1px solid var(--glass-border);
     padding: var(--space-xl);
-    background: rgba(0, 0, 0, 0.2);
+    background: rgba(0, 0, 0, 0.02);
     flex-shrink: 0;
 }
 
@@ -792,7 +782,7 @@ body::before {
     justify-content: space-between;
     padding: var(--space-md) var(--space-2xl);
     border-top: 1px solid var(--glass-border);
-    background: rgba(10, 14, 26, 0.6);
+    background: rgba(255, 255, 255, 0.7);
 }
 
 .footer-text {
@@ -908,7 +898,7 @@ body::before {
 .modal-toolbar {
     padding: var(--space-lg) var(--space-xl);
     border-bottom: 1px solid var(--glass-border);
-    background: rgba(0, 0, 0, 0.15);
+    background: rgba(0, 0, 0, 0.02);
     display: flex;
     flex-direction: column;
     gap: var(--space-md);
@@ -989,7 +979,7 @@ body::before {
     flex: 1;
     overflow-y: auto;
     padding: var(--space-lg) var(--space-xl);
-    background: rgba(0, 0, 0, 0.2);
+    background: var(--bg-surface);
     min-height: 280px;
     max-height: 50vh;
 }
