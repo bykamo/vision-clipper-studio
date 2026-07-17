@@ -135,7 +135,78 @@ def fetch_ytdlp_subs(url, job_id=None):
         log(f"Gagal mengambil subtitle via yt-dlp: {e}", job_id=job_id)
         return None
 
-def transcribe_video(video_path, source_url=None, model_size="small", job_id=None):
+def download_custom_whisper_model(model_dir, repo_id, job_id=None):
+    import requests
+    import os
+    import time
+    
+    os.makedirs(model_dir, exist_ok=True)
+    
+    files = [
+        "config.json",
+        "preprocessor_config.json",
+        "vocabulary.json",
+        "tokenizer.json",
+        "model.bin"
+    ]
+    
+    log(f"[INFO] Memulai sinkronisasi model Whisper dari Hugging Face: {repo_id}", job_id=job_id)
+    log(f"[INFO] Folder penyimpanan lokal: {model_dir}", job_id=job_id)
+    
+    for filename in files:
+        dest_path = os.path.join(model_dir, filename)
+        
+        # Check if file exists and has size > 0
+        if os.path.exists(dest_path):
+            size = os.path.getsize(dest_path)
+            # model.bin size is around 1.5 GB
+            if filename == "model.bin" and size > 1400 * 1024 * 1024:
+                log(f"[INFO] File {filename} sudah terdownload ({size / (1024*1024):.1f} MB).", job_id=job_id)
+                continue
+            elif filename != "model.bin" and size > 0:
+                continue
+                
+        url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
+        log(f"[INFO] Mengunduh {filename}...", job_id=job_id)
+        
+        response = requests.get(url, stream=True, timeout=30)
+        response.raise_for_status()
+        
+        total_size = int(response.headers.get('content-length', 0))
+        chunk_size = 1024 * 1024 # 1 MB chunks
+        
+        downloaded = 0
+        start_time = time.time()
+        last_log_time = 0
+        
+        temp_dest_path = dest_path + ".download"
+        
+        with open(temp_dest_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=chunk_size):
+                if chunk:
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    
+                    if total_size > 0:
+                        percent = (downloaded / total_size) * 100
+                        current_time = time.time()
+                        if current_time - last_log_time >= 1.0 or downloaded == total_size:
+                            elapsed = current_time - start_time
+                            speed = downloaded / elapsed if elapsed > 0 else 0
+                            speed_mb = speed / (1024 * 1024)
+                            
+                            eta = (total_size - downloaded) / speed if speed > 0 else 0
+                            eta_str = f"{int(eta // 60):02d}:{int(eta % 60):02d}"
+                            
+                            log(f"Progress Download: {percent:.1f}% | Sisa Waktu (ETA): {eta_str} | ({downloaded / (1024*1024):.1f} MB / {total_size / (1024*1024):.1f} MB @ {speed_mb:.1f} MB/s)", job_id=job_id)
+                            last_log_time = current_time
+                            
+        if os.path.exists(dest_path):
+            os.remove(dest_path)
+        os.rename(temp_dest_path, dest_path)
+        log(f"[SUCCESS] Berhasil mengunduh {filename}!", job_id=job_id)
+
+def transcribe_video(video_path, source_url=None, model_size="large-v3-turbo", job_id=None):
     is_youtube_url = source_url and ("youtube.com" in source_url or "youtu.be" in source_url)
     
     if model_size == "youtube":
@@ -257,10 +328,22 @@ def transcribe_video(video_path, source_url=None, model_size="small", job_id=Non
         device = "cpu"
         compute_type = "int8"
     
+    model_path_or_size = model_size
+    if model_size == "large-v3-turbo":
+        from backend.utils import PROJECT_ROOT
+        model_dir = os.path.join(PROJECT_ROOT, "downloads", "whisper_models", "large-v3-turbo")
+        repo_id = "deepdml/faster-whisper-large-v3-turbo-ct2"
+        try:
+            download_custom_whisper_model(model_dir, repo_id, job_id=job_id)
+            model_path_or_size = model_dir
+        except Exception as e:
+            log(f"[WARNING] Gagal mengunduh custom model secara langsung ({e}). Fallback ke library downloader...", job_id=job_id)
+            model_path_or_size = "deepdml/faster-whisper-large-v3-turbo-ct2"
+
     log(f"Loading Faster-Whisper model '{model_size}' on device: {device} ({compute_type})", job_id=job_id)
     
     if _whisper_model is None:
-        _whisper_model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        _whisper_model = WhisperModel(model_path_or_size, device=device, compute_type=compute_type)
     
     log("Transcribing audio (extracting word-level timestamps with VAD)...", job_id=job_id)
     segments_generator, info = _whisper_model.transcribe(temp_audio_path, language="id", word_timestamps=True, vad_filter=True)

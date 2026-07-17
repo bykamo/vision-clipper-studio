@@ -38,7 +38,7 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 - If possible, include the CTA/product mention within the segment. If the CTA is nearby but outside the segment, extend it.
 - The `title_hook` is a 1-3 word BOLD text shown in the first second of the video (think: "STOP BUYING THIS", "GAME CHANGER", "$9 VS $200"). It must create immediate curiosity or shock.
 - `viral_score` ranges from 0-100. Score based on: hook strength (30%), sales potential (40%), emotional impact (15%), shareability (15%).
-- `caption` must include: hook sentence + value proposition + CTA + emojis. Write as if you're the creator posting on TikTok.
+- `caption` must be written as a real TikTok creator would post, in a highly casual and everyday Indonesian slang/style (using lu-gue/casual colloquial Indonesian, to-the-point). Do NOT use rigid, AI-looking template phrases (avoid things like "Apakah kamu...", "Ini dia...", "Pernahkah Anda..."). Limit emojis to a maximum of 1-2. Include a strong hook sentence, value proposition, and CTA.
 - `hashtags` must include: 3 product-specific, 3 niche hashtags, 2 trending/broad reach, 2 community hashtags.
 
 ## RESPONSE FORMAT (ONLY valid JSON, no explanation, no markdown)
@@ -101,7 +101,7 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 - The `title_hook` is a BOLD 1-3 word text overlay shown in the first second of the video. It must create instant curiosity or emotional reaction. Examples: "WAIT FOR IT", "HE SNAPPED", "THIS IS INSANE", "NOBODY KNOWS THIS".
 - `title_options` should provide 3 distinct angles: (1) curiosity-driven, (2) benefit-driven, (3) controversial/provocative.
 - `viral_score` ranges from 0-100. Weight: hook strength (35%), emotional intensity (25%), shareability (20%), comment potential (20%).
-- `caption` must be written as a real TikTok creator would post: hook line + context + CTA ("Follow for more") + emojis. Max 150 chars.
+- `caption` must be written as a real TikTok creator would post, in a highly casual and everyday Indonesian slang/style (using lu-gue/casual colloquial Indonesian, to-the-point). Do NOT use rigid, AI-looking template phrases (avoid things like "Apakah kamu...", "Ini dia...", "Pernahkah Anda..."). Limit emojis to a maximum of 1-2. Include a hook line, context, and CTA. Max 150 chars.
 - `hashtags`: 3 niche-specific, 3 trending/broad, 2 emotional/mood tags, 2 format tags (#fyp, #viral, etc).
 
 ## RESPONSE FORMAT (ONLY valid JSON, no explanation, no markdown)

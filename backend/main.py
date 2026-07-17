@@ -169,7 +169,7 @@ async def shutdown():
     return {"status": "shutting_down"}
 
 @app.get("/stream")
-async def stream(mode: str = "", source_type: str = "", source: str = "", num_clips: str = "5", sub_style: str = "tiktok_viral", whisper_model: str = "small"):
+async def stream(mode: str = "", source_type: str = "", source: str = "", num_clips: str = "5", sub_style: str = "tiktok_viral", whisper_model: str = "large-v3-turbo"):
     
     cmd = [
         sys.executable, "-u", "-m", "backend.worker",
