@@ -1,4 +1,5 @@
 import os
+import sys
 import urllib.request
 from backend.utils import log, format_ass_timestamp, run_command, TEMP_DIR
 from moviepy import VideoFileClip
@@ -398,42 +399,37 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
     cropped_clip = clip.image_transform(process_frame)
     my_logger = MoviePyLogger(job_id=job_id)
     
-    try:
-        cropped_clip.write_videofile(
-            output_path, 
-            codec="h264_nvenc",
-            audio_codec="aac",
-            bitrate="8000k",
-            temp_audiofile=output_path.replace(".mp4", "_temp.m4a"),
-            remove_temp=True,
-            ffmpeg_params=["-pix_fmt", "yuv420p"],
-            logger=my_logger
-        )
-    except Exception as e:
-        log(f"NVENC failed ({e}), falling back to safer NVENC preset (p2)...", job_id=job_id)
+    codecs_to_try = []
+    if sys.platform == "darwin":
+        codecs_to_try = [
+            ("h264_videotoolbox", []),
+            ("libx264", ["-preset", "fast"])
+        ]
+    else:
+        codecs_to_try = [
+            ("h264_nvenc", []),
+            ("h264_nvenc", ["-preset", "p2", "-profile:v", "main"]),
+            ("libx264", ["-preset", "fast"])
+        ]
+
+    success = False
+    for codec, extra_params in codecs_to_try:
         try:
+            log(f"Trying smart crop encoding with {codec}...", job_id=job_id)
             cropped_clip.write_videofile(
                 output_path, 
-                codec="h264_nvenc",
+                codec=codec,
                 audio_codec="aac",
                 bitrate="8000k",
                 temp_audiofile=output_path.replace(".mp4", "_temp.m4a"),
                 remove_temp=True,
-                ffmpeg_params=["-pix_fmt", "yuv420p", "-preset", "p2", "-profile:v", "main"],
+                ffmpeg_params=["-pix_fmt", "yuv420p"] + extra_params,
                 logger=my_logger
             )
-        except Exception as e2:
-            log(f"Safer NVENC also failed ({e2}), falling back to CPU (libx264)...", job_id=job_id)
-            cropped_clip.write_videofile(
-                output_path, 
-                codec="libx264",
-                audio_codec="aac",
-                bitrate="8000k",
-                temp_audiofile=output_path.replace(".mp4", "_temp.m4a"),
-                remove_temp=True,
-                ffmpeg_params=["-pix_fmt", "yuv420p", "-preset", "fast"],
-                logger=my_logger
-            )
+            success = True
+            break
+        except Exception as e:
+            log(f"{codec} failed ({e}), trying next fallback...", job_id=job_id)
     
     clip.close()
     cropped_clip.close()
@@ -476,40 +472,26 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
         log(f"Rendering Subtitles, Audio Enhancer, and Color Grading for Clip {index}: {title}", job_id=job_id)
         vf_filter = f"scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,eq=contrast=1.1:brightness=0.02:saturation=1.2,unsharp,subtitles='{escaped_ass}',fade=t=out:st={fade_out_start}:d=0.5"
         
-        cmd = [
-            "ffmpeg", "-y", "-i", temp_crop_file,
-            "-vf", vf_filter,
-            "-af", af_filter,
-            "-c:v", "h264_nvenc", "-preset", "p6", "-cq", "18", "-b:v", "8M",
-            "-c:a", "aac", "-b:a", "192k",
-            out_file
-        ]
-        
-        try:
-            run_command(cmd, f"Burning subtitles (NVENC)...", job_id=job_id, duration=duration)
-        except Exception as e:
-            log(f"NVENC Encoding failed: {e}. Falling back to safer NVENC preset...", job_id=job_id)
-            cmd = [
-                "ffmpeg", "-y", "-i", temp_crop_file,
-                "-vf", vf_filter,
-                "-af", af_filter,
-                "-c:v", "h264_nvenc", "-preset", "p2", "-profile:v", "main", "-b:v", "8M",
-                "-c:a", "aac", "-b:a", "192k",
-                out_file
+        codecs_to_try = []
+        if sys.platform == "darwin":
+            codecs_to_try = [
+                ("VideoToolbox", ["-c:v", "h264_videotoolbox", "-b:v", "8M", "-c:a", "aac", "-b:a", "192k"]),
+                ("libx264", ["-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "aac", "-b:a", "192k"])
             ]
+        else:
+            codecs_to_try = [
+                ("NVENC", ["-c:v", "h264_nvenc", "-preset", "p6", "-cq", "18", "-b:v", "8M", "-c:a", "aac", "-b:a", "192k"]),
+                ("Safer NVENC", ["-c:v", "h264_nvenc", "-preset", "p2", "-profile:v", "main", "-b:v", "8M", "-c:a", "aac", "-b:a", "192k"]),
+                ("libx264", ["-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "aac", "-b:a", "192k"])
+            ]
+
+        for name, codec_params in codecs_to_try:
+            cmd = ["ffmpeg", "-y", "-i", temp_crop_file, "-vf", vf_filter, "-af", af_filter] + codec_params + [out_file]
             try:
-                run_command(cmd, f"Burning subtitles (Safer NVENC)...", job_id=job_id, duration=duration)
-            except Exception as e2:
-                log(f"Safer NVENC failed: {e2}. Falling back to libx264 (CPU)...", job_id=job_id)
-                cmd = [
-                    "ffmpeg", "-y", "-i", temp_crop_file,
-                    "-vf", vf_filter,
-                    "-af", af_filter,
-                    "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-                    "-c:a", "aac", "-b:a", "192k",
-                    out_file
-                ]
-                run_command(cmd, f"Burning subtitles (libx264)...", job_id=job_id, duration=duration)
+                run_command(cmd, f"Burning subtitles ({name})...", job_id=job_id, duration=duration)
+                break
+            except Exception as e:
+                log(f"{name} Encoding failed: {e}. Falling back to next codec...", job_id=job_id)
             
     except Exception as e:
         log(f"Face tracking error, using simple ffmpeg center crop: {e}", job_id=job_id)
@@ -522,15 +504,12 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
                 "-af", af_filter
             ] + codec_params + [out_file]
 
-        try:
-            run_command(build_fallback_cmd(["-c:v", "h264_nvenc", "-preset", "p6", "-cq", "18", "-b:v", "8M", "-c:a", "aac", "-b:a", "192k"]), f"Fallback processing for Clip {index} (NVENC)...", job_id=job_id, duration=duration)
-        except Exception as err:
-            log(f"Fallback NVENC failed, trying safer preset... {err}", job_id=job_id)
+        for name, codec_params in codecs_to_try:
             try:
-                run_command(build_fallback_cmd(["-c:v", "h264_nvenc", "-preset", "p2", "-profile:v", "main", "-b:v", "8M", "-c:a", "aac", "-b:a", "192k"]), f"Fallback processing for Clip {index} (Safer NVENC)...", job_id=job_id, duration=duration)
-            except Exception as err2:
-                log(f"Safer NVENC failed, trying libx264... {err2}", job_id=job_id)
-                run_command(build_fallback_cmd(["-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "aac", "-b:a", "192k"]), f"Fallback processing for Clip {index} (libx264)...", job_id=job_id, duration=duration)
+                run_command(build_fallback_cmd(codec_params), f"Fallback processing for Clip {index} ({name})...", job_id=job_id, duration=duration)
+                break
+            except Exception as err:
+                log(f"Fallback {name} failed, trying next... {err}", job_id=job_id)
     
     for tmp in [ass_file, temp_crop_file]:
         try:
