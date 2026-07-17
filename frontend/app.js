@@ -1,18 +1,22 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const tabs = document.querySelectorAll('.tab');
+    // ── Core Elements ──
+    const tabs = document.querySelectorAll('.tab-btn');
     const form = document.getElementById('clipper-form');
     const generateBtn = document.getElementById('generate-btn');
     const cancelBtn = document.getElementById('cancel-btn');
     const btnText = generateBtn.querySelector('.btn-text');
+    const btnIcon = generateBtn.querySelector('.btn-icon');
     const loader = generateBtn.querySelector('.loader');
     const consoleOutput = document.getElementById('console-output');
     const progressBar = document.getElementById('progress-bar');
-    const workerStatus = document.getElementById('worker-status');
+    const progressLabel = document.getElementById('progress-label');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
     
     let currentMode = 'hook';
     let eventSource = null;
 
-    // Local File Explorer Modal State & Elements
+    // ── File Explorer Modal Elements ──
     const explorerModal = document.getElementById('explorer-modal');
     const explorerClose = document.getElementById('explorer-close');
     const explorerCancel = document.getElementById('explorer-cancel');
@@ -27,16 +31,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let currentExplorerPath = '';
     let selectedItemPath = '';
-    let selectedItemType = ''; // 'file' or 'folder'
+    let selectedItemType = '';
 
+    // ── Status Helpers ──
+    function setStatus(state) {
+        if (statusDot) {
+            statusDot.className = 'status-dot';
+            if (state === 'processing') statusDot.classList.add('processing');
+            if (state === 'error') statusDot.classList.add('error');
+        }
+        if (statusText) {
+            const labels = { ready: 'READY', processing: 'PROCESSING', error: 'ERROR', complete: 'COMPLETE' };
+            statusText.textContent = labels[state] || 'READY';
+        }
+    }
+
+    function setProgress(percent) {
+        const p = Math.min(100, Math.max(0, percent));
+        if (progressBar) progressBar.style.width = `${p}%`;
+        if (progressLabel) progressLabel.textContent = `${Math.round(p)}%`;
+    }
+
+    // ── File Explorer ──
     function loadDirectory(path = '') {
-        explorerList.innerHTML = '<div class="text-slate-400 py-12 text-center select-none"><span class="material-symbols-outlined animate-spin text-3xl mb-2">refresh</span><br/>Loading files...</div>';
+        explorerList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⏳</div>Loading files...</div>';
         
         fetch(`/api/list-dir?path=${encodeURIComponent(path)}`)
             .then(res => res.json())
             .then(data => {
                 if (data.error) {
-                    explorerList.innerHTML = `<div class="text-red-400 py-12 text-center select-none"><span class="material-symbols-outlined text-3xl mb-2">error</span><br/>Failed to read folder: ${data.error}</div>`;
+                    explorerList.innerHTML = `<div class="empty-state"><div class="empty-state-icon">❌</div>Failed to read folder: ${data.error}</div>`;
                     return;
                 }
                 
@@ -45,13 +69,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 selectedItemPath = ''; 
                 selectedItemType = '';
 
-                // Enable/disable up button
                 if (data.parent_path) {
                     explorerUpBtn.disabled = false;
-                    explorerUpBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    explorerUpBtn.style.opacity = '1';
                 } else {
                     explorerUpBtn.disabled = true;
-                    explorerUpBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                    explorerUpBtn.style.opacity = '0.4';
                 }
 
                 // Render drives
@@ -60,14 +83,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     data.drives.forEach(drive => {
                         const btn = document.createElement('button');
                         btn.type = 'button';
-                        btn.className = 'px-2 py-1 rounded bg-purple-500/20 hover:bg-purple-500/40 text-purple-200 border border-purple-500/30 transition-all font-semibold';
+                        btn.className = 'drive-btn';
                         btn.textContent = drive;
                         btn.addEventListener('click', () => loadDirectory(drive));
                         explorerDrives.appendChild(btn);
                     });
                 }
 
-                // Render folders and files
+                // Render list
                 explorerList.innerHTML = '';
                 
                 let foldersCount = data.folders ? data.folders.length : 0;
@@ -75,21 +98,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 explorerStatus.textContent = `${foldersCount} folder(s), ${filesCount} video(s) found`;
 
                 if (foldersCount === 0 && filesCount === 0) {
-                    explorerList.innerHTML = '<div class="text-slate-500 py-12 text-center select-none">No video files or subfolders found.</div>';
+                    explorerList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📂</div>No video files or subfolders found.</div>';
                     return;
                 }
 
-                // List folders
+                // Folders
                 if (data.folders) {
                     data.folders.forEach(folder => {
                         const item = document.createElement('div');
-                        item.className = 'flex items-center justify-between p-3.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 cursor-pointer transition-all select-none group';
+                        item.className = 'file-item';
                         item.innerHTML = `
-                            <div class="flex items-center gap-3 min-w-0">
-                                <span class="text-xl flex-shrink-0">📁</span>
-                                <span class="text-slate-200 font-medium truncate text-sm">${folder.name}</span>
+                            <div class="file-item-info">
+                                <span class="file-item-icon">📁</span>
+                                <span class="file-item-name">${folder.name}</span>
                             </div>
-                            <span class="text-xs text-slate-500 group-hover:text-slate-400 transition-colors">Folder</span>
+                            <span class="file-item-meta">Folder</span>
                         `;
                         
                         item.addEventListener('click', (e) => {
@@ -106,17 +129,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 }
 
-                // List files
+                // Files
                 if (data.files) {
                     data.files.forEach(file => {
                         const item = document.createElement('div');
-                        item.className = 'flex items-center justify-between p-3.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 cursor-pointer transition-all select-none group';
+                        item.className = 'file-item';
                         item.innerHTML = `
-                            <div class="flex items-center gap-3 min-w-0">
-                                <span class="text-xl flex-shrink-0">🎬</span>
-                                <span class="text-slate-200 font-medium truncate text-sm">${file.name}</span>
+                            <div class="file-item-info">
+                                <span class="file-item-icon">🎬</span>
+                                <span class="file-item-name">${file.name}</span>
                             </div>
-                            <span class="text-xs text-slate-400 font-mono flex-shrink-0">${file.size}</span>
+                            <span class="file-item-meta">${file.size}</span>
                         `;
                         
                         item.addEventListener('click', (e) => {
@@ -135,20 +158,16 @@ document.addEventListener('DOMContentLoaded', () => {
             })
             .catch(err => {
                 console.error("Failed to load directory:", err);
-                explorerList.innerHTML = `<div class="text-red-400 py-12 text-center select-none"><span class="material-symbols-outlined text-3xl mb-2">error</span><br/>Network error: ${err.message}</div>`;
+                explorerList.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div>Network error: ${err.message}</div>`;
             });
     }
 
     function selectExplorerItem(path, type, element) {
-        const activeItems = explorerList.querySelectorAll('.bg-purple-500\\/20');
-        activeItems.forEach(item => {
-            item.classList.remove('bg-purple-500/20', 'border-purple-500/40');
-            item.classList.add('bg-white/5', 'border-white/5');
+        explorerList.querySelectorAll('.file-item.selected').forEach(item => {
+            item.classList.remove('selected');
         });
 
-        element.classList.remove('bg-white/5', 'border-white/5');
-        element.classList.add('bg-purple-500/20', 'border-purple-500/40');
-
+        element.classList.add('selected');
         selectedItemPath = path;
         selectedItemType = type;
     }
@@ -171,13 +190,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function closeExplorerModal() {
         if (explorerModal) {
-            explorerModal.classList.add('hidden');
+            explorerModal.classList.remove('visible');
         }
     }
 
     function openExplorerModal() {
         if (explorerModal) {
-            explorerModal.classList.remove('hidden');
+            explorerModal.classList.add('visible');
             const currentVal = document.getElementById('source').value.trim();
             let startingDir = '';
             
@@ -195,37 +214,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Modal Close Trigger
+    // Modal triggers
     if (explorerClose) explorerClose.addEventListener('click', closeExplorerModal);
     if (explorerCancel) explorerCancel.addEventListener('click', closeExplorerModal);
     if (explorerSelect) {
-        explorerSelect.addEventListener('click', () => {
-            confirmSelection();
-        });
+        explorerSelect.addEventListener('click', () => confirmSelection());
     }
 
     if (explorerModal) {
         explorerModal.addEventListener('click', (e) => {
-            if (e.target === explorerModal) {
-                closeExplorerModal();
-            }
+            if (e.target === explorerModal) closeExplorerModal();
         });
     }
 
-    // Go Up Trigger
+    // Go Up
     if (explorerUpBtn) {
         explorerUpBtn.addEventListener('click', () => {
             fetch(`/api/list-dir?path=${encodeURIComponent(currentExplorerPath)}`)
                 .then(res => res.json())
                 .then(data => {
-                    if (data.parent_path) {
-                        loadDirectory(data.parent_path);
-                    }
+                    if (data.parent_path) loadDirectory(data.parent_path);
                 });
         });
     }
 
-    // Path Manual Go Trigger
+    // Path Manual Go
     if (explorerGoBtn && explorerPathInput) {
         explorerGoBtn.addEventListener('click', () => {
             loadDirectory(explorerPathInput.value.trim());
@@ -238,7 +251,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Quick Access Navigation
+    // Quick Access
     quickAccessBtns.forEach(btn => {
         btn.addEventListener('click', () => {
             const type = btn.dataset.dir;
@@ -249,46 +262,40 @@ document.addEventListener('DOMContentLoaded', () => {
                     let target = home;
                     const sep = home.includes('/') ? '/' : '\\';
                     
-                    if (type === 'desktop') {
-                        target = `${home}${sep}Desktop`;
-                    } else if (type === 'downloads') {
-                        target = `${home}${sep}Downloads`;
-                    } else if (type === 'documents') {
-                        target = `${home}${sep}Documents`;
-                    }
+                    if (type === 'desktop') target = `${home}${sep}Desktop`;
+                    else if (type === 'downloads') target = `${home}${sep}Downloads`;
+                    else if (type === 'documents') target = `${home}${sep}Documents`;
                     
                     loadDirectory(target);
                 });
         });
     });
 
-    // Browse Button Trigger
+    // Browse Button
     const browseBtn = document.getElementById('browse-btn');
     if (browseBtn) {
-        browseBtn.addEventListener('click', () => {
-            openExplorerModal();
-        });
+        browseBtn.addEventListener('click', () => openExplorerModal());
     }
 
-    // Tab Switching Logic
+    // ── Tab Switching ──
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
-            tabs.forEach(t => {
-                t.classList.remove('active', 'font-semibold', 'bg-white/20', 'text-white', 'shadow-[0_2px_10px_rgba(0,0,0,0.2)]', 'border-white/20', 'backdrop-blur-lg');
-                t.classList.add('font-medium', 'text-slate-300', 'hover:text-white', 'hover:bg-white/5', 'border-transparent');
-                const icon = t.querySelector('.material-symbols-outlined');
-                if(icon) icon.style.fontVariationSettings = "'FILL' 0";
-            });
-            
-            tab.classList.remove('font-medium', 'text-slate-300', 'hover:text-white', 'hover:bg-white/5', 'border-transparent');
-            tab.classList.add('active', 'font-semibold', 'bg-white/20', 'text-white', 'shadow-[0_2px_10px_rgba(0,0,0,0.2)]', 'border-white/20', 'backdrop-blur-lg');
-            const icon = tab.querySelector('.material-symbols-outlined');
-            if(icon) icon.style.fontVariationSettings = "'FILL' 1";
-            
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
             currentMode = tab.dataset.mode;
         });
     });
 
+    // ── Style Card Selection ──
+    const styleCards = document.querySelectorAll('.style-card');
+    styleCards.forEach(card => {
+        card.addEventListener('click', () => {
+            styleCards.forEach(c => c.classList.remove('active'));
+            card.classList.add('active');
+        });
+    });
+
+    // ── Console Log ──
     function appendLog(message, type = 'normal', isReplace = false) {
         if (isReplace) {
             const lastChild = consoleOutput.lastElementChild;
@@ -299,33 +306,36 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const div = document.createElement('div');
-        div.className = `log-line`;
-        if (type === 'error') div.classList.add('text-error');
-        else if (type === 'success') div.classList.add('text-success');
-        else if (type === 'warning') div.classList.add('text-warning');
-        else if (type === 'highlight') div.classList.add('text-highlight');
-        else if (type === 'muted') div.classList.add('text-muted');
-        else div.classList.add('text-primary'); // Default normal log color
+        div.className = 'log-line';
         
-        if (isReplace) {
-            div.dataset.progress = 'true';
-        }
+        const typeClass = {
+            'error': 'log-error',
+            'success': 'log-success',
+            'warning': 'log-warning',
+            'highlight': 'log-highlight',
+            'muted': 'log-muted',
+            'info': 'log-info'
+        };
+        
+        div.classList.add(typeClass[type] || 'log-normal');
+        
+        if (isReplace) div.dataset.progress = 'true';
         
         div.textContent = message;
         consoleOutput.appendChild(div);
         consoleOutput.scrollTop = consoleOutput.scrollHeight;
 
-        // Try to update progress bar if we see percentage
+        // Update progress bar from percentage in message
         const progressMatch = message.match(/([\d.]+)%/);
-        if(progressMatch && progressBar) {
-            progressBar.style.width = `${progressMatch[1]}%`;
+        if (progressMatch) {
+            setProgress(parseFloat(progressMatch[1]));
         }
     }
 
+    // ── Form Submit ──
     form.addEventListener('submit', (e) => {
         e.preventDefault();
         
-        // Force source_type to 'file' for now as url is disabled
         const sourceType = 'file'; 
         const source = document.getElementById('source').value.trim();
         const numClips = document.getElementById('num_clips').value;
@@ -335,36 +345,37 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        if (eventSource) {
-            eventSource.close();
-        }
+        if (eventSource) eventSource.close();
 
-        // Update UI State
+        // Reset UI
         consoleOutput.innerHTML = '';
-        if(progressBar) progressBar.style.width = '0%';
-        if(workerStatus) workerStatus.textContent = 'WORKER_NODE_ACTIVE';
+        setProgress(0);
+        setStatus('processing');
         
         appendLog(`[SYSTEM] Initializing ${currentMode.toUpperCase()} CLIPPER ENGINE...`, 'highlight');
-        appendLog(`[SYSTEM] Source: ${source}`);
-        generateBtn.disabled = true;
+        appendLog(`[SYSTEM] Source: ${source}`, 'info');
         
-        // Hide standard btn text and icon, show loader
-        btnText.textContent = 'Sedang memproses...';
+        generateBtn.disabled = true;
+        btnText.textContent = 'Processing...';
+        if (btnIcon) btnIcon.classList.add('hidden');
         loader.classList.remove('hidden');
         cancelBtn.classList.remove('hidden');
 
-        const streamUrl = `/stream?mode=${encodeURIComponent(currentMode)}&source_type=${encodeURIComponent(sourceType)}&source=${encodeURIComponent(source)}&num_clips=${encodeURIComponent(numClips)}`;
+        const subStyle = document.querySelector('input[name="sub_style"]:checked')?.value || 'tiktok_viral';
+        const streamUrl = `/stream?mode=${encodeURIComponent(currentMode)}&source_type=${encodeURIComponent(sourceType)}&source=${encodeURIComponent(source)}&num_clips=${encodeURIComponent(numClips)}&sub_style=${encodeURIComponent(subStyle)}`;
         eventSource = new EventSource(streamUrl);
 
         eventSource.onmessage = (event) => {
             const data = event.data;
             
             if (data === '[PROCESS_COMPLETE]') {
-                appendLog('[SYSTEM] Sequence complete! Check output directory.', 'success');
-                if(progressBar) progressBar.style.width = '100%';
+                appendLog('[SYSTEM] ✅ Sequence complete! Check output directory.', 'success');
+                setProgress(100);
+                setStatus('complete');
                 finishProcess();
             } else if (data === '[PROCESS_FAILED]') {
-                appendLog('[SYSTEM] Sequence failed. Check logs.', 'error');
+                appendLog('[SYSTEM] ❌ Sequence failed. Check logs.', 'error');
+                setStatus('error');
                 finishProcess();
             } else {
                 if (data === '[HEARTBEAT]') return;
@@ -379,7 +390,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         eventSource.onerror = (error) => {
             console.error("SSE Error:", error);
-            appendLog('[SYSTEM] Connection lost to V-Engine.', 'error');
+            appendLog('[SYSTEM] ⚠️ Connection lost to engine.', 'error');
+            setStatus('error');
             finishProcess();
         };
     });
@@ -391,46 +403,64 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         generateBtn.disabled = false;
         btnText.textContent = 'Generate Clips';
+        if (btnIcon) btnIcon.classList.remove('hidden');
         loader.classList.add('hidden');
         cancelBtn.classList.add('hidden');
-        if(workerStatus) workerStatus.textContent = 'WORKER_NODE_IDLE';
+        
+        // Reset status to ready after a delay
+        setTimeout(() => setStatus('ready'), 3000);
     }
 
+    // ── Cancel ──
     cancelBtn.addEventListener('click', () => {
         if (!eventSource) return;
         
         appendLog('[SYSTEM] Transmitting abort signal...', 'highlight');
         cancelBtn.disabled = true;
-        cancelBtn.querySelector('.btn-text').textContent = 'ABORTING...';
+        cancelBtn.querySelector('.btn-text').textContent = '⏳ ABORTING...';
         
         fetch('/cancel', { method: 'POST' })
             .then(res => res.json())
             .then(data => {
-                if(data.status === 'cancelled') {
-                    appendLog('[SYSTEM] Sequence forcefully terminated.', 'error');
+                if (data.status === 'cancelled') {
+                    appendLog('[SYSTEM] ⛔ Sequence forcefully terminated.', 'error');
                 }
                 finishProcess();
                 cancelBtn.disabled = false;
-                cancelBtn.querySelector('.btn-text').textContent = 'ABORT SEQUENCE';
+                cancelBtn.querySelector('.btn-text').textContent = '■ STOP PROCESSING';
             })
             .catch(err => {
                 appendLog('[SYSTEM] Failed to abort: ' + err, 'error');
                 cancelBtn.disabled = false;
-                cancelBtn.querySelector('.btn-text').textContent = 'ABORT SEQUENCE';
+                cancelBtn.querySelector('.btn-text').textContent = '■ STOP PROCESSING';
             });
     });
 
+    // ── Shutdown ──
     const shutdownBtn = document.getElementById('shutdown-server');
-    if(shutdownBtn) {
+    if (shutdownBtn) {
         shutdownBtn.addEventListener('click', (e) => {
             e.preventDefault();
-            if(confirm('Initiate complete server shutdown?')) {
-                fetch('/shutdown', {method: 'POST'})
-                .then(() => {
-                    document.body.innerHTML = '<div class="h-screen w-screen flex flex-col items-center justify-center bg-black text-error font-label-md text-xl"><span class="material-symbols-outlined text-6xl mb-4">power_off</span>V-ENGINE OFFLINE</div>';
-                }).catch(() => {
-                    document.body.innerHTML = '<div class="h-screen w-screen flex flex-col items-center justify-center bg-black text-error font-label-md text-xl"><span class="material-symbols-outlined text-6xl mb-4">power_off</span>V-ENGINE OFFLINE</div>';
-                });
+            if (confirm('Shut down VisionClipper Studio server?')) {
+                fetch('/shutdown', { method: 'POST' })
+                    .then(() => {
+                        document.body.innerHTML = `
+                            <div style="height:100vh;width:100vw;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0a0e1a;color:#f87171;font-family:Inter,sans-serif;font-size:1.25rem;gap:12px;">
+                                <div style="font-size:3rem;">⚡</div>
+                                <div style="font-weight:700;">SERVER OFFLINE</div>
+                                <div style="font-size:0.8rem;color:#475569;">Close this tab or restart the server.</div>
+                            </div>
+                        `;
+                    })
+                    .catch(() => {
+                        document.body.innerHTML = `
+                            <div style="height:100vh;width:100vw;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0a0e1a;color:#f87171;font-family:Inter,sans-serif;font-size:1.25rem;gap:12px;">
+                                <div style="font-size:3rem;">⚡</div>
+                                <div style="font-weight:700;">SERVER OFFLINE</div>
+                                <div style="font-size:0.8rem;color:#475569;">Close this tab or restart the server.</div>
+                            </div>
+                        `;
+                    });
             }
         });
     }

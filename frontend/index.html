@@ -1,281 +1,277 @@
 <!DOCTYPE html>
-<html lang="id"><head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>VisionClipper Studio - Professional Dashboard</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎬</text></svg>">
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet"/>
-<style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #1c1e37 0%, #1e2b3b 50%, #20242d 100%);
-            background-attachment: fixed;
-            color: #f8fafc;
-            min-height: 100vh;
-            position: relative;
-        }
-
-        .glass-card-heavy {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(24px);
-            -webkit-backdrop-filter: blur(24px);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            border-top: 1px solid rgba(255, 255, 255, 0.25);
-            border-left: 1px solid rgba(255, 255, 255, 0.25);
-            box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
-        }
-
-        .glass-card-light {
-            background: rgba(255, 255, 255, 0.03);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 4px 20px 0 rgba(0, 0, 0, 0.1);
-        }
-        
-        .glass-input {
-            background: rgba(0, 0, 0, 0.2);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.2);
-        }
-
-        .glass-button {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        
-        .glass-button:hover {
-            background: rgba(255, 255, 255, 0.2);
-            transform: translateY(-1px);
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-        }
-
-        .gradient-btn {
-            background: linear-gradient(135deg, rgba(139, 92, 246, 0.8), rgba(59, 130, 246, 0.8));
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-top: 1px solid rgba(255, 255, 255, 0.5);
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .gradient-btn::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: linear-gradient(135deg, rgba(255,255,255,0.2) 0%, transparent 100%);
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-
-        .gradient-btn:hover {
-            transform: translateY(-2px) scale(1.01);
-            box-shadow: 0 10px 30px rgba(139, 92, 246, 0.4), 0 0 0 1px rgba(255,255,255,0.4);
-        }
-        
-        .gradient-btn:hover::before {
-            opacity: 1;
-        }
-
-        .terminal-scroll::-webkit-scrollbar {
-            width: 6px;
-        }
-        .terminal-scroll::-webkit-scrollbar-track {
-            background: rgba(0, 0, 0, 0.1);
-            border-radius: 10px;
-        }
-        .terminal-scroll::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 10px;
-        }
-        .terminal-scroll::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.3);
-        }
-        
-        .text-glow {
-            text-shadow: 0 0 20px rgba(255,255,255,0.3);
-        }
-
-        /* Console log colors */
-        .text-error { color: #f87171; }
-        .text-success { color: #34d399; }
-        .text-highlight { color: #60a5fa; }
-        .text-muted { color: #94a3b8; }
-        .text-primary { color: #facc15; }
-        
-        .material-symbols-outlined {
-          font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: scale(0.98); }
-            to { opacity: 1; transform: scale(1); }
-        }
-        .animate-fade-in {
-            animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-</style>
+<html lang="id">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>VisionClipper Studio — AI Video Clipper</title>
+    <meta name="description" content="AI-powered viral video clipper. Potong video panjang menjadi klip vertikal pendek secara otomatis."/>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎬</text></svg>">
+    <link rel="stylesheet" href="/styles.css">
 </head>
-<body class="p-6 flex flex-col items-center">
-<!-- Top Navigation Bar -->
-<header class="w-full max-w-4xl mb-10 mt-4 relative z-10">
-<nav class="glass-card-heavy rounded-[2rem] px-6 py-4 flex items-center justify-between">
-<div class="flex items-center gap-3">
-<div class="w-10 h-10 flex items-center justify-center bg-white/10 rounded-xl border border-white/20 shadow-inner backdrop-blur-md">
-<span class="text-2xl drop-shadow-md">🎬</span>
-</div>
-<h1 class="text-xl font-bold tracking-tight text-white text-glow">VisionClipper Studio</h1>
-</div>
-<div class="flex bg-black/30 p-1.5 rounded-[1.25rem] border border-white/10 shadow-inner backdrop-blur-md">
-<button type="button" data-mode="hook" class="tab active px-6 py-2 rounded-xl text-sm font-semibold bg-white/20 text-white shadow-[0_2px_10px_rgba(0,0,0,0.2)] border border-white/20 backdrop-blur-lg transition-all">
-                    Hook Cutter
-                </button>
-<button type="button" data-mode="affiliate" class="tab px-6 py-2 rounded-xl text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-all border border-transparent">
-                    Affiliate Clipper
-                </button>
-</div>
-</nav>
-</header>
-<!-- Main Workspace -->
-<form id="clipper-form" class="w-full max-w-4xl space-y-10 relative z-10">
-<!-- Settings Card -->
-<section class="glass-card-heavy rounded-[2rem] p-8 md:p-10 relative overflow-hidden">
-<!-- Decorative inner glow -->
-<div class="absolute -top-24 -right-24 w-48 h-48 bg-purple-500/30 rounded-full blur-3xl"></div>
-<h2 class="text-3xl font-bold mb-8 text-white text-glow tracking-tight relative z-10">Cutter Settings</h2>
-<div class="space-y-8 relative z-10">
-<!-- Local Video Path -->
-<div class="space-y-3">
-<label class="text-sm font-semibold text-slate-300 uppercase tracking-wider ml-1">Video File Path or YouTube URL</label>
-<div class="flex gap-3">
-<div class="relative flex-1">
-<input id="source" name="source" class="w-full glass-input rounded-2xl px-5 py-4 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-400/50 transition-all placeholder-slate-500" type="text" placeholder="Paste local file path or YouTube URL here..." required/>
-</div>
-<button type="button" id="browse-btn" class="glass-button w-14 h-14 flex items-center justify-center rounded-2xl text-white">
-<svg class="lucide lucide-folder" fill="none" height="24" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewbox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path></svg>
-</button>
-</div>
-</div>
-<!-- Number of Clips -->
-<div class="space-y-3">
-<label class="text-sm font-semibold text-slate-300 uppercase tracking-wider ml-1">Number of Clips</label>
-<div class="flex items-center gap-2 glass-input w-fit p-1.5 rounded-2xl">
-<button type="button" class="w-12 h-12 flex items-center justify-center rounded-xl hover:bg-white/10 transition-colors text-slate-300 text-xl font-medium" onclick="document.getElementById('num_clips').stepDown()">-</button>
-<input type="number" id="num_clips" name="num_clips" value="4" min="1" max="10" class="w-16 text-center text-white text-2xl font-bold bg-transparent border-none focus:ring-0 text-glow p-0" style="-moz-appearance: textfield;" />
-<button type="button" class="w-12 h-12 flex items-center justify-center rounded-xl bg-white/10 hover:bg-white/20 transition-colors text-white text-xl font-medium border border-white/5 shadow-sm" onclick="document.getElementById('num_clips').stepUp()">+</button>
-</div>
-</div>
-<!-- Generate Action -->
-<div class="flex gap-4 mt-6 w-full">
-    <button id="generate-btn" type="submit" class="flex-[7] py-5 rounded-2xl text-xl font-bold text-white gradient-btn shadow-2xl flex items-center justify-center gap-3 transition-all">
-        <span class="btn-text">Generate Clips</span>
-        <div class="loader hidden">
-            <svg class="mat-spinner" viewBox="25 25 50 50">
-                <circle cx="50" cy="50" r="20"></circle>
-            </svg>
-        </div>
-    </button>
-    <button type="button" id="cancel-btn" class="hidden flex-[3] py-5 rounded-2xl text-xl font-bold text-red-200 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 backdrop-blur-lg shadow-xl transition-all flex items-center justify-center gap-3">
-        <span class="btn-text">STOP</span>
-    </button>
-</div>
-</div>
-</section>
-<!-- Live Processing Status -->
-<section class="space-y-5">
-<div class="flex items-center justify-between ml-2">
-<h3 class="text-2xl font-bold text-white text-glow tracking-tight">Live Processing Status</h3>
-</div>
-<div class="glass-card-light rounded-[2rem] overflow-hidden border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-<div class="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-black/40 backdrop-blur-xl">
-<span class="text-xs font-bold uppercase tracking-widest text-slate-300 flex items-center gap-2">
-<div class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
-                        Processing Log
-                    </span>
-<div class="flex gap-2 w-32 h-2 bg-white/10 rounded-full overflow-hidden">
-    <div id="progress-bar" class="h-full bg-purple-400 w-0 transition-all duration-300 shadow-[0_0_8px_rgba(168,85,247,0.8)]"></div>
-</div>
-</div>
-<div class="p-6 h-64 overflow-y-auto font-mono text-sm terminal-scroll space-y-2 bg-black/20" id="console-output">
-<div class="bg-white/5 p-2 rounded-lg border border-white/5 log-line text-muted">
-    System Ready.
-</div>
-</div>
-</div>
-</section>
-</form>
+<body>
 
-<!-- Local File Explorer Modal -->
-<div id="explorer-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md hidden animate-fade-in">
-    <div class="w-full max-w-3xl glass-card-heavy rounded-[2.5rem] overflow-hidden flex flex-col max-h-[85vh] shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-white/10">
-        <!-- Header -->
-        <div class="px-8 py-5 border-b border-white/10 flex justify-between items-center bg-white/5">
-            <div class="flex items-center gap-3">
-                <span class="text-xl">📁</span>
-                <h3 class="text-lg font-bold text-white tracking-tight">Local File Explorer</h3>
-            </div>
-            <button type="button" id="explorer-close" class="w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white transition-all">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+<div class="app-shell">
+
+    <!-- ═══ Top Navigation Bar ═══ -->
+    <header class="topbar">
+        <div class="topbar-brand">
+            <div class="topbar-logo">🎬</div>
+            <h1 class="topbar-title">VisionClipper Studio</h1>
+            <span class="topbar-version">v2.0</span>
+        </div>
+
+        <div class="topbar-tabs">
+            <button type="button" data-mode="hook" class="tab-btn active">
+                ✂️ Hook Cutter
+            </button>
+            <button type="button" data-mode="affiliate" class="tab-btn">
+                🛒 Affiliate Clipper
             </button>
         </div>
 
-        <!-- Toolbar / Path and Navigation -->
-        <div class="px-8 py-4 bg-black/20 border-b border-white/10 space-y-4">
-            <div class="flex gap-3">
-                <button type="button" id="explorer-up-btn" class="glass-button w-12 h-12 flex items-center justify-center rounded-xl text-white flex-shrink-0" title="Go Up One Folder">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
-                </button>
-                <div class="flex-1 relative">
-                    <input id="explorer-path" type="text" class="w-full glass-input rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-400/50 transition-all font-mono" placeholder="Folder Path" />
+        <div class="topbar-status" id="status-indicator">
+            <div class="status-dot" id="status-dot"></div>
+            <span id="status-text">READY</span>
+        </div>
+    </header>
+
+    <!-- ═══ Main Content: 2-Column Layout ═══ -->
+    <form id="clipper-form" class="main-content">
+
+        <!-- ── Left Panel: Controls ── -->
+        <aside class="panel-left">
+
+            <!-- Source Section -->
+            <div class="panel-section animate-in">
+                <div class="panel-section-header">
+                    <div class="panel-section-icon">📁</div>
+                    <span class="panel-section-title">Video Source</span>
                 </div>
-                <button type="button" id="explorer-go-btn" class="glass-button px-5 h-12 flex items-center justify-center rounded-xl text-white text-sm font-semibold">
-                    Go
+
+                <div class="form-group">
+                    <label class="form-label" for="source">File Path or YouTube URL</label>
+                    <div class="input-row">
+                        <input
+                            id="source"
+                            name="source"
+                            type="text"
+                            class="form-input"
+                            placeholder="Paste path or URL here..."
+                            required
+                            autocomplete="off"
+                        />
+                        <button type="button" id="browse-btn" class="icon-btn" title="Browse Files">
+                            <svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Section -->
+            <div class="panel-section animate-in animate-in-delay-1">
+                <div class="panel-section-header">
+                    <div class="panel-section-icon">⚙️</div>
+                    <span class="panel-section-title">Settings</span>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Number of Clips</label>
+                    <div class="stepper">
+                        <button type="button" class="stepper-btn" onclick="document.getElementById('num_clips').stepDown()">−</button>
+                        <input
+                            type="number"
+                            id="num_clips"
+                            name="num_clips"
+                            value="4"
+                            min="1"
+                            max="10"
+                            class="stepper-value"
+                        />
+                        <button type="button" class="stepper-btn" onclick="document.getElementById('num_clips').stepUp()">+</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Subtitle Style Section -->
+            <div class="panel-section animate-in animate-in-delay-2">
+                <div class="panel-section-header">
+                    <div class="panel-section-icon">🎨</div>
+                    <span class="panel-section-title">Subtitle Style</span>
+                </div>
+
+                <div class="style-grid">
+                    <label class="style-card active" data-style="tiktok_viral">
+                        <input type="radio" name="sub_style" value="tiktok_viral" checked hidden />
+                        <div class="style-card-icon">🎬</div>
+                        <div class="style-card-body">
+                            <span class="style-card-name">TikTok Viral</span>
+                            <span class="style-card-desc">Bold, highlight kuning, pop-up text</span>
+                        </div>
+                    </label>
+
+                    <label class="style-card" data-style="karaoke">
+                        <input type="radio" name="sub_style" value="karaoke" hidden />
+                        <div class="style-card-icon">🎤</div>
+                        <div class="style-card-body">
+                            <span class="style-card-name">Classic Karaoke</span>
+                            <span class="style-card-desc">Kata muncul bertahap, kumulatif</span>
+                        </div>
+                    </label>
+
+                    <label class="style-card" data-style="minimalist">
+                        <input type="radio" name="sub_style" value="minimalist" hidden />
+                        <div class="style-card-icon">📄</div>
+                        <div class="style-card-body">
+                            <span class="style-card-name">Minimalist</span>
+                            <span class="style-card-desc">Clean, statis, tanpa animasi</span>
+                        </div>
+                    </label>
+
+                    <label class="style-card" data-style="word_pop">
+                        <input type="radio" name="sub_style" value="word_pop" hidden />
+                        <div class="style-card-icon">💥</div>
+                        <div class="style-card-body">
+                            <span class="style-card-name">Word Pop</span>
+                            <span class="style-card-desc">Kata per kata, pop di tengah layar</span>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="action-area animate-in animate-in-delay-2">
+                <button id="generate-btn" type="submit" class="btn-generate">
+                    <span class="btn-icon">▶</span>
+                    <span class="btn-text">Generate Clips</span>
+                    <div class="loader hidden">
+                        <svg class="mat-spinner" viewBox="25 25 50 50">
+                            <circle cx="50" cy="50" r="20"></circle>
+                        </svg>
+                    </div>
+                </button>
+                <button type="button" id="cancel-btn" class="btn-cancel hidden">
+                    <span class="btn-text">■ STOP PROCESSING</span>
                 </button>
             </div>
 
-            <!-- Quick Access / Drives -->
-            <div class="flex flex-wrap items-center gap-2 text-xs">
-                <span class="text-slate-400 font-semibold uppercase tracking-wider mr-2">Quick Access:</span>
-                <button type="button" data-dir="home" class="quick-access-btn px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all">🏠 Home</button>
-                <button type="button" data-dir="desktop" class="quick-access-btn px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all">🖥️ Desktop</button>
-                <button type="button" data-dir="downloads" class="quick-access-btn px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all">📥 Downloads</button>
-                <button type="button" data-dir="documents" class="quick-access-btn px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 transition-all">📄 Documents</button>
-                
-                <span class="text-slate-400 font-semibold uppercase tracking-wider mx-2">|</span>
-                
-                <div id="explorer-drives" class="flex gap-1">
-                    <!-- Populated dynamically -->
+        </aside>
+
+        <!-- ── Right Panel: Terminal + Output ── -->
+        <main class="panel-right">
+
+            <!-- Terminal -->
+            <div class="terminal-section">
+                <div class="terminal-header">
+                    <div class="terminal-header-left">
+                        <div class="terminal-dots">
+                            <div class="terminal-dot red"></div>
+                            <div class="terminal-dot yellow"></div>
+                            <div class="terminal-dot green"></div>
+                        </div>
+                        <span class="terminal-label">Processing Log</span>
+                    </div>
+                    <div class="terminal-header-right">
+                        <div class="progress-container">
+                            <div class="progress-bar-track">
+                                <div class="progress-bar-fill" id="progress-bar"></div>
+                            </div>
+                            <span class="progress-label" id="progress-label">0%</span>
+                        </div>
+                    </div>
                 </div>
+
+                <div class="terminal-body" id="console-output">
+                    <div class="log-line log-muted">System ready. Waiting for input...</div>
+                </div>
+            </div>
+
+            <!-- Output Section -->
+            <div class="output-section">
+                <div class="output-header">
+                    <div class="panel-section-icon">📦</div>
+                    <span class="output-title">Output Clips</span>
+                </div>
+                <div class="output-grid" id="output-grid">
+                    <span class="output-empty">No clips generated yet. Start processing to see results here.</span>
+                </div>
+            </div>
+
+        </main>
+
+    </form>
+
+    <!-- ═══ Footer ═══ -->
+    <footer class="app-footer">
+        <span class="footer-text">VisionClipper Studio © 2026 — Built by kam2k-dev</span>
+        <button type="button" id="shutdown-server" class="btn-shutdown">Shut Down Server</button>
+    </footer>
+
+</div>
+
+
+<!-- ═══ File Explorer Modal ═══ -->
+<div id="explorer-modal" class="modal-overlay">
+    <div class="modal-container">
+
+        <!-- Header -->
+        <div class="modal-header">
+            <div class="modal-header-title">
+                <span>📁</span>
+                <span>File Explorer</span>
+            </div>
+            <button type="button" id="explorer-close" class="modal-close-btn">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="modal-toolbar">
+            <div class="modal-toolbar-row">
+                <button type="button" id="explorer-up-btn" class="icon-btn" title="Go Up One Folder">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
+                    </svg>
+                </button>
+                <input id="explorer-path" type="text" class="form-input" placeholder="Folder path..." />
+                <button type="button" id="explorer-go-btn" class="icon-btn" title="Navigate">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="quick-access-bar">
+                <span class="quick-access-label">Quick:</span>
+                <button type="button" data-dir="home" class="quick-access-btn">🏠 Home</button>
+                <button type="button" data-dir="desktop" class="quick-access-btn">🖥️ Desktop</button>
+                <button type="button" data-dir="downloads" class="quick-access-btn">📥 Downloads</button>
+                <button type="button" data-dir="documents" class="quick-access-btn">📄 Documents</button>
+                <div class="quick-access-divider"></div>
+                <div id="explorer-drives"></div>
             </div>
         </div>
 
-        <!-- Main Content (List Area) -->
-        <div class="flex-1 overflow-y-auto p-8 terminal-scroll space-y-2 bg-black/40 min-h-[350px] max-h-[50vh]" id="explorer-list">
+        <!-- File List -->
+        <div class="modal-body" id="explorer-list">
             <!-- Populated dynamically -->
         </div>
 
         <!-- Footer -->
-        <div class="px-8 py-5 border-t border-white/10 bg-white/5 flex justify-between items-center">
-            <span class="text-xs text-slate-400 font-mono select-none" id="explorer-status">0 folders, 0 videos found</span>
-            <div class="flex gap-3">
-                <button type="button" id="explorer-cancel" class="px-5 py-2.5 rounded-xl text-sm font-semibold text-slate-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-all">Cancel</button>
-                <button type="button" id="explorer-select" class="px-6 py-2.5 rounded-xl text-sm font-semibold text-white gradient-btn transition-all">Select</button>
+        <div class="modal-footer">
+            <span class="modal-status" id="explorer-status">0 folders, 0 videos found</span>
+            <div class="modal-actions">
+                <button type="button" id="explorer-cancel" class="btn-modal-cancel">Cancel</button>
+                <button type="button" id="explorer-select" class="btn-modal-select">Select</button>
             </div>
         </div>
+
     </div>
 </div>
 
-<!-- Footer -->
-<footer class="mt-16 mb-8 text-center space-y-3 opacity-60 hover:opacity-100 transition-opacity relative z-10">
-<p class="text-sm font-medium">VisionClipper Studio © 2026</p>
-<button type="button" id="shutdown-server" class="text-xs font-semibold px-4 py-2 rounded-lg bg-red-500/10 text-red-300 border border-red-500/20 hover:bg-red-500/20 hover:text-red-200 transition-colors">Shut Down Background Server</button>
-</footer>
-
-<link rel="stylesheet" href="/styles.css">
 <script src="/app.js"></script>
-</body></html>
+</body>
+</html>

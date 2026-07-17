@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--max-len", type=int, default=60, help="Maximum clip length (seconds)")
     parser.add_argument("--model", type=str, default="base", help="Whisper model size")
     parser.add_argument("--out-dir", type=str, default=DEFAULT_OUT_DIR, help="Output directory")
+    parser.add_argument("--sub-style", type=str, default="tiktok_viral", choices=["tiktok_viral", "karaoke", "minimalist", "word_pop"], help="Subtitle style")
 
     args = parser.parse_args()
 
@@ -64,7 +65,7 @@ def main():
             log(f"Score: {clip.get('viral_score')}", job_id=job_id)
             
             try:
-                extract_and_format_clip(video_path, clip, i, segments, actual_out_dir, job_id=job_id)
+                extract_and_format_clip(video_path, clip, i, segments, actual_out_dir, job_id=job_id, sub_style=args.sub_style)
             except Exception as e:
                 log(f"Failed to render clip {i}: {e}", job_id=job_id)
                 

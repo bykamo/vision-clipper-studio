@@ -5,76 +5,123 @@ from backend.utils import log
 
 def build_viral_prompt(transcript_text, num_clips, min_len, max_len, mode="hook"):
     if mode == "affiliate":
-        prompt = f"""
-You are a top-tier affiliate marketing strategist for TikTok, YouTube Shorts, and Instagram Reels.
-Your only goal is to maximize SALES, RETENTION, and VIRALITY for affiliate products.
+        prompt = f"""You are an elite affiliate marketing content strategist specializing in short-form video platforms (TikTok, YouTube Shorts, Instagram Reels). You have deep expertise in SALES PSYCHOLOGY, CONVERSION OPTIMIZATION, and VIRAL CONTENT MECHANICS.
 
-Below is a timestamped transcript of a long-form video. Each line follows the format:
-[HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
+## YOUR MISSION
+Analyze the transcript below and extract exactly {num_clips} high-converting segments optimized for AFFILIATE SALES + VIRAL REACH.
 
-Your task for EACH of the {num_clips} distinct clips:
-- Identify exactly {num_clips} distinct segments that either have HIGHEST VIRAL POTENTIAL or HIGHEST SALES CONVERSION POTENTIAL.
-- Look for: Controversial statements, strong hooks, product recommendations, life-changing tips, or emotional stories.
+## TRANSCRIPT FORMAT
+Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
+
+## SEGMENT SELECTION CRITERIA (Ranked by Priority)
+
+### Sales Psychology Triggers (MUST contain at least 2):
+1. **Pain Point Identification** — Speaker describes a relatable problem or frustration
+2. **Product/Solution Reveal** — The "aha moment" when the product is introduced as the fix
+3. **Social Proof** — Testimonials, user count, reviews, authority endorsements
+4. **Before/After Transformation** — Clear contrast showing results
+5. **Urgency/Scarcity** — Limited time, limited stock, "before it's too late"
+6. **Price Anchoring** — Comparing to expensive alternatives, "only $X"
+7. **Call-to-Action (CTA)** — "Link in bio", "Use my code", "Check the description"
+8. **Emotional Storytelling** — Personal anecdotes that build trust and desire
+
+### Virality Boosters (Bonus points):
+- Controversial opinion about a product category
+- Unexpected comparison ("This $10 product beats the $200 one")
+- Relatable "I was today years old" moments
+- Satisfying demo/unboxing energy
+
+## STRICT RULES
 - Each segment MUST be between {min_len} and {max_len} seconds long.
-- Segments must not overlap.
-- SEO & VIRAL METADATA: Generate a catchy title, 1 short clickbait text (`title_hook`) for the first second, and relevant hashtags.
+- Segments MUST NOT overlap.
+- Segments MUST start with a strong hook (question, bold claim, or pattern interrupt) — NEVER start mid-sentence or on dead air.
+- If possible, include the CTA/product mention within the segment. If the CTA is nearby but outside the segment, extend it.
+- The `title_hook` is a 1-3 word BOLD text shown in the first second of the video (think: "STOP BUYING THIS", "GAME CHANGER", "$9 VS $200"). It must create immediate curiosity or shock.
+- `viral_score` ranges from 0-100. Score based on: hook strength (30%), sales potential (40%), emotional impact (15%), shareability (15%).
+- `caption` must include: hook sentence + value proposition + CTA + emojis. Write as if you're the creator posting on TikTok.
+- `hashtags` must include: 3 product-specific, 3 niche hashtags, 2 trending/broad reach, 2 community hashtags.
 
-Respond with ONLY valid JSON, no explanation, no markdown formatting.
-Use exactly this schema:
+## RESPONSE FORMAT (ONLY valid JSON, no explanation, no markdown)
 
 {{
   "clips": [
     {{
       "start": 12.5,
       "end": 45.0,
-      "type": "affiliate_or_viral",
-      "title": "Short catchy title",
-      "title_hook": "Teks clickbait 1 detik pertama",
-      "reason": "Why this segment will drive sales OR go viral",
+      "type": "affiliate|viral|hybrid",
+      "title": "Short catchy title (max 60 chars)",
+      "title_options": ["Title 1", "Title 2", "Title 3"],
+      "title_hook": "1-3 word bold hook text for first second",
+      "reason": "Why this converts — which sales psychology triggers are present",
       "viral_score": 95,
-      "caption": "A highly engaging TikTok/Reels caption with emojis",
-      "hashtags": ["#viral", "#fyp", "#product"]
-    }}
-  ]
-}}
-
-Transcript:
-{transcript_text}
-"""
-    else:
-        prompt = f"""
-You are a top-tier viral content strategist for TikTok, YouTube Shorts, and Instagram Reels.
-Your only goal is to maximize RETENTION, ENGAGEMENT, and VIRALITY.
-
-Below is a timestamped transcript of a long-form video. Each line follows the format:
-[HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
-
-Your task for EACH of the {num_clips} distinct clips:
-- Identify exactly {num_clips} distinct segments with the HIGHEST VIRAL POTENTIAL.
-- Look for: Controversial statements, mind-blowing facts, high emotional peaks, funny moments, or immediate strong hooks.
-- Each segment MUST be between {min_len} and {max_len} seconds long.
-- Segments must not overlap.
-- SEO & VIRAL METADATA: Generate 3 highly engaging title options, 1 short clickbait text (`title_hook`) for the first second of the video, and 10 highly relevant SEO hashtags based on the video's niche.
-
-Respond with ONLY valid JSON, no explanation, no markdown formatting.
-Use exactly this schema:
-
-{{
-  "clips": [
-    {{
-      "start": 12.5,
-      "end": 45.0,
-      "title_options": ["Title Option 1", "Title Option 2", "Title Option 3"],
-      "title_hook": "Teks clickbait 1 detik pertama",
-      "reason": "Why this will go viral (hook, peak emotion, etc.)",
-      "viral_score": 95,
-      "caption": "A highly engaging TikTok/Reels caption with emojis",
+      "sales_score": 88,
+      "caption": "Hook sentence + value + CTA + emojis for TikTok caption",
       "hashtags": ["#tag1", "#tag2", "#tag3", "#tag4", "#tag5", "#tag6", "#tag7", "#tag8", "#tag9", "#tag10"]
     }}
   ]
 }}
 
-Transcript:
+## TRANSCRIPT
+{transcript_text}
+"""
+    else:
+        prompt = f"""You are an elite viral content strategist with deep expertise in SHORT-FORM VIDEO VIRALITY MECHANICS for TikTok, YouTube Shorts, and Instagram Reels. You understand algorithmic reach, audience psychology, and content hooks at a professional level.
+
+## YOUR MISSION
+Analyze the transcript below and extract exactly {num_clips} segments with the ABSOLUTE HIGHEST VIRAL POTENTIAL. These clips must be engineered to maximize watch time, engagement, and shares.
+
+## TRANSCRIPT FORMAT
+Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
+
+## VIRAL DETECTION FRAMEWORK (Score each segment against these):
+
+### Tier 1 — Immediate Hook Power (Most Important):
+1. **Curiosity Gap** — Opens a loop the viewer MUST see closed ("You won't believe what happened next")
+2. **Pattern Interrupt** — Breaks expectations with a shocking statement or reversal
+3. **Bold Controversial Claim** — Hot take that forces people to agree, disagree, or share
+4. **Direct Challenge** — "Nobody talks about this", "They don't want you to know"
+
+### Tier 2 — Emotional Peak:
+5. **High Arousal Emotion** — Anger, surprise, awe, hilarity (NOT boredom, sadness)
+6. **Storytelling Climax** — The peak moment of a story arc (not the buildup)
+7. **Relatable Truth Bomb** — "This is SO true" moments that demand a tag/share
+8. **Inspirational Breakthrough** — Goosebump-inducing motivational peaks
+
+### Tier 3 — Engagement Drivers:
+9. **Debate Fuel** — Statements that split opinion 50/50 (goldmine for comments)
+10. **Information Density** — Rapid-fire valuable facts/tips (high save rate)
+11. **Humor/Wit** — Genuinely funny moments (high share rate)
+12. **Quotable Moment** — One-liners people will screenshot or stitch
+
+## STRICT RULES
+- Each segment MUST be between {min_len} and {max_len} seconds long.
+- Segments MUST NOT overlap.
+- The first 2-3 seconds of each segment MUST contain a strong hook. NEVER start on dead air, filler words ("um", "so anyway"), or mid-sentence. If the hook starts slightly before your ideal segment, extend backward to capture it.
+- End segments on a punchline, conclusion, or natural pause — NOT mid-thought.
+- The `title_hook` is a BOLD 1-3 word text overlay shown in the first second of the video. It must create instant curiosity or emotional reaction. Examples: "WAIT FOR IT", "HE SNAPPED", "THIS IS INSANE", "NOBODY KNOWS THIS".
+- `title_options` should provide 3 distinct angles: (1) curiosity-driven, (2) benefit-driven, (3) controversial/provocative.
+- `viral_score` ranges from 0-100. Weight: hook strength (35%), emotional intensity (25%), shareability (20%), comment potential (20%).
+- `caption` must be written as a real TikTok creator would post: hook line + context + CTA ("Follow for more") + emojis. Max 150 chars.
+- `hashtags`: 3 niche-specific, 3 trending/broad, 2 emotional/mood tags, 2 format tags (#fyp, #viral, etc).
+
+## RESPONSE FORMAT (ONLY valid JSON, no explanation, no markdown)
+
+{{
+  "clips": [
+    {{
+      "start": 12.5,
+      "end": 45.0,
+      "title_options": ["Curiosity Title", "Benefit Title", "Controversial Title"],
+      "title_hook": "1-3 word bold text for first second",
+      "reason": "Which viral triggers from the framework are present and why this will go viral",
+      "viral_score": 95,
+      "caption": "Hook + context + CTA + emojis (max 150 chars)",
+      "hashtags": ["#tag1", "#tag2", "#tag3", "#tag4", "#tag5", "#tag6", "#tag7", "#tag8", "#tag9", "#tag10"]
+    }}
+  ]
+}}
+
+## TRANSCRIPT
 {transcript_text}
 """
     return prompt
