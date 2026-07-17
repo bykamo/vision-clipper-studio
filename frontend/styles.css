@@ -617,15 +617,22 @@ body {
     display: flex;
     flex-direction: column;
     min-height: 0;
-    background: rgba(248, 249, 251, 0.6);
+    background: var(--bg-deep); /* Slate-like workspace background */
+    padding: var(--space-xl);
+    gap: var(--space-xl);
 }
 
-/* Terminal Section */
+/* Terminal Section (macOS Window Style) */
 .terminal-section {
     flex: 1;
     display: flex;
     flex-direction: column;
     min-height: 0;
+    background: #0f172a;
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.05);
+    overflow: hidden;
 }
 
 .terminal-header {
@@ -633,7 +640,7 @@ body {
     align-items: center;
     justify-content: space-between;
     padding: var(--space-md) var(--space-xl);
-    border-bottom: 1px solid var(--glass-border);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     background: #1e293b;
     flex-shrink: 0;
 }
@@ -739,11 +746,13 @@ body {
 .log-warning { color: #fde68a; }
 .log-error { color: #fb7185; }
 
-/* Output Section */
+/* Output Section (macOS Card Style) */
 .output-section {
-    border-top: 1px solid var(--glass-border);
     padding: var(--space-xl);
-    background: rgba(0, 0, 0, 0.02);
+    background: var(--bg-surface);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--shadow-md);
     flex-shrink: 0;
 }
 
