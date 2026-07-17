@@ -404,7 +404,7 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
             codec="h264_nvenc",
             audio_codec="aac",
             bitrate="8000k",
-            temp_audiofile=output_path.replace(".mov", "_temp.m4a"),
+            temp_audiofile=output_path.replace(".mp4", "_temp.m4a"),
             remove_temp=True,
             ffmpeg_params=["-pix_fmt", "yuv420p"],
             logger=my_logger
@@ -417,7 +417,7 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                 codec="h264_nvenc",
                 audio_codec="aac",
                 bitrate="8000k",
-                temp_audiofile=output_path.replace(".mov", "_temp.m4a"),
+                temp_audiofile=output_path.replace(".mp4", "_temp.m4a"),
                 remove_temp=True,
                 ffmpeg_params=["-pix_fmt", "yuv420p", "-preset", "p2", "-profile:v", "main"],
                 logger=my_logger
@@ -429,7 +429,7 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                 codec="libx264",
                 audio_codec="aac",
                 bitrate="8000k",
-                temp_audiofile=output_path.replace(".mov", "_temp.m4a"),
+                temp_audiofile=output_path.replace(".mp4", "_temp.m4a"),
                 remove_temp=True,
                 ffmpeg_params=["-pix_fmt", "yuv420p", "-preset", "fast"],
                 logger=my_logger
@@ -451,8 +451,8 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
     title_hook = clip_info.get("title_hook", "")
     
     safe_title = "".join(c if c.isalnum() else "_" for c in title).strip("_")
-    out_file = os.path.join(out_dir, f"{index:02d}_{safe_title}.mov")
-    temp_crop_file = os.path.join(TEMP_DIR, f"temp_crop_{index}.mov")
+    out_file = os.path.join(out_dir, f"{index:02d}_{safe_title}.mp4")
+    temp_crop_file = os.path.join(TEMP_DIR, f"temp_crop_{index}.mp4")
     caption_file = os.path.join(out_dir, f"{index:02d}_{safe_title}.txt")
     
     caption_text = clip_info.get("caption", title)
