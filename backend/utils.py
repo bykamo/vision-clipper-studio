@@ -114,6 +114,9 @@ def run_command(cmd_list, description="", job_id=None, duration=None):
         full_out = "\n".join(output)
         log("Command failed with output:\n" + full_out, job_id=job_id)
         raise RuntimeError(f"Command failed: {' '.join(str(c) for c in cmd_list)}")
+    else:
+        if duration and duration > 0:
+            log("Progress Rendering: 100.0% | Sisa Waktu (ETA): 00:00:00 | Rendering Selesai.", job_id=job_id)
     return "\n".join(output)
 
 def format_timestamp(seconds):

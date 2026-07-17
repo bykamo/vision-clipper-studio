@@ -437,6 +437,7 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
     
     clip.close()
     cropped_clip.close()
+    log("Progress Smart Crop: 100.0% | Sisa Waktu (ETA): 00:00:00 | Smart Crop Selesai.", job_id=job_id)
     return output_path
 
 def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job_id=None, sub_style="tiktok_viral"):

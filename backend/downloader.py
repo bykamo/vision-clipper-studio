@@ -15,6 +15,31 @@ def download_video_profesional(url: str, job_id=None) -> str:
     download_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "downloads")
     os.makedirs(download_dir, exist_ok=True)
     
+    import time
+    last_update_time = [0.0]
+    
+    def ytdlp_progress_hook(d):
+        if d['status'] == 'downloading':
+            now = time.time()
+            if now - last_update_time[0] >= 1.0:
+                last_update_time[0] = now
+                total = d.get('total_bytes') or d.get('total_bytes_estimate')
+                downloaded = d.get('downloaded_bytes', 0)
+                eta = d.get('eta')
+                speed = d.get('speed')
+                if total:
+                    percent = (downloaded / total) * 100
+                    speed_mb = (speed / 1024 / 1024) if speed else 0
+                    if eta is not None:
+                        m, s = divmod(eta, 60)
+                        h, m = divmod(m, 60)
+                        eta_str = f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
+                    else:
+                        eta_str = "--:--"
+                    log(f"Progress Download: {percent:.1f}% | Kecepatan: {speed_mb:.2f} MB/s | Sisa Waktu (ETA): {eta_str}", job_id=job_id)
+        elif d['status'] == 'finished':
+            log("Progress Download: 100.0% | Selesai mengunduh file video.", job_id=job_id)
+
     ydl_opts = {
         'format': format_string,
         'merge_output_format': 'mp4',
@@ -29,14 +54,15 @@ def download_video_profesional(url: str, job_id=None) -> str:
             'Accept-Language': 'en-US,en;q=0.9,id;q=0.8',
             'Referer': 'https://www.youtube.com/',
         },
+        'progress_hooks': [ytdlp_progress_hook],
     }
     
     class MyLogger:
         def debug(self, msg):
-            if "Downloading" in msg or "Destination" in msg:
-                log(f"[YT-DLP] {msg}", job_id=job_id)
+            pass
         def info(self, msg):
-            log(f"[YT-DLP] {msg}", job_id=job_id)
+            if not any(x in msg.lower() for x in ["downloading", "destination", "percent", "eta", "speed", "frag"]):
+                log(f"[YT-DLP] {msg}", job_id=job_id)
         def warning(self, msg):
             pass
         def error(self, msg):

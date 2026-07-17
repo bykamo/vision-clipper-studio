@@ -27,6 +27,7 @@ def main():
         update_job_status(job_id, "running")
 
     try:
+        log(f"Memulai analisis video: {args.file}", job_id=job_id)
         video_path = get_video_file(args.file, job_id=job_id)
         
         segments = transcribe_video(video_path, source_url=args.file, model_size=args.model, job_id=job_id)
@@ -38,6 +39,7 @@ def main():
         clips = []
         for attempt in range(max_retries):
             try:
+                log(f"Mencari bagian video paling viral menggunakan AI (Percobaan ke-{attempt + 1}). Estimasi waktu: ~10-25 detik...", job_id=job_id)
                 llm_response = call_llm_api(prompt, DEFAULT_LLM_MODEL, DEFAULT_ENDPOINT, DEFAULT_API_KEY, job_id=job_id)
                 data = extract_json_block(llm_response, job_id=job_id)
                 clips = data.get("clips", [])

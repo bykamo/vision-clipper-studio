@@ -302,8 +302,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isReplace) {
             const lastChild = consoleOutput.lastElementChild;
             if (lastChild && lastChild.dataset.progress === 'true') {
-                lastChild.textContent = message;
-                return;
+                // Extract prefix, e.g., "Progress Download" or "Progress Transkripsi"
+                const getPrefix = (msg) => {
+                    const match = msg.match(/^\[?\d{2}:\d{2}:\d{2}\]?\s*(Progress\s+[A-Za-z0-9_]+)/) || msg.match(/^(Progress\s+[A-Za-z0-9_]+)/);
+                    return match ? match[1] : null;
+                };
+                const lastPrefix = getPrefix(lastChild.textContent);
+                const currentPrefix = getPrefix(message);
+                if (lastPrefix && currentPrefix && lastPrefix === currentPrefix) {
+                    lastChild.textContent = message;
+                    
+                    // Update progress bar from percentage in message
+                    const progressMatch = message.match(/([\d.]+)%/);
+                    if (progressMatch) {
+                        setProgress(parseFloat(progressMatch[1]));
+                    }
+                    return;
+                }
             }
         }
 

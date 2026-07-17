@@ -296,6 +296,7 @@ def transcribe_video(video_path, source_url=None, model_size="small", job_id=Non
             
         log(f"Progress Transkripsi: {percent:.1f}% | Sisa Waktu (ETA): {eta_str} | ({segment.end:.1f}s / {info.duration:.1f}s)", job_id=job_id)
 
+    log("Progress Transkripsi: 100.0% | Sisa Waktu (ETA): 00:00:00 | Transkripsi Selesai.", job_id=job_id)
     log(f"Transcription complete. {len(segments)} segments found.", job_id=job_id)
     
     if temp_audio_path != video_path and os.path.exists(temp_audio_path):
