@@ -362,7 +362,8 @@ document.addEventListener('DOMContentLoaded', () => {
         cancelBtn.classList.remove('hidden');
 
         const subStyle = document.querySelector('input[name="sub_style"]:checked')?.value || 'tiktok_viral';
-        const streamUrl = `/stream?mode=${encodeURIComponent(currentMode)}&source_type=${encodeURIComponent(sourceType)}&source=${encodeURIComponent(source)}&num_clips=${encodeURIComponent(numClips)}&sub_style=${encodeURIComponent(subStyle)}`;
+        const whisperModel = document.getElementById('whisper_model')?.value || 'small';
+        const streamUrl = `/stream?mode=${encodeURIComponent(currentMode)}&source_type=${encodeURIComponent(sourceType)}&source=${encodeURIComponent(source)}&num_clips=${encodeURIComponent(numClips)}&sub_style=${encodeURIComponent(subStyle)}&whisper_model=${encodeURIComponent(whisperModel)}`;
         eventSource = new EventSource(streamUrl);
 
         eventSource.onmessage = (event) => {
