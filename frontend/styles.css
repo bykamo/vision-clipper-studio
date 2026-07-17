@@ -444,7 +444,7 @@ body {
     font-family: var(--font-display);
     font-size: 1.5rem;
     font-weight: 700;
-    color: #fff;
+    color: var(--text-primary);
     background: transparent;
     border: none;
     outline: none;
@@ -526,7 +526,7 @@ body {
     padding: var(--space-xl);
     border-top: 1px solid var(--glass-border);
     margin-top: auto;
-    background: rgba(10, 14, 26, 0.5);
+    background: rgba(255, 255, 255, 0.6);
 }
 
 .btn-generate {
