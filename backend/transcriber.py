@@ -6,6 +6,32 @@ from backend.utils import log, run_command, format_timestamp, TEMP_DIR
 
 _whisper_model = None
 
+def split_segment_into_words(text, start, end):
+    """
+    Split a segment's text into individual words with proportional timestamps based on word length.
+    """
+    words_split = text.strip().split()
+    if not words_split:
+        return []
+        
+    duration = end - start
+    total_chars = sum(len(w) for w in words_split)
+    
+    words_list = []
+    current_time = start
+    
+    for word in words_split:
+        word_len = len(word)
+        word_dur = (word_len / total_chars) * duration if total_chars > 0 else (duration / len(words_split))
+        words_list.append({
+            "word": word,
+            "start": current_time,
+            "end": current_time + word_dur
+        })
+        current_time += word_dur
+        
+    return words_list
+
 def extract_youtube_id(url):
     pattern = r'(?:v=|\/)([0-9A-Za-z_-]{11}).*'
     match = re.search(pattern, url)
@@ -19,12 +45,12 @@ def fetch_youtube_transcript(video_id, job_id=None):
         transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
         
         try:
-            # Prioritize Indonesian or English manual/auto transcripts
-            transcript_obj = transcript_list.find_transcript(['id', 'en'])
+            # Prioritize Indonesian manual transcripts
+            transcript_obj = transcript_list.find_transcript(['id'])
             transcript = transcript_obj.fetch()
-        except:
-            # Fallback to generated translated or any available
-            transcript_obj = transcript_list.find_generated_transcript(['id', 'en'])
+        except Exception:
+            # Fallback to generated Indonesian transcripts
+            transcript_obj = transcript_list.find_generated_transcript(['id'])
             transcript = transcript_obj.fetch()
             
         segments = []
@@ -33,12 +59,12 @@ def fetch_youtube_transcript(video_id, job_id=None):
             end = start + t['duration']
             text = t['text'].replace('\n', ' ')
             
-            # Format to match Whisper segments array format
+            # Split segment into word-level timestamps proportionally
             segments.append({
                 "start": start,
                 "end": end,
                 "text": text,
-                "words": [{"word": text, "start": start, "end": end}]
+                "words": split_segment_into_words(text, start, end)
             })
             
         log("Berhasil mendapatkan subtitle dari InnerTube API! (0 detik transkripsi)", job_id=job_id)
@@ -59,7 +85,7 @@ def fetch_ytdlp_subs(url, job_id=None):
         'skip_download': True,
         'writesubtitles': True,
         'writeautomaticsub': True,
-        'subtitleslangs': ['id', 'en'],
+        'subtitleslangs': ['id'],
         'outtmpl': sub_path,
         'quiet': True,
         'no_warnings': True,
@@ -95,7 +121,7 @@ def fetch_ytdlp_subs(url, job_id=None):
                 "start": start,
                 "end": end,
                 "text": text,
-                "words": [{"word": text, "start": start, "end": end}]
+                "words": split_segment_into_words(text, start, end)
             })
             
         os.remove(vtt_file)
@@ -114,13 +140,43 @@ def transcribe_video(video_path, source_url=None, model_size="small", job_id=Non
     if source_url and ("youtube.com" in source_url or "youtu.be" in source_url):
         video_id = extract_youtube_id(source_url)
         if video_id:
+            # Check local cache first
+            from backend.utils import PROJECT_ROOT
+            import json
+            cache_dir = os.path.join(PROJECT_ROOT, "downloads", "transcripts")
+            os.makedirs(cache_dir, exist_ok=True)
+            cache_path = os.path.join(cache_dir, f"{video_id}.json")
+            
+            if os.path.exists(cache_path):
+                log(f"Memuat transkrip dari cache lokal: {cache_path}", job_id=job_id)
+                try:
+                    with open(cache_path, "r", encoding="utf-8") as f:
+                        segments = json.load(f)
+                    return segments
+                except Exception as e:
+                    log(f"Gagal memuat cache transkrip: {e}, melakukan fetch ulang...", job_id=job_id)
+            
             # Step 1: InnerTube API
             segments = fetch_youtube_transcript(video_id, job_id=job_id)
-            if segments: return segments
+            if segments:
+                try:
+                    with open(cache_path, "w", encoding="utf-8") as f:
+                        json.dump(segments, f, indent=2, ensure_ascii=False)
+                    log(f"Transkrip disimpan ke cache lokal: {cache_path}", job_id=job_id)
+                except Exception as e:
+                    log(f"Gagal menyimpan cache transkrip: {e}", job_id=job_id)
+                return segments
             
             # Step 2: yt-dlp Subs
             segments = fetch_ytdlp_subs(source_url, job_id=job_id)
-            if segments: return segments
+            if segments:
+                try:
+                    with open(cache_path, "w", encoding="utf-8") as f:
+                        json.dump(segments, f, indent=2, ensure_ascii=False)
+                    log(f"Transkrip disimpan ke cache lokal: {cache_path}", job_id=job_id)
+                except Exception as e:
+                    log(f"Gagal menyimpan cache transkrip: {e}", job_id=job_id)
+                return segments
             
             log("Fallback ke transkripsi lokal (Faster-Whisper)...", job_id=job_id)
 
@@ -198,6 +254,22 @@ def transcribe_video(video_path, source_url=None, model_size="small", job_id=Non
         except Exception as e:
             log(f"Warning: Could not remove temp audio {temp_audio_path}: {e}", job_id=job_id)
         
+    # Save local Whisper transcript result under same cache file if it was a YouTube video
+    if source_url and ("youtube.com" in source_url or "youtu.be" in source_url):
+        video_id = extract_youtube_id(source_url)
+        if video_id:
+            from backend.utils import PROJECT_ROOT
+            import json
+            cache_dir = os.path.join(PROJECT_ROOT, "downloads", "transcripts")
+            os.makedirs(cache_dir, exist_ok=True)
+            cache_path = os.path.join(cache_dir, f"{video_id}.json")
+            try:
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    json.dump(segments, f, indent=2, ensure_ascii=False)
+                log(f"Transkrip hasil Whisper disimpan ke cache lokal: {cache_path}", job_id=job_id)
+            except Exception as e:
+                log(f"Gagal menyimpan cache transkrip Whisper: {e}", job_id=job_id)
+                
     return segments
 
 def build_transcript_text(segments):
