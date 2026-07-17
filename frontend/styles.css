@@ -449,11 +449,13 @@ body {
     border: none;
     outline: none;
     -moz-appearance: textfield;
+    appearance: textfield;
 }
 
 .stepper-value::-webkit-inner-spin-button,
 .stepper-value::-webkit-outer-spin-button {
     -webkit-appearance: none;
+    appearance: none;
 }
 
 /* ── Subtitle Style Cards ── */
