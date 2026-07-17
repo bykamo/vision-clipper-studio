@@ -30,7 +30,7 @@ def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, title_h
         _generate_tiktok_viral_style(words, out_ass_path, clip_start, clip_end)
 
 
-def _chunk_words(words, clip_start, clip_end, max_words=3, max_chars=18, uppercase=True):
+def _chunk_words(words, clip_start, clip_end, max_words=3, max_chars=18, uppercase=False):
     """Split words into display chunks."""
     chunks, current_chunk = [], []
     for word_info in words:
@@ -63,7 +63,7 @@ Style: ViralStyle,Impact,115,&H00FFFFFF,&H000000FF,&H00000000,&H99000000,-1,0,0,
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    chunks = _chunk_words(words, clip_start, clip_end, uppercase=True)
+    chunks = _chunk_words(words, clip_start, clip_end, uppercase=False)
     
     with open(out_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header)
@@ -132,13 +132,13 @@ WrapStyle: 1
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: MinimalStyle,Arial,40,&H00FFFFFF,&H000000FF,&H50000000,&H00000000,0,0,0,0,100,100,0,0,1,3,0,2,100,100,180,1
+Style: MinimalStyle,Arial,75,&H00FFFFFF,&H000000FF,&H50000000,&H00000000,1,0,0,0,100,100,0,0,1,4,0,2,120,120,350,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     # Group into sentence-level chunks (longer groups, static display)
-    chunks = _chunk_words(words, clip_start, clip_end, max_words=8, max_chars=45, uppercase=False)
+    chunks = _chunk_words(words, clip_start, clip_end, max_words=6, max_chars=35, uppercase=False)
     
     with open(out_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header)
@@ -171,7 +171,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         for word_info in words:
             w_start = max(0, word_info["start"] - clip_start)
             w_end = min(clip_end - clip_start, word_info["end"] - clip_start)
-            text = word_info["word"].strip().upper()
+            text = word_info["word"].strip()
             if not text: continue
             start_ass = format_ass_timestamp(w_start)
             end_ass = format_ass_timestamp(w_end)

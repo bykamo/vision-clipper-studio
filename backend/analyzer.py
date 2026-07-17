@@ -32,9 +32,10 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 - Satisfying demo/unboxing energy
 
 ## STRICT RULES
-- Each segment MUST be between {min_len} and {max_len} seconds long.
+- Each segment SHOULD IDEALLY be between {min_len} and {max_len} seconds long. However, PRIORITIZE NATURAL FLOW: you MAY exceed {max_len} seconds (or go below {min_len}) to ensure the segment starts and ends naturally without cutting off mid-sentence or mid-thought.
 - Segments MUST NOT overlap.
 - Segments MUST start with a strong hook (question, bold claim, or pattern interrupt) — NEVER start mid-sentence or on dead air.
+- END segments on a natural pause, complete thought, or conclusion. DO NOT cut off the speaker abruptly.
 - If possible, include the CTA/product mention within the segment. If the CTA is nearby but outside the segment, extend it.
 - The `title_hook` is a 1-3 word BOLD text shown in the first second of the video (think: "STOP BUYING THIS", "GAME CHANGER", "$9 VS $200"). It must create immediate curiosity or shock.
 - `viral_score` ranges from 0-100. Score based on: hook strength (30%), sales potential (40%), emotional impact (15%), shareability (15%).
@@ -94,10 +95,10 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 12. **Quotable Moment** — One-liners people will screenshot or stitch
 
 ## STRICT RULES
-- Each segment MUST be between {min_len} and {max_len} seconds long.
+- Each segment SHOULD IDEALLY be between {min_len} and {max_len} seconds long. However, PRIORITIZE NATURAL FLOW: you MAY exceed {max_len} seconds (or go below {min_len}) to ensure the segment starts and ends naturally without cutting off mid-sentence or mid-thought.
 - Segments MUST NOT overlap.
 - The first 2-3 seconds of each segment MUST contain a strong hook. NEVER start on dead air, filler words ("um", "so anyway"), or mid-sentence. If the hook starts slightly before your ideal segment, extend backward to capture it.
-- End segments on a punchline, conclusion, or natural pause — NOT mid-thought.
+- End segments on a punchline, conclusion, or natural pause — NOT mid-thought. It is completely fine to ignore the max_len if it means finishing a sentence properly.
 - The `title_hook` is a BOLD 1-3 word text overlay shown in the first second of the video. It must create instant curiosity or emotional reaction. Examples: "WAIT FOR IT", "HE SNAPPED", "THIS IS INSANE", "NOBODY KNOWS THIS".
 - `title_options` should provide 3 distinct angles: (1) curiosity-driven, (2) benefit-driven, (3) controversial/provocative.
 - `viral_score` ranges from 0-100. Weight: hook strength (35%), emotional intensity (25%), shareability (20%), comment potential (20%).
