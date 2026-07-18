@@ -228,7 +228,7 @@ def transcribe_video(video_path, source_url=None, model_size="large-v3-turbo", j
         import json
         cache_dir = os.path.join(PROJECT_ROOT, "downloads", "transcripts")
         os.makedirs(cache_dir, exist_ok=True)
-        cache_path = os.path.join(cache_dir, f"{video_id}.json")
+        cache_path = os.path.join(cache_dir, f"{video_id}_youtube.json")
         
         if os.path.exists(cache_path):
             log(f"Memuat transkrip dari cache lokal: {cache_path}", job_id=job_id)
@@ -263,7 +263,7 @@ def transcribe_video(video_path, source_url=None, model_size="large-v3-turbo", j
             
         raise RuntimeError("Gagal mendapatkan transkrip/subtitle Bahasa Indonesia dari YouTube (dan mode YouTube saja dipilih).")
 
-    # FALLBACK CHAIN FOR WHISPER MODELS: 1. InnerTube API -> 2. yt-dlp -> 3. Faster-Whisper
+    # FALLBACK CHAIN FOR WHISPER MODELS: 1. Local Cache -> 2. Faster-Whisper
     if is_youtube_url:
         video_id = extract_youtube_id(source_url)
         if video_id:
@@ -272,7 +272,7 @@ def transcribe_video(video_path, source_url=None, model_size="large-v3-turbo", j
             import json
             cache_dir = os.path.join(PROJECT_ROOT, "downloads", "transcripts")
             os.makedirs(cache_dir, exist_ok=True)
-            cache_path = os.path.join(cache_dir, f"{video_id}.json")
+            cache_path = os.path.join(cache_dir, f"{video_id}_{model_size}.json")
             
             if os.path.exists(cache_path):
                 log(f"Memuat transkrip dari cache lokal: {cache_path}", job_id=job_id)
@@ -282,30 +282,6 @@ def transcribe_video(video_path, source_url=None, model_size="large-v3-turbo", j
                     return segments
                 except Exception as e:
                     log(f"Gagal memuat cache transkrip: {e}, melakukan fetch ulang...", job_id=job_id)
-            
-            # Step 1: InnerTube API
-            segments = fetch_youtube_transcript(video_id, job_id=job_id)
-            if segments:
-                try:
-                    with open(cache_path, "w", encoding="utf-8") as f:
-                        json.dump(segments, f, indent=2, ensure_ascii=False)
-                    log(f"Transkrip disimpan ke cache lokal: {cache_path}", job_id=job_id)
-                except Exception as e:
-                    log(f"Gagal menyimpan cache transkrip: {e}", job_id=job_id)
-                return segments
-            
-            # Step 2: yt-dlp Subs
-            segments = fetch_ytdlp_subs(source_url, job_id=job_id)
-            if segments:
-                try:
-                    with open(cache_path, "w", encoding="utf-8") as f:
-                        json.dump(segments, f, indent=2, ensure_ascii=False)
-                    log(f"Transkrip disimpan ke cache lokal: {cache_path}", job_id=job_id)
-                except Exception as e:
-                    log(f"Gagal menyimpan cache transkrip: {e}", job_id=job_id)
-                return segments
-            
-            log("Fallback ke transkripsi lokal (Faster-Whisper)...", job_id=job_id)
 
     # Step 3: Faster-Whisper
     from faster_whisper import WhisperModel
@@ -442,7 +418,7 @@ def transcribe_video(video_path, source_url=None, model_size="large-v3-turbo", j
             import json
             cache_dir = os.path.join(PROJECT_ROOT, "downloads", "transcripts")
             os.makedirs(cache_dir, exist_ok=True)
-            cache_path = os.path.join(cache_dir, f"{video_id}.json")
+            cache_path = os.path.join(cache_dir, f"{video_id}_{model_size}.json")
             try:
                 with open(cache_path, "w", encoding="utf-8") as f:
                     json.dump(segments, f, indent=2, ensure_ascii=False)

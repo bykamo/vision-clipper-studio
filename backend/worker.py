@@ -13,11 +13,9 @@ def main():
     parser.add_argument("--num-clips", type=int, default=5, help="Number of clips")
     parser.add_argument("--mode", type=str, default="hook", choices=["hook", "affiliate"], help="Analysis mode")
     parser.add_argument("--job-id", type=int, default=None, help="Job ID for DB logging")
-    parser.add_argument("--min-len", type=int, default=15, help="Minimum clip length (seconds)")
-    parser.add_argument("--max-len", type=int, default=180, help="Maximum clip length (seconds)")
     parser.add_argument("--model", type=str, default="large-v3-turbo", help="Whisper model size")
     parser.add_argument("--out-dir", type=str, default=DEFAULT_OUT_DIR, help="Output directory")
-    parser.add_argument("--sub-style", type=str, default="tiktok_viral", choices=["tiktok_viral", "karaoke", "minimalist", "word_pop"], help="Subtitle style")
+    parser.add_argument("--sub-style", type=str, default="tiktok_viral", choices=["tiktok_viral", "karaoke", "minimalist", "word_pop", "none"], help="Subtitle style")
 
     args = parser.parse_args()
 
@@ -33,7 +31,7 @@ def main():
         segments = transcribe_video(video_path, source_url=args.file, model_size=args.model, job_id=job_id)
         transcript_text = build_transcript_text(segments)
         
-        prompt = build_viral_prompt(transcript_text, args.num_clips, args.min_len, args.max_len, mode=args.mode)
+        prompt = build_viral_prompt(transcript_text, args.num_clips, mode=args.mode)
         
         max_retries = 3
         clips = []

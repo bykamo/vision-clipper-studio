@@ -3,7 +3,7 @@ import re
 import requests
 from backend.utils import log
 
-def build_viral_prompt(transcript_text, num_clips, min_len, max_len, mode="hook"):
+def build_viral_prompt(transcript_text, num_clips, mode="hook"):
     if mode == "affiliate":
         prompt = f"""You are an elite affiliate marketing content strategist specializing in short-form video platforms (TikTok, YouTube Shorts, Instagram Reels). You have deep expertise in SALES PSYCHOLOGY, CONVERSION OPTIMIZATION, and VIRAL CONTENT MECHANICS.
 
@@ -32,7 +32,10 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 - Satisfying demo/unboxing energy
 
 ## STRICT RULES
-- Each segment SHOULD IDEALLY be between {min_len} and {max_len} seconds long. However, PRIORITIZE NATURAL FLOW: you MAY exceed {max_len} seconds (or go below {min_len}) to ensure the segment starts and ends naturally without cutting off mid-sentence or mid-thought.
+- DURATION STRATEGY (CRITICAL):
+  1. Gold Standard (60 - 90 seconds): This is the primary target for TikTok Creator Rewards. Must be >60 seconds.
+  2. Mid-Form Highlights (120 - 180 seconds): Use this ONLY IF the topic is extremely engaging and cannot be cut (e.g., deep analysis, case studies, storytelling, horror/conspiracies that need atmosphere building).
+- PRIORITIZE NATURAL FLOW: You MUST ensure the segment starts and ends naturally without cutting off mid-sentence or mid-thought, even if it slightly violates the duration targets.
 - Segments MUST NOT overlap.
 - Segments MUST start with a strong hook (question, bold claim, or pattern interrupt) — NEVER start mid-sentence or on dead air.
 - END segments on a natural pause, complete thought, or conclusion. DO NOT cut off the speaker abruptly.
@@ -95,7 +98,10 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 12. **Quotable Moment** — One-liners people will screenshot or stitch
 
 ## STRICT RULES
-- Each segment SHOULD IDEALLY be between {min_len} and {max_len} seconds long. However, PRIORITIZE NATURAL FLOW: you MAY exceed {max_len} seconds (or go below {min_len}) to ensure the segment starts and ends naturally without cutting off mid-sentence or mid-thought.
+- DURATION STRATEGY (CRITICAL):
+  1. Gold Standard (60 - 90 seconds): This is the primary target for TikTok Creator Rewards. Must be >60 seconds.
+  2. Mid-Form Highlights (120 - 180 seconds): Use this ONLY IF the topic is extremely engaging and cannot be cut (e.g., deep analysis, case studies, storytelling, horror/conspiracies that need atmosphere building).
+- PRIORITIZE NATURAL FLOW: You MUST ensure the segment starts and ends naturally without cutting off mid-sentence or mid-thought, even if it slightly violates the duration targets.
 - Segments MUST NOT overlap.
 - The first 2-3 seconds of each segment MUST contain a strong hook. NEVER start on dead air, filler words ("um", "so anyway"), or mid-sentence. If the hook starts slightly before your ideal segment, extend backward to capture it.
 - End segments on a punchline, conclusion, or natural pause — NOT mid-thought. It is completely fine to ignore the max_len if it means finishing a sentence properly.
