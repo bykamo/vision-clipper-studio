@@ -283,8 +283,8 @@ def transcribe_video(video_path, source_url=None, model_size="large-v3-turbo", j
                 except Exception as e:
                     log(f"Gagal memuat cache transkrip: {e}, melakukan fetch ulang...", job_id=job_id)
 
-    # Step 3: Faster-Whisper
-    from faster_whisper import WhisperModel
+    # Step 3: Stable-Whisper (wraps Faster-Whisper with refined timestamps)
+    import stable_whisper
     import torch
     global _whisper_model
 
@@ -362,19 +362,35 @@ def transcribe_video(video_path, source_url=None, model_size="large-v3-turbo", j
             log(f"[WARNING] Gagal mengunduh custom model secara langsung ({e}). Fallback ke library downloader...", job_id=job_id)
             model_path_or_size = "deepdml/faster-whisper-large-v3-turbo-ct2"
 
-    log(f"Loading Faster-Whisper model '{model_size}' on device: {device} ({compute_type})", job_id=job_id)
+    log(f"Loading Stable-Whisper model '{model_size}' on device: {device} ({compute_type})", job_id=job_id)
     
     if _whisper_model is None:
-        _whisper_model = WhisperModel(model_path_or_size, device=device, compute_type=compute_type)
+        _whisper_model = stable_whisper.load_faster_whisper(model_path_or_size, device=device, compute_type=compute_type)
     
-    log("Transcribing audio (extracting word-level timestamps with VAD)...", job_id=job_id)
-    segments_generator, info = _whisper_model.transcribe(temp_audio_path, language="id", word_timestamps=True, vad_filter=True)
-
-    log(f"Audio duration: {info.duration:.1f} seconds. Starting transcription...", job_id=job_id)
-    segments = []
+    log("Transcribing audio with Stable-Whisper (refined word-level timestamps + VAD)...", job_id=job_id)
+    log("Progress Transkripsi: 0.0% | Sisa Waktu (ETA): Menghitung... | Stable-Whisper sedang memproses seluruh audio...", job_id=job_id)
+    
     start_time = time.time()
     
-    for segment in segments_generator:
+    # transcribe_stable returns a WhisperResult with refined timestamps
+    # - vad=True: Voice Activity Detection to avoid hallucination during silence
+    # - regroup=True: Auto-regroup words into natural sentence boundaries
+    # - temperature=0.0: No randomness for consistent, deterministic output
+    # - condition_on_previous_text=False: Prevents drift/repetition on fast speech
+    result = _whisper_model.transcribe_stable(
+        temp_audio_path,
+        language="id",
+        vad=True,
+        regroup=True,
+        temperature=0.0,
+        condition_on_previous_text=False
+    )
+    
+    elapsed = time.time() - start_time
+    
+    # Convert stable-whisper WhisperResult to our standard dict format
+    segments = []
+    for segment in result.segments:
         words_list = []
         if segment.words:
             for word in segment.words:
@@ -390,19 +406,9 @@ def transcribe_video(video_path, source_url=None, model_size="large-v3-turbo", j
             "text": segment.text,
             "words": words_list
         })
-        
-        percent = (segment.end / info.duration) * 100
-        elapsed = time.time() - start_time
-        if percent > 0:
-            eta_seconds = elapsed / (percent / 100) - elapsed
-            eta_str = format_timestamp(eta_seconds).split(".")[0]
-        else:
-            eta_str = "Menghitung..."
-            
-        log(f"Progress Transkripsi: {percent:.1f}% | Sisa Waktu (ETA): {eta_str} | ({segment.end:.1f}s / {info.duration:.1f}s)", job_id=job_id)
 
-    log("Progress Transkripsi: 100.0% | Sisa Waktu (ETA): 00:00:00 | Transkripsi Selesai.", job_id=job_id)
-    log(f"Transcription complete. {len(segments)} segments found.", job_id=job_id)
+    log(f"Progress Transkripsi: 100.0% | Sisa Waktu (ETA): 00:00:00 | Transkripsi Selesai.", job_id=job_id)
+    log(f"Transcription complete in {elapsed:.1f}s. {len(segments)} segments found (timestamps refined by Stable-Whisper).", job_id=job_id)
     
     if temp_audio_path != video_path and os.path.exists(temp_audio_path):
         try:

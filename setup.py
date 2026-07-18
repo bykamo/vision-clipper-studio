@@ -16,7 +16,7 @@ setup(
         "mediapipe",
         "moviepy",
         "yt-dlp",
-        "faster-whisper",
+        "stable-ts",
         "torch",
         "youtube-transcript-api",
         "webvtt-py"
