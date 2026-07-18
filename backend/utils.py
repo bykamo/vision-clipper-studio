@@ -1,5 +1,16 @@
 import os
 import subprocess
+
+# Trik untuk mencegah window cmd / terminal popup muncul berulang kali di Windows
+# yang biasa dipanggil oleh package pihak ketiga (seperti stable-whisper/VAD/ffmpeg).
+if os.name == 'nt':
+    _original_popen = subprocess.Popen
+    class NoWindowPopen(_original_popen):
+        def __init__(self, *args, **kwargs):
+            if 'creationflags' not in kwargs:
+                kwargs['creationflags'] = 0x08000000 # CREATE_NO_WINDOW
+            super().__init__(*args, **kwargs)
+    subprocess.Popen = NoWindowPopen
 from datetime import datetime
 import glob
 import sys
