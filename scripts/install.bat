@@ -1,25 +1,52 @@
 @echo off
+setlocal
+cd /d "%~dp0\.."
+
 echo =========================================
-echo   VISION CLIPPER STUDIO INSTALLER
+echo   VISION CLIPPER STUDIO INSTALLER (Windows)
 echo =========================================
 echo.
-echo Installing dependencies and CLI tool...
-pip install -e ..
 
-echo.
-echo Configuring System PATH...
-for /f "delims=" %%i in ('python -c "import sysconfig, os; print(sysconfig.get_path('scripts', f'{os.name}_user'))"') do set SCRIPTS_DIR=%%i
+:: 1. Cek Python
+where python >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [ERROR] Python tidak ditemukan. Silakan install Python 3.10+ terlebih dahulu.
+    pause
+    exit /b 1
+)
 
-echo Python Scripts directory: %SCRIPTS_DIR%
+:: 2. Setup .venv
+if not exist ".venv" (
+    echo [*] Membuat virtual environment (.venv)...
+    python -m venv .venv
+)
 
-powershell -Command "$userPath = [Environment]::GetEnvironmentVariable('Path', 'User'); $target = '%SCRIPTS_DIR%'; if ($userPath -notmatch [regex]::Escape($target)) { [Environment]::SetEnvironmentVariable('Path', $userPath + ';' + $target, 'User'); Write-Host 'Added to User PATH successfully!' } else { Write-Host 'Already in User PATH.' }"
+echo [*] Menginstall dependencies ke .venv...
+call .venv\Scripts\activate.bat
+python -m pip install --upgrade pip setuptools wheel
+pip install -e .
+
+:: 3. Setup AI Config jika belum ada
+if not exist ".env" (
+    call scripts\configure_ai.bat
+)
+
+:: 4. Mendaftarkan Perintah Global Windows ke User PATH
+echo [*] Mendaftarkan perintah 'vision-clipper' ke System PATH...
+set "TARGET_DIR=%~dp0"
+set "TARGET_DIR=%TARGET_DIR:~0,-1%"
+
+powershell -Command "$userPath = [Environment]::GetEnvironmentVariable('Path', 'User'); if ($userPath -notmatch [regex]::Escape('%TARGET_DIR%')) { [Environment]::SetEnvironmentVariable('Path', $userPath + ';%TARGET_DIR%', 'User'); Write-Host '[OK] Added to User PATH!' } else { Write-Host '[OK] Already in User PATH.' }"
 
 echo.
 echo =========================================
-echo INSTALLATION COMPLETE!
-echo. 
-echo PENTING:
-echo Tutup terminal ini, lalu buka terminal/CMD BARU.
-echo Setelah itu lo bisa bebas ketik: visionclipper
+echo   INSTALLASI SELESAI!
+echo =========================================
+echo Sekarang Anda bisa membuka CMD/PowerShell baru dan menggunakan:
+echo   vision-clipper            -> Jalankan web di background
+echo   vision-clipper config     -> Ganti API Key / Model AI
+echo   vision-clipper stop       -> Matikan server
+echo   vision-clipper status     -> Cek status server
+echo   vision-clipper uninstall  -> Hapus instalasi .venv
 echo =========================================
 pause

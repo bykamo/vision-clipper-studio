@@ -176,14 +176,31 @@ def main():
             print(f"[RUNNING] Server aktif di {SERVER_URL} (PID file tidak ditemukan)")
         else:
             print("[OFFLINE] Tidak ada server yang sedang berjalan.")
+    elif len(sys.argv) > 1 and sys.argv[1] in ("--config", "-c", "config", "configure"):
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        if os.name == 'nt':
+            script_path = os.path.join(project_root, "scripts", "configure_ai.bat")
+            if os.path.exists(script_path):
+                subprocess.run([script_path], shell=True)
+            else:
+                print(f"[ERROR] Script configure_ai.bat tidak ditemukan di {script_path}")
+        else:
+            script_path = os.path.join(project_root, "scripts", "configure_ai.sh")
+            if os.path.exists(script_path):
+                subprocess.run(["bash", script_path])
+            else:
+                print(f"[ERROR] Script configure_ai.sh tidak ditemukan di {script_path}")
     elif len(sys.argv) > 1 and sys.argv[1] in ("--help", "-h", "help"):
         print("VisionClipper Studio — AI Viral Video Clipper")
         print()
         print("Usage:")
-        print("  vision-clipper            Jalankan server di background")
-        print("  vision-clipper --stop     Hentikan server yang sedang berjalan")
-        print("  vision-clipper --status   Cek status server")
-        print("  vision-clipper --help     Tampilkan bantuan ini")
+        print("  vision-clipper            Jalankan server di background & buka dashboard")
+        print("  vision-clipper install    Install dependensi & setup environment .venv")
+        print("  vision-clipper config     Atur / ganti API Key, Endpoint, dan Model AI")
+        print("  vision-clipper stop       Hentikan server yang sedang berjalan")
+        print("  vision-clipper status     Cek status server")
+        print("  vision-clipper uninstall  Hapus instalasi tools & bersihkan cache")
+        print("  vision-clipper help       Tampilkan bantuan ini")
     else:
         start_server()
 

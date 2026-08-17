@@ -16,17 +16,31 @@ source/
 # AI Models
 *.tflite
 
-# Python
+# Python Build & Cache
 __pycache__/
 *.egg-info/
 *.pyc
+*.pyo
+*.pyd
 dist/
 build/
+.pytest_cache/
 
-# Environment
+# Virtual Environment
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment Variables
 .env
+.env.*
 
-# Logs & DB
+# Logs & Temporary
+server.log
 server_error.log
 vision_clipper.db
 *.pid
+.visionclipper.pid

@@ -4,9 +4,10 @@
 
 > Potong video panjang (podcast, interview, dll) menjadi klip vertikal pendek (TikTok, Reels, Shorts) secara otomatis menggunakan kekuatan AI.
 
-![Python](https://img.shields.io/badge/Python-3.8+-blue?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Web_Dashboard-009688?logo=fastapi&logoColor=white)
 ![FFmpeg](https://img.shields.io/badge/FFmpeg-Required-green?logo=ffmpeg)
+![macOS / Windows](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?logo=apple&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
 ---
@@ -18,9 +19,10 @@
 | 1 | **AI Smart Crop** | *Cinematic Face Tracking* otomatis — kamera mengikuti wajah speaker dan mengkrop video jadi format vertikal 9:16. |
 | 2 | **Audio Enhancer** | Jernihin audio otomatis pakai *Highpass Filter* + *Compressor* untuk volume yang seimbang. |
 | 3 | **CapCut-style Subtitles** | Generate subtitle per-kata menggunakan **Whisper AI**, langsung di-burn ke video. |
-| 4 | **Viral Segment Analysis** | AI (via 9Router/OpenRouter LLM) menganalisa transkrip dan menemukan momen dengan *hook* paling menarik. |
+| 4 | **Viral Segment Analysis** | AI (via OpenRouter / OpenAI / 9Router LLM) menganalisa transkrip dan menemukan momen dengan *hook* paling menarik. |
 | 5 | **Viral Metadata & SEO** | Auto-generate judul opsi, deskripsi caption viral, hashtags, serta ide title hook disimpan dalam file `.txt` terpisah untuk tiap klip. |
-| 6 | **Web Dashboard (GUI)** | Kontrol semuanya lewat tampilan web yang premium dengan **FastAPI** di `localhost:5000`. |
+| 6 | **One-Click CLI & Clean Lifecycle** | Perintah CLI universal (`install`, `config`, `start`, `stop`, `status`, `uninstall`) dengan auto-isolated `.venv`. |
+| 7 | **Web Dashboard (GUI)** | Kontrol semuanya lewat tampilan web premium berbasis **FastAPI** di `localhost:5000`. |
 
 ---
 
@@ -28,120 +30,123 @@
 
 ```
 vision-clipper-studio/
-├── backend/               # FastAPI Backend & Pipeline Logika
-│   ├── main.py            # API Server & Endpoints
-│   ├── cli.py             # CLI Entry Point (`vision-clipper`)
-│   ├── worker.py          # Background Worker Process (Subprocess)
-│   ├── transcriber.py     # Logika Whisper AI Transcript
-│   ├── analyzer.py        # Logika LLM Prompting
-│   ├── renderer.py        # Rendering FFmpeg & Subtitle
-│   ├── downloader.py      # Downloader & Validasi File
-│   ├── database.py        # SQLite Session Manager
-│   ├── utils.py           # Log Utilities
-│   └── bg_server.py       # Background Server Launcher
-├── frontend/              # HTML/JS/CSS Assets
-│   ├── index.html         # Dashboard HTML
-│   ├── app.js             # Client-side Logic (SSE)
-│   └── styles.css         # CSS UI Design
-├── scripts/               # Helper Scripts
-│   ├── install.bat        # Windows Installer
-│   └── vision-clipper.bat # Fallback CLI Launcher
-├── .env.example           # Contoh Environment Config
-├── setup.py               # Package Setup
-└── MANIFEST.in            # Package Manifest
+├── backend/                  # FastAPI Backend & Pipeline Logika
+│   ├── main.py               # API Server & Endpoints
+│   ├── cli.py                # Universal CLI Entry Point (`vision-clipper`)
+│   ├── worker.py             # Background Worker Process (Subprocess)
+│   ├── transcriber.py        # Logika Whisper AI Transcript
+│   ├── analyzer.py           # Logika LLM Prompting
+│   ├── renderer.py           # Rendering FFmpeg & Subtitle
+│   ├── downloader.py         # Downloader & Validasi File
+│   ├── database.py           # SQLite Session Manager
+│   ├── utils.py              # Log Utilities
+│   └── bg_server.py          # Background Server Launcher
+├── frontend/                 # HTML/JS/CSS Assets
+│   ├── index.html            # Dashboard HTML
+│   ├── app.js                # Client-side Logic (SSE)
+│   └── styles.css            # CSS UI Design
+├── scripts/                  # Helper Scripts
+│   ├── install_mac.sh        # macOS/Linux Installer
+│   ├── uninstall_mac.sh      # macOS/Linux Clean Uninstaller
+│   ├── configure_ai.sh       # macOS/Linux AI Wizard
+│   ├── install.bat           # Windows Installer
+│   ├── uninstall_windows.bat # Windows Clean Uninstaller
+│   ├── configure_ai.bat      # Windows AI Wizard
+│   └── vision-clipper.bat    # Windows CLI Launcher
+├── .env.example              # Contoh Environment Config
+├── setup.py                  # Package Setup
+└── MANIFEST.in               # Package Manifest
 ```
 
 ---
 
-## 🛠️ Instalasi
+## 🛠️ Instalasi & Setup
 
 ### Prasyarat Sistem
-Pastikan komputer lo udah punya:
-- **Python 3.8+** — [Download Python](https://www.python.org/downloads/)
-- **FFmpeg** — Wajib terinstal dan masuk ke *System PATH*. [Download FFmpeg](https://ffmpeg.org/download.html)
+- **Python 3.10+** (Direkomendasikan)
+- **FFmpeg** (Wajib terinstal di sistem)
+  - *macOS*: `brew install ffmpeg` (atau otomatis dipasang via installer)
+  - *Windows*: Download dari [ffmpeg.org](https://ffmpeg.org/download.html) atau via `winget install Gyan.FFmpeg`
+
+---
 
 ### Cara Install
 
-**Opsi 1: Pakai CLI Installer (macOS)**
+#### 🍎 macOS / 🐧 Linux
+Buka terminal di folder project, lalu jalankan:
 ```bash
-# Cukup jalankan perintah:
-vision-clipper install
+chmod +x scripts/install_mac.sh
+./scripts/install_mac.sh
 ```
-> Script ini otomatis membuat `.venv`, install semua dependency, dan mendaftarkan perintah global `vision-clipper`.
+> Script ini otomatis membuat `.venv`, memasang semua dependency, menjalankan wizard konfigurasi AI, dan mendaftarkan perintah global `vision-clipper`.
 
-**Opsi 2: Pakai Installer (Windows)**
-```bash
-# Buka folder `scripts/` dan jalankan:
+#### 🪟 Windows
+Buka CMD / PowerShell di folder project, lalu jalankan:
+```cmd
 scripts\install.bat
 ```
+*(Atau jalankan: `scripts\vision-clipper.bat install`)*
 
-**Opsi 3: Manual via Terminal**
-```bash
-# Buka terminal di root folder project ini
-pip install -e .
-```
+---
 
-> Perintah ini akan mengunduh semua dependency dan mendaftarkan perintah `vision-clipper` ke sistem lo secara global.
+## 🤖 Konfigurasi AI (Interactive Wizard)
 
-### Cara Uninstall (macOS)
-Bisa langsung ketik perintah CLI di Terminal:
-```bash
-vision-clipper uninstall
-```
-*(Atau jalankan skrip manual: `./scripts/uninstall_mac.sh`)*
-
-### Konfigurasi API Key & Model AI (Interactive)
-
-Anda bisa mengatur atau mengubah provider AI, Model, dan API Key kapan saja lewat CLI interaktif:
+Anda bisa mengatur atau mengganti Provider AI, Model LLM, dan API Key kapan saja lewat CLI interaktif tanpa perlu edit file `.env` manual:
 
 ```bash
 vision-clipper config
 ```
 
-*Wizard ini menyediakan pilihan cepat untuk **OpenRouter**, **OpenAI**, maupun **Custom Endpoint**.*
+Tersedia preset siap pakai untuk:
+1. **OpenRouter** (Rekomendasi - model gratis `google/gemini-2.0-flash-exp:free` / Claude / Llama)
+2. **OpenAI Resmi** (`gpt-4o`, `gpt-4o-mini`)
+3. **Custom Endpoint** (9Router, Groq, DeepSeek, Local Ollama, dll)
 
 ---
 
 ## 🚀 Cara Menjalankan
 
-### 🖥️ Cara 1 — Web Dashboard (Recommended)
+### 🖥️ Web Dashboard (Rekomendasi)
 
-Buka terminal di mana saja, lalu ketik perintah CLI ini:
+Cukup buka terminal di mana saja, lalu ketik:
 
 ```bash
 vision-clipper
 ```
 
-Server akan **berjalan di background** dan browser otomatis terbuka ke `http://localhost:5000`. **Lo bisa langsung tutup terminal** — server tetap jalan sampai lo sendiri yang matiin!
+* Server akan **berjalan di background** (tanpa popup jendela hitam) dan otomatis membuka browser ke `http://localhost:5000`.
+* **Terminal bisa langsung ditutup** — server tetap berjalan sampai Anda hentikan sendiri.
 
-#### Menghentikan Server
+---
 
-| Cara | Perintah |
-|------|----------|
-| Dari **Web Dashboard** | Klik tombol merah **"Shut Down Background Server"** di bagian bawah halaman |
-| Dari **Terminal/CMD** | `vision-clipper stop` atau `vision-clipper --stop` |
+### 🎮 Daftar Perintah Universal CLI
 
-#### Perintah CLI Tambahan
+Perintah berikut berlaku sama di **macOS, Windows (CMD/PowerShell), dan Linux**:
 
-```bash
-vision-clipper              # Jalankan server di background & buka browser (auto-check .venv & config)
-vision-clipper install      # Install / reinstall dependensi & buat .venv secara terisolasi
-vision-clipper config       # Atur / ubah API Key, Endpoint, dan Model AI
-vision-clipper stop         # Hentikan server yang sedang berjalan
-vision-clipper status       # Cek apakah server masih aktif
-vision-clipper uninstall    # Hapus instalasi .venv & bersihkan cache (macOS)
-vision-clipper help         # Tampilkan bantuan
-```
+| Perintah | Deskripsi |
+|---|---|
+| `vision-clipper` | Menjalankan server di background & membuka browser dashboard (auto-detect `.venv` & `.env`) |
+| `vision-clipper install` | Install ulang dependencies & inisialisasi environment `.venv` terisolasi |
+| `vision-clipper config` | Wizard interaktif untuk mengatur/mengganti API Key, Endpoint, dan Model AI |
+| `vision-clipper status` | Mengecek apakah server background sedang aktif |
+| `vision-clipper stop` | Menghentikan background server & proses engine |
+| `vision-clipper uninstall` | **Clean Uninstall**: menghapus `.venv`, shortcut CLI, dan file cache tanpa menghapus hasil render video |
+| `vision-clipper help` | Menampilkan menu bantuan perintah |
 
-Dashboard menyediakan:
-- 📂 **File browser** — pilih video langsung dari GUI
-- 🔄 **Tab switching** — pilih mode *Hook Cutter* atau *Affiliate Clipper*
-- 📊 **Live processing log** — pantau proses secara real-time (teks kuning!)
-- ⏹️ **Cancel/Stop** — hentikan proses kapan saja
+---
 
-### ⌨️ Cara 2 — Command Line Worker
+### 🛑 Cara Menghentikan Server
 
-Jika lo mau menjalankan secara manual tanpa Dashboard GUI, lo bisa langsung panggil *worker* file:
+| Cara | Tindakan |
+|---|---|
+| **Dari Web Dashboard** | Klik tombol merah **"Shut Down Background Server"** di bagian bawah dashboard |
+| **Dari Terminal / CMD** | Ketik: `vision-clipper stop` |
+
+---
+
+### ⌨️ Menjalankan CLI Worker Manual (Opsional)
+
+Jika ingin memproses video langsung lewat terminal tanpa dashboard:
 
 ```bash
 python -m backend.worker --file "video_podcast.mp4" --num-clips 5 --mode hook
@@ -152,10 +157,10 @@ python -m backend.worker --file "video_podcast.mp4" --num-clips 5 --mode hook
 ## 🎛️ Mode Operasi
 
 ### 🎯 Hook Cutter
-Mode utama — AI menganalisa transkrip video, menemukan momen-momen *hook* paling menarik, lalu memotong dan mengolahnya jadi klip vertikal siap upload.
+Mode utama — AI menganalisa transkrip video, menemukan momen-momen *hook* paling menarik, lalu memotong dan mengolahnya jadi klip vertikal siap upload (TikTok, Reels, Shorts).
 
 ### 🛒 Affiliate Clipper
-Mode alternatif — Dioptimalkan untuk konten *affiliate/review*, memotong segmen produk dan *call-to-action* secara otomatis.
+Mode alternatif — Dioptimalkan untuk konten *affiliate/review*, memotong segmen pembahasan produk dan *call-to-action (CTA)* secara otomatis.
 
 ---
 
@@ -163,12 +168,12 @@ Mode alternatif — Dioptimalkan untuk konten *affiliate/review*, memotong segme
 
 | Komponen | Teknologi |
 |----------|-----------|
-| Web Server | **FastAPI** + **Uvicorn** + Server-Sent Events (SSE) |
-| Speech-to-Text | Faster Whisper |
-| Video Processing | FFmpeg + MoviePy + OpenCV |
-| Face Detection | MediaPipe (BlazeFace) |
-| AI Analysis | LLM via 9Router / OpenRouter API |
-| Database Storage | SQLite3 |
+| Web Framework | **FastAPI** + **Uvicorn** + Server-Sent Events (SSE) |
+| Speech-to-Text | **Faster Whisper** / **Whisper AI** |
+| Video Processing | **FFmpeg** + **MoviePy** + **OpenCV** |
+| Face Detection | **MediaPipe** (BlazeFace Short Range) |
+| AI Analysis | LLM via OpenRouter / OpenAI / Custom Provider |
+| Database | **SQLite3** Session & Job Logging |
 
 ---
 
@@ -177,19 +182,17 @@ Mode alternatif — Dioptimalkan untuk konten *affiliate/review*, memotong segme
 | Masalah | Solusi |
 |---------|--------|
 | `FFmpeg not found` | Pastikan FFmpeg sudah terinstal dan masuk ke System PATH. Restart terminal setelah instalasi. |
-| `vision-clipper` command not found | Jalankan ulang `pip install -e .` dan pastikan Python Scripts folder ada di PATH. |
-| Proses macet / freeze | Klik tombol **STOP** di dashboard, atau tekan `Ctrl+C` di terminal. |
-| API Error / timeout | Cek file `.env` — pastikan endpoint dan API key sudah benar. |
-| Server gagal startup | Cek apakah Port 5000 sudah dipakai oleh program lain. |
+| `vision-clipper: command not found` | Muat ulang shell dengan `source ~/.zshrc` (Mac) atau buka terminal baru (Windows). |
+| API Error / timeout | Jalankan `vision-clipper config` untuk memastikan Endpoint dan API Key sudah benar. |
+| Port 5000 bentrok | Matikan instance sebelumnya dengan `vision-clipper stop`. |
 
 ---
 
 ## 📝 Catatan Penting
 
-- **Output Folder (`clips/`)**: Folder output sekarang digenerate secara otomatis dengan rapi berdasarkan nama video aslinya.
-- **SQLite Database (`vision_clipper.db`)**: Database ini menyimpan status dan log agar sistem dapat berjalan di latar belakang (background worker) tanpa masalah jika web UI dimatikan/direfresh.
-- File `.env` sudah masuk `.gitignore` — API key lo aman dan nggak akan ter-upload ke GitHub.
-- Dashboard web berjalan di `localhost:5000` secara default.
+- **Output Folder (`clips/`)**: Hasil video yang dirender disimpan rapi dalam subfolder tersendiri berdasarkan nama video aslinya.
+- **Isolasi Bersih (`.venv`)**: Semua library disimpan di dalam `.venv` lokal agar tidak mengotori Python sistem utama komputer Anda.
+- **Keamanan Data**: File konfigurasi `.env` sudah masuk ke `.gitignore` sehingga API Key Anda aman dari kebocoran ke repository Git.
 
 ---
 
