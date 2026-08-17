@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import signal
 import string
 import ctypes
 import queue
