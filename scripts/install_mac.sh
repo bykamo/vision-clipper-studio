@@ -39,12 +39,15 @@ source .venv/bin/activate
 pip install --upgrade pip setuptools wheel
 pip install -e .
 
-# 4. Buat file .env jika belum ada
-if [ ! -f ".env" ]; then
-    if [ -f ".env.example" ]; then
-        cp .env.example .env
-        echo "[*] Dibuat file .env dari .env.example. Jangan lupa isi API Key Anda!"
-    fi
+# 4. Buat file .env dan jalankan konfigurasi AI jika belum ada
+if [ -f "scripts/configure_ai.sh" ]; then
+    chmod +x scripts/configure_ai.sh
+fi
+
+if [ ! -f ".env" ] || ! grep -q "^ROUTER_API_KEY=" .env 2>/dev/null || grep -q "^ROUTER_API_KEY=sk-xxxx" .env 2>/dev/null; then
+    echo ""
+    echo "[*] Mengatur konfigurasi AI..."
+    bash scripts/configure_ai.sh || true
 fi
 
 # 5. Buat Global Launcher di ~/.local/bin
@@ -95,6 +98,13 @@ case "$1" in
             echo "[OFFLINE] Tidak ada VisionClipper Studio yang berjalan."
         fi
         ;;
+    config|--config|configure)
+        if [ -f "$PROJECT_DIR/scripts/configure_ai.sh" ]; then
+            bash "$PROJECT_DIR/scripts/configure_ai.sh"
+        else
+            echo "[ERROR] File configure_ai.sh tidak ditemukan di $PROJECT_DIR/scripts/"
+        fi
+        ;;
     uninstall|--uninstall)
         if [ -f "$PROJECT_DIR/scripts/uninstall_mac.sh" ]; then
             bash "$PROJECT_DIR/scripts/uninstall_mac.sh"
@@ -108,6 +118,7 @@ case "$1" in
         echo "Usage:"
         echo "  vision-clipper            Jalankan server di background & buka dashboard"
         echo "  vision-clipper install    Install dependensi & setup environment .venv"
+        echo "  vision-clipper config     Atur / ganti API Key, Endpoint, dan Model AI"
         echo "  vision-clipper stop       Hentikan server yang sedang berjalan"
         echo "  vision-clipper status     Cek status server"
         echo "  vision-clipper uninstall  Hapus instalasi tools & bersihkan cache"
@@ -119,6 +130,12 @@ case "$1" in
             echo "[!] Virtual environment (.venv) belum terpasang."
             echo "[*] Menjalankan instalasi otomatis..."
             bash "$PROJECT_DIR/scripts/install_mac.sh"
+        fi
+
+        # Cek jika konfigurasi API Key masih belum diisi
+        if [ ! -f "$PROJECT_DIR/.env" ] || ! grep -q "^ROUTER_API_KEY=" "$PROJECT_DIR/.env" 2>/dev/null || grep -q "^ROUTER_API_KEY=sk-xxxx" "$PROJECT_DIR/.env" 2>/dev/null; then
+            echo "[!] Konfigurasi AI belum diatur."
+            bash "$PROJECT_DIR/scripts/configure_ai.sh"
         fi
 
         if is_running; then

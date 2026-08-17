@@ -90,18 +90,15 @@ vision-clipper uninstall
 ```
 *(Atau jalankan skrip manual: `./scripts/uninstall_mac.sh`)*
 
-### Konfigurasi API Key
+### Konfigurasi API Key & Model AI (Interactive)
 
-1. Copy file `.env.example` jadi `.env`
-2. Isi API key lo:
+Anda bisa mengatur atau mengubah provider AI, Model, dan API Key kapan saja lewat CLI interaktif:
 
-```env
-# AI Provider Endpoint (e.g., 9Router, OpenRouter, OpenAI)
-ROUTER_API_ENDPOINT=https://api.example.com/v1/chat/completions
-
-# Your API Key
-ROUTER_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```bash
+vision-clipper config
 ```
+
+*Wizard ini menyediakan pilihan cepat untuk **OpenRouter**, **OpenAI**, maupun **Custom Endpoint**.*
 
 ---
 
@@ -127,8 +124,9 @@ Server akan **berjalan di background** dan browser otomatis terbuka ke `http://l
 #### Perintah CLI Tambahan
 
 ```bash
-vision-clipper              # Jalankan server di background & buka browser (auto buat .venv jika belum ada)
+vision-clipper              # Jalankan server di background & buka browser (auto-check .venv & config)
 vision-clipper install      # Install / reinstall dependensi & buat .venv secara terisolasi
+vision-clipper config       # Atur / ubah API Key, Endpoint, dan Model AI
 vision-clipper stop         # Hentikan server yang sedang berjalan
 vision-clipper status       # Cek apakah server masih aktif
 vision-clipper uninstall    # Hapus instalasi .venv & bersihkan cache (macOS)
