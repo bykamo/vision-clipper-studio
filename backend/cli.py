@@ -14,20 +14,23 @@ def get_running_pid():
     try:
         with open(PID_FILE, "r") as f:
             pid = int(f.read().strip())
-        # Check if process is still running (Windows)
-        result = subprocess.run(
-            ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
-            capture_output=True, text=True, creationflags=0x08000000
-        )
-        if str(pid) in result.stdout:
-            return pid
+        
+        if os.name == 'nt':
+            result = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                capture_output=True, text=True, creationflags=0x08000000
+            )
+            if str(pid) in result.stdout:
+                return pid
         else:
-            # PID file is stale, clean it up
-            cleanup_pid_file()
-            return None
+            # POSIX / macOS: check if process is alive
+            os.kill(pid, 0)
+            return pid
     except (ValueError, FileNotFoundError, OSError):
         cleanup_pid_file()
         return None
+    cleanup_pid_file()
+    return None
 
 def cleanup_pid_file():
     """Remove stale PID file."""
@@ -52,10 +55,18 @@ def stop_server():
     if pid:
         print(f"[STOP] Menghentikan VisionClipper Studio (PID: {pid})...")
         try:
-            subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(pid)],
-                capture_output=True, creationflags=0x08000000
-            )
+            if os.name == 'nt':
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(pid)],
+                    capture_output=True, creationflags=0x08000000
+                )
+            else:
+                os.kill(pid, signal.SIGTERM)
+                time.sleep(0.5)
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass
             cleanup_pid_file()
             print("[DONE] Server berhasil dihentikan.")
         except Exception as e:
@@ -90,12 +101,11 @@ def start_server():
     print("=======================================================")
     print()
 
-    # Find pythonw.exe for windowless execution
+    # Find python executable for windowless/detached execution
     python_dir = os.path.dirname(sys.executable)
     pythonw = os.path.join(python_dir, "pythonw.exe")
 
     if not os.path.exists(pythonw):
-        # Fallback: use python.exe with CREATE_NO_WINDOW flag
         pythonw = sys.executable
 
     # The background server script
@@ -105,15 +115,20 @@ def start_server():
     print(f"[INFO]  PID file: {PID_FILE}")
 
     # Launch as a fully detached process (survives terminal close)
-    # DETACHED_PROCESS (0x00000008) + CREATE_NO_WINDOW (0x08000000)
-    CREATE_FLAGS = 0x00000008 | 0x08000000
+    popen_kwargs = {
+        "close_fds": True,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+    if os.name == 'nt':
+        # DETACHED_PROCESS (0x00000008) + CREATE_NO_WINDOW (0x08000000)
+        popen_kwargs["creationflags"] = 0x00000008 | 0x08000000
+    else:
+        popen_kwargs["start_new_session"] = True
 
     process = subprocess.Popen(
         [pythonw, server_script],
-        creationflags=CREATE_FLAGS,
-        close_fds=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        **popen_kwargs
     )
 
     # Save PID

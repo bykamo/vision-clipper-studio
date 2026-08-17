@@ -145,7 +145,10 @@ async def cancel():
     global current_process
     if current_process and current_process.poll() is None:
         try:
-            subprocess.run(['taskkill', '/F', '/T', '/PID', str(current_process.pid)], capture_output=True)
+            if os.name == 'nt':
+                subprocess.run(['taskkill', '/F', '/T', '/PID', str(current_process.pid)], capture_output=True)
+            else:
+                os.kill(current_process.pid, signal.SIGKILL)
         except Exception:
             current_process.kill()
         current_process = None
@@ -157,7 +160,10 @@ async def shutdown():
     global current_process
     if current_process and current_process.poll() is None:
         try:
-            subprocess.run(['taskkill', '/F', '/T', '/PID', str(current_process.pid)], capture_output=True)
+            if os.name == 'nt':
+                subprocess.run(['taskkill', '/F', '/T', '/PID', str(current_process.pid)], capture_output=True)
+            else:
+                os.kill(current_process.pid, signal.SIGKILL)
         except:
             pass
     pid_file = os.path.join(os.path.expanduser("~"), ".visionclipper.pid")

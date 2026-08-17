@@ -62,19 +62,33 @@ Pastikan komputer lo udah punya:
 
 ### Cara Install
 
-**Opsi 1: Pakai Installer (Windows)**
+**Opsi 1: Pakai CLI Installer (macOS)**
+```bash
+# Cukup jalankan perintah:
+vision-clipper install
+```
+> Script ini otomatis membuat `.venv`, install semua dependency, dan mendaftarkan perintah global `vision-clipper`.
+
+**Opsi 2: Pakai Installer (Windows)**
 ```bash
 # Buka folder `scripts/` dan jalankan:
 scripts\install.bat
 ```
 
-**Opsi 2: Manual via Terminal**
+**Opsi 3: Manual via Terminal**
 ```bash
 # Buka terminal di root folder project ini
 pip install -e .
 ```
 
 > Perintah ini akan mengunduh semua dependency dan mendaftarkan perintah `vision-clipper` ke sistem lo secara global.
+
+### Cara Uninstall (macOS)
+Bisa langsung ketik perintah CLI di Terminal:
+```bash
+vision-clipper uninstall
+```
+*(Atau jalankan skrip manual: `./scripts/uninstall_mac.sh`)*
 
 ### Konfigurasi API Key
 
@@ -108,15 +122,17 @@ Server akan **berjalan di background** dan browser otomatis terbuka ke `http://l
 | Cara | Perintah |
 |------|----------|
 | Dari **Web Dashboard** | Klik tombol merah **"Shut Down Background Server"** di bagian bawah halaman |
-| Dari **Terminal/CMD** | `vision-clipper --stop` |
+| Dari **Terminal/CMD** | `vision-clipper stop` atau `vision-clipper --stop` |
 
 #### Perintah CLI Tambahan
 
 ```bash
-vision-clipper              # Jalankan server di background
-vision-clipper --stop       # Hentikan server yang sedang berjalan
-vision-clipper --status     # Cek apakah server masih aktif
-vision-clipper --help       # Tampilkan bantuan
+vision-clipper              # Jalankan server di background & buka browser (auto buat .venv jika belum ada)
+vision-clipper install      # Install / reinstall dependensi & buat .venv secara terisolasi
+vision-clipper stop         # Hentikan server yang sedang berjalan
+vision-clipper status       # Cek apakah server masih aktif
+vision-clipper uninstall    # Hapus instalasi .venv & bersihkan cache (macOS)
+vision-clipper help         # Tampilkan bantuan
 ```
 
 Dashboard menyediakan:
