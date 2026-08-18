@@ -11,6 +11,7 @@ fi
 CURRENT_ENDPOINT=$(grep "^ROUTER_API_ENDPOINT=" .env 2>/dev/null | cut -d '=' -f2-)
 CURRENT_KEY=$(grep "^ROUTER_API_KEY=" .env 2>/dev/null | cut -d '=' -f2-)
 CURRENT_MODEL=$(grep "^ROUTER_LLM_MODEL=" .env 2>/dev/null | cut -d '=' -f2-)
+CURRENT_GROQ_KEY=$(grep "^GROQ_API_KEY=" .env 2>/dev/null | cut -d '=' -f2-)
 
 echo "========================================="
 echo "   🤖 KONFIGURASI AI LLM VISION CLIPPER"
@@ -47,11 +48,25 @@ USER_MODEL=${USER_MODEL:-$DEFAULT_MODEL}
 echo ""
 if [ -n "$CURRENT_KEY" ] && [[ "$CURRENT_KEY" != "sk-xxxx"* ]]; then
     MASKED_KEY="${CURRENT_KEY:0:6}...${CURRENT_KEY: -4}"
-    echo "API Key saat ini: $MASKED_KEY"
-    read -p "Masukkan API Key baru (atau tekan Enter untuk tetap gunakan yang lama): " USER_KEY
+    echo "LLM API Key saat ini: $MASKED_KEY"
+    read -p "Masukkan LLM API Key baru (atau Enter untuk tetap gunakan yang lama): " USER_KEY
     USER_KEY=${USER_KEY:-$CURRENT_KEY}
 else
-    read -p "Masukkan API Key Anda: " USER_KEY
+    read -p "Masukkan LLM API Key Anda: " USER_KEY
+fi
+
+echo ""
+echo "-----------------------------------------"
+echo "  🎙️ GROQ CLOUD WHISPER (Transkripsi Super Cepat ~3 detik)"
+echo "  Gratis tanpa kartu kredit di: https://console.groq.com"
+echo "-----------------------------------------"
+if [ -n "$CURRENT_GROQ_KEY" ] && [[ "$CURRENT_GROQ_KEY" != "gsk_xxxx"* ]]; then
+    MASKED_GROQ="${CURRENT_GROQ_KEY:0:6}...${CURRENT_GROQ_KEY: -4}"
+    echo "Groq API Key saat ini: $MASKED_GROQ"
+    read -p "Masukkan Groq API Key baru (Enter untuk tetap gunakan yang lama): " USER_GROQ_KEY
+    USER_GROQ_KEY=${USER_GROQ_KEY:-$CURRENT_GROQ_KEY}
+else
+    read -p "Masukkan Groq API Key (opsional/bisa diisi nanti): " USER_GROQ_KEY
 fi
 
 # Tulis konfigurasi ke file .env
@@ -60,6 +75,7 @@ cat << ENV_EOF > .env
 ROUTER_API_ENDPOINT=$SELECTED_ENDPOINT
 ROUTER_API_KEY=$USER_KEY
 ROUTER_LLM_MODEL=$USER_MODEL
+GROQ_API_KEY=$USER_GROQ_KEY
 ENV_EOF
 
 echo ""

@@ -34,13 +34,21 @@ set /p "USER_MODEL=Model AI (Tekan Enter untuk '%DEFAULT_MODEL%'): "
 if "%USER_MODEL%"=="" set "USER_MODEL=%DEFAULT_MODEL%"
 
 echo.
-set /p "USER_KEY=Masukkan API Key Anda: "
+set /p "USER_KEY=Masukkan LLM API Key Anda: "
+
+echo.
+echo -----------------------------------------
+echo   GROQ CLOUD WHISPER (Transkripsi Super Cepat)
+echo   Dapatkan gratis di: https://console.groq.com
+echo -----------------------------------------
+set /p "USER_GROQ_KEY=Masukkan Groq API Key (bisa dikosongkan jika belum ada): "
 
 (
 echo # VisionClipper Studio Environment Config
 echo ROUTER_API_ENDPOINT=%SELECTED_ENDPOINT%
 echo ROUTER_API_KEY=%USER_KEY%
 echo ROUTER_LLM_MODEL=%USER_MODEL%
+echo GROQ_API_KEY=%USER_GROQ_KEY%
 ) > .env
 
 echo.

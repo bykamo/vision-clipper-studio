@@ -26,8 +26,17 @@ call .venv\Scripts\activate.bat
 python -m pip install --upgrade pip setuptools wheel
 pip install -e .
 
-:: 3. Setup AI Config jika belum ada
-if not exist ".env" (
+:: 3. Setup AI Config jika belum ada atau belum lengkap
+set "NEEDS_CFG=0"
+if not exist ".env" set "NEEDS_CFG=1"
+if exist ".env" (
+    findstr /r /c:"^ROUTER_API_KEY=$" ".env" >nul && set "NEEDS_CFG=1"
+    findstr /r /c:"^ROUTER_API_KEY=sk-xxxx" ".env" >nul && set "NEEDS_CFG=1"
+    findstr /r /c:"^GROQ_API_KEY=$" ".env" >nul && set "NEEDS_CFG=1"
+    findstr /r /c:"^GROQ_API_KEY=gsk_xxxx" ".env" >nul && set "NEEDS_CFG=1"
+)
+
+if "%NEEDS_CFG%"=="1" (
     call scripts\configure_ai.bat
 )
 

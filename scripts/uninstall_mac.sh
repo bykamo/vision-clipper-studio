@@ -35,8 +35,8 @@ if [ -f "$PID_FILE" ]; then
     rm -f "$PID_FILE"
 fi
 
-# Pastikan port 5000 bersih
-PIDS=$(lsof -ti :5000 2>/dev/null || true)
+# Pastikan port 5050 bersih
+PIDS=$(lsof -ti :5050 2>/dev/null || true)
 if [ -n "$PIDS" ]; then
     kill -9 $PIDS 2>/dev/null || true
 fi

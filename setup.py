@@ -16,8 +16,6 @@ setup(
         "mediapipe",
         "moviepy",
         "yt-dlp",
-        "stable-ts",
-        "torch",
         "youtube-transcript-api",
         "webvtt-py"
     ],

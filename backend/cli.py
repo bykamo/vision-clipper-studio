@@ -5,7 +5,7 @@ import time
 import signal
 
 PID_FILE = os.path.join(os.path.expanduser("~"), ".visionclipper.pid")
-SERVER_URL = "http://localhost:5000"
+SERVER_URL = "http://localhost:5050"
 
 def get_running_pid():
     """Read PID from file and check if the process is still alive."""
@@ -49,6 +49,33 @@ def is_server_alive():
     except Exception:
         return False
 
+def check_and_prompt_ai_config():
+    """Prompt AI configuration if LLM API Key, endpoint, or Groq Key is missing."""
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    env_path = os.path.join(project_root, ".env")
+    
+    needs_config = False
+    if not os.path.exists(env_path):
+        needs_config = True
+    else:
+        with open(env_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        if "ROUTER_API_KEY=" not in content or "ROUTER_API_KEY=sk-xxxx" in content or "ROUTER_API_KEY=\n" in content:
+            needs_config = True
+        elif "GROQ_API_KEY=" not in content or "GROQ_API_KEY=gsk_xxxx" in content or "GROQ_API_KEY=\n" in content:
+            needs_config = True
+            
+    if needs_config:
+        print("[!] Konfigurasi AI LLM atau Groq API Key belum lengkap.")
+        if os.name == 'nt':
+            script_path = os.path.join(project_root, "scripts", "configure_ai.bat")
+            if os.path.exists(script_path):
+                subprocess.run([script_path], shell=True)
+        else:
+            script_path = os.path.join(project_root, "scripts", "configure_ai.sh")
+            if os.path.exists(script_path):
+                subprocess.run(["bash", script_path])
+
 def stop_server():
     """Stop the running background server."""
     pid = get_running_pid()
@@ -79,6 +106,8 @@ def stop_server():
 
 def start_server():
     """Start the Flask server as a detached background process."""
+    check_and_prompt_ai_config()
+
     # Check if already running
     pid = get_running_pid()
     if pid:
@@ -90,7 +119,7 @@ def start_server():
         return
 
     if is_server_alive():
-        print(f"[INFO] Port 5000 sudah dipakai (mungkin instance sebelumnya).")
+        print(f"[INFO] Port 5050 sudah dipakai (mungkin instance sebelumnya).")
         print(f"[INFO] Buka di browser: {SERVER_URL}")
         import webbrowser
         webbrowser.open(SERVER_URL)
@@ -161,7 +190,7 @@ def start_server():
         webbrowser.open(SERVER_URL)
     else:
         print()
-        print("[ERROR] Server gagal start. Cek apakah port 5000 sudah dipakai.")
+        print("[ERROR] Server gagal start. Cek apakah port 5050 sudah dipakai.")
         cleanup_pid_file()
 
 def main():

@@ -41,6 +41,7 @@ load_env()
 DEFAULT_ENDPOINT = os.environ.get("ROUTER_API_ENDPOINT", "")
 DEFAULT_API_KEY = os.environ.get("ROUTER_API_KEY", "")
 DEFAULT_LLM_MODEL = os.environ.get("ROUTER_LLM_MODEL", "ag/gemini-3.5-flash-low")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMP_DIR = os.path.join(PROJECT_ROOT, "temp")

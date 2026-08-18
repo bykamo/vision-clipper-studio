@@ -39,14 +39,23 @@ source .venv/bin/activate
 pip install --upgrade pip setuptools wheel
 pip install -e .
 
-# 4. Buat file .env dan jalankan konfigurasi AI jika belum ada
+# 4. Buat file .env dan jalankan konfigurasi AI jika belum ada / belum lengkap
 if [ -f "scripts/configure_ai.sh" ]; then
     chmod +x scripts/configure_ai.sh
 fi
 
-if [ ! -f ".env" ] || ! grep -q "^ROUTER_API_KEY=" .env 2>/dev/null || grep -q "^ROUTER_API_KEY=sk-xxxx" .env 2>/dev/null; then
+needs_config=false
+if [ ! -f ".env" ]; then
+    needs_config=true
+elif ! grep -q "^ROUTER_API_KEY=" .env 2>/dev/null || grep -q "^ROUTER_API_KEY=sk-xxxx" .env 2>/dev/null || grep -q "^ROUTER_API_KEY=$" .env 2>/dev/null; then
+    needs_config=true
+elif ! grep -q "^GROQ_API_KEY=" .env 2>/dev/null || grep -q "^GROQ_API_KEY=gsk_xxxx" .env 2>/dev/null || grep -q "^GROQ_API_KEY=$" .env 2>/dev/null; then
+    needs_config=true
+fi
+
+if [ "$needs_config" = true ]; then
     echo ""
-    echo "[*] Mengatur konfigurasi AI..."
+    echo "[*] Mengatur konfigurasi AI & Groq API..."
     bash scripts/configure_ai.sh || true
 fi
 
@@ -60,7 +69,7 @@ cat << 'EOF' > "$LAUNCHER"
 #!/bin/bash
 PROJECT_DIR="TARGET_PROJECT_DIR"
 PID_FILE="$HOME/.visionclipper.pid"
-PORT=5000
+PORT=5050
 
 is_running() {
     lsof -i :$PORT >/dev/null 2>&1
@@ -84,7 +93,7 @@ case "$1" in
             fi
             rm -f "$PID_FILE"
         fi
-        # Kill process listening on port 5000 jika masih ada
+        # Kill process listening on port 5050 jika masih ada
         PIDS=$(lsof -ti :$PORT 2>/dev/null || true)
         if [ -n "$PIDS" ]; then
             kill -9 $PIDS 2>/dev/null || true
@@ -132,9 +141,18 @@ case "$1" in
             bash "$PROJECT_DIR/scripts/install_mac.sh"
         fi
 
-        # Cek jika konfigurasi API Key masih belum diisi
-        if [ ! -f "$PROJECT_DIR/.env" ] || ! grep -q "^ROUTER_API_KEY=" "$PROJECT_DIR/.env" 2>/dev/null || grep -q "^ROUTER_API_KEY=sk-xxxx" "$PROJECT_DIR/.env" 2>/dev/null; then
-            echo "[!] Konfigurasi AI belum diatur."
+        # Cek jika konfigurasi API Key atau Groq API Key masih belum diisi
+        needs_cfg=false
+        if [ ! -f "$PROJECT_DIR/.env" ]; then
+            needs_cfg=true
+        elif ! grep -q "^ROUTER_API_KEY=" "$PROJECT_DIR/.env" 2>/dev/null || grep -q "^ROUTER_API_KEY=sk-xxxx" "$PROJECT_DIR/.env" 2>/dev/null || grep -q "^ROUTER_API_KEY=$" "$PROJECT_DIR/.env" 2>/dev/null; then
+            needs_cfg=true
+        elif ! grep -q "^GROQ_API_KEY=" "$PROJECT_DIR/.env" 2>/dev/null || grep -q "^GROQ_API_KEY=gsk_xxxx" "$PROJECT_DIR/.env" 2>/dev/null || grep -q "^GROQ_API_KEY=$" "$PROJECT_DIR/.env" 2>/dev/null; then
+            needs_cfg=true
+        fi
+
+        if [ "$needs_cfg" = true ]; then
+            echo "[!] Konfigurasi AI atau Groq API Key belum lengkap."
             bash "$PROJECT_DIR/scripts/configure_ai.sh"
         fi
 

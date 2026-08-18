@@ -385,7 +385,7 @@ document.addEventListener('DOMContentLoaded', () => {
         outputDir = '';
 
         const subStyle = document.querySelector('input[name="sub_style"]:checked')?.value || 'tiktok_viral';
-        const whisperModel = document.getElementById('whisper_model')?.value || 'small';
+        const whisperModel = document.getElementById('whisper_model')?.value || 'groq';
         const streamUrl = `/stream?mode=${encodeURIComponent(currentMode)}&source_type=${encodeURIComponent(sourceType)}&source=${encodeURIComponent(source)}&num_clips=${encodeURIComponent(numClips)}&sub_style=${encodeURIComponent(subStyle)}&whisper_model=${encodeURIComponent(whisperModel)}`;
         eventSource = new EventSource(streamUrl);
 

@@ -18,11 +18,11 @@
 |---|-------|-----------|
 | 1 | **AI Smart Crop** | *Cinematic Face Tracking* otomatis — kamera mengikuti wajah speaker dan mengkrop video jadi format vertikal 9:16. |
 | 2 | **Audio Enhancer** | Jernihin audio otomatis pakai *Highpass Filter* + *Compressor* untuk volume yang seimbang. |
-| 3 | **CapCut-style Subtitles** | Generate subtitle per-kata menggunakan **Whisper AI**, langsung di-burn ke video. |
+| 3 | **CapCut-style Subtitles** | Generate subtitle per-kata menggunakan **Groq Cloud Whisper** (kilat ~3 detik) atau **Whisper AI**, langsung di-burn ke video. |
 | 4 | **Viral Segment Analysis** | AI (via OpenRouter / OpenAI / 9Router LLM) menganalisa transkrip dan menemukan momen dengan *hook* paling menarik. |
 | 5 | **Viral Metadata & SEO** | Auto-generate judul opsi, deskripsi caption viral, hashtags, serta ide title hook disimpan dalam file `.txt` terpisah untuk tiap klip. |
 | 6 | **One-Click CLI & Clean Lifecycle** | Perintah CLI universal (`install`, `config`, `start`, `stop`, `status`, `uninstall`) dengan auto-isolated `.venv`. |
-| 7 | **Web Dashboard (GUI)** | Kontrol semuanya lewat tampilan web premium berbasis **FastAPI** di `localhost:5000`. |
+| 7 | **Web Dashboard (GUI)** | Kontrol semuanya lewat tampilan web premium berbasis **FastAPI** di `localhost:5050`. |
 
 ---
 
@@ -114,7 +114,7 @@ Cukup buka terminal di mana saja, lalu ketik:
 vision-clipper
 ```
 
-* Server akan **berjalan di background** (tanpa popup jendela hitam) dan otomatis membuka browser ke `http://localhost:5000`.
+* Server akan **berjalan di background** (tanpa popup jendela hitam) dan otomatis membuka browser ke `http://localhost:5050`.
 * **Terminal bisa langsung ditutup** — server tetap berjalan sampai Anda hentikan sendiri.
 
 ---
@@ -169,7 +169,7 @@ Mode alternatif — Dioptimalkan untuk konten *affiliate/review*, memotong segme
 | Komponen | Teknologi |
 |----------|-----------|
 | Web Framework | **FastAPI** + **Uvicorn** + Server-Sent Events (SSE) |
-| Speech-to-Text | **Faster Whisper** / **Whisper AI** |
+| Speech-to-Text | **Groq Cloud Whisper** (`whisper-large-v3-turbo`) / **Faster Whisper** |
 | Video Processing | **FFmpeg** + **MoviePy** + **OpenCV** |
 | Face Detection | **MediaPipe** (BlazeFace Short Range) |
 | AI Analysis | LLM via OpenRouter / OpenAI / Custom Provider |
@@ -184,7 +184,7 @@ Mode alternatif — Dioptimalkan untuk konten *affiliate/review*, memotong segme
 | `FFmpeg not found` | Pastikan FFmpeg sudah terinstal dan masuk ke System PATH. Restart terminal setelah instalasi. |
 | `vision-clipper: command not found` | Muat ulang shell dengan `source ~/.zshrc` (Mac) atau buka terminal baru (Windows). |
 | API Error / timeout | Jalankan `vision-clipper config` untuk memastikan Endpoint dan API Key sudah benar. |
-| Port 5000 bentrok | Matikan instance sebelumnya dengan `vision-clipper stop`. |
+| Port 5050 bentrok | Matikan instance sebelumnya dengan `vision-clipper stop`. |
 
 ---
 

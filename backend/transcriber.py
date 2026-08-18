@@ -141,85 +141,74 @@ def fetch_ytdlp_subs(url, job_id=None):
         log(f"Gagal mengambil subtitle via yt-dlp: {e}", job_id=job_id)
         return None
 
-def download_custom_whisper_model(model_dir, repo_id, job_id=None):
+def transcribe_with_groq(audio_path, job_id=None):
+    from backend.utils import GROQ_API_KEY, log
     import requests
-    import os
-    import time
-    
-    os.makedirs(model_dir, exist_ok=True)
-    
-    files = [
-        "config.json",
-        "preprocessor_config.json",
-        "vocabulary.json",
-        "tokenizer.json",
-        "model.bin"
-    ]
-    
-    log(f"[INFO] Memulai sinkronisasi model Whisper dari Hugging Face: {repo_id}", job_id=job_id)
-    log(f"[INFO] Folder penyimpanan lokal: {model_dir}", job_id=job_id)
-    
-    for filename in files:
-        dest_path = os.path.join(model_dir, filename)
-        
-        # Check if file exists and has size > 0
-        if os.path.exists(dest_path):
-            size = os.path.getsize(dest_path)
-            # model.bin size is around 1.5 GB
-            if filename == "model.bin" and size > 1400 * 1024 * 1024:
-                log(f"[INFO] File {filename} sudah terdownload ({size / (1024*1024):.1f} MB).", job_id=job_id)
-                continue
-            elif filename != "model.bin" and size > 0:
-                continue
-                
-        url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
-        log(f"[INFO] Mengunduh {filename}...", job_id=job_id)
-        
-        response = requests.get(url, stream=True, timeout=30)
-        response.raise_for_status()
-        
-        total_size = int(response.headers.get('content-length', 0))
-        chunk_size = 1024 * 1024 # 1 MB chunks
-        
-        downloaded = 0
-        start_time = time.time()
-        last_log_time = 0
-        
-        temp_dest_path = dest_path + ".download"
-        
-        with open(temp_dest_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=chunk_size):
-                if chunk:
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    
-                    if total_size > 0:
-                        percent = (downloaded / total_size) * 100
-                        current_time = time.time()
-                        if current_time - last_log_time >= 1.0 or downloaded == total_size:
-                            elapsed = current_time - start_time
-                            speed = downloaded / elapsed if elapsed > 0 else 0
-                            speed_mb = speed / (1024 * 1024)
-                            
-                            eta = (total_size - downloaded) / speed if speed > 0 else 0
-                            eta_str = f"{int(eta // 60):02d}:{int(eta % 60):02d}"
-                            
-                            log(f"Progress Download: {percent:.1f}% | Sisa Waktu (ETA): {eta_str} | ({downloaded / (1024*1024):.1f} MB / {total_size / (1024*1024):.1f} MB @ {speed_mb:.1f} MB/s)", job_id=job_id)
-                            last_log_time = current_time
-                            
-        if os.path.exists(dest_path):
-            os.remove(dest_path)
-        os.rename(temp_dest_path, dest_path)
-        log(f"[SUCCESS] Berhasil mengunduh {filename}!", job_id=job_id)
 
-def transcribe_video(video_path, source_url=None, model_size="large-v3-turbo", job_id=None):
+    groq_key = (GROQ_API_KEY or os.environ.get("GROQ_API_KEY", "")).strip()
+    if not groq_key or groq_key.startswith("gsk_xxxx"):
+        raise ValueError("GROQ_API_KEY belum diatur di file .env! Dapatkan API Key gratis di https://console.groq.com lalu masukkan ke file .env.")
+
+    log(f"Mengirim audio ke Groq Cloud Whisper API (whisper-large-v3-turbo)...", job_id=job_id)
+    url = "https://api.groq.com/openai/v1/audio/transcriptions"
+    headers = {
+        "Authorization": f"Bearer {groq_key}"
+    }
+
+    with open(audio_path, "rb") as f:
+        files = {
+            "file": (os.path.basename(audio_path), f, "audio/mp3")
+        }
+        data = {
+            "model": "whisper-large-v3-turbo",
+            "response_format": "verbose_json",
+            "language": "id",
+            "temperature": "0.0"
+        }
+        log("Menunggu respon dari Groq Cloud AI (estimasi: 2-8 detik)...", job_id=job_id)
+        resp = requests.post(url, headers=headers, files=files, data=data, timeout=120)
+
+    if resp.status_code != 200:
+        raise RuntimeError(f"Groq API Error ({resp.status_code}): {resp.text}")
+
+    result = resp.json()
+    raw_segments = result.get("segments", [])
+    
+    segments = []
+    for seg in raw_segments:
+        text = seg.get("text", "").strip()
+        start = float(seg.get("start", 0.0))
+        end = float(seg.get("end", 0.0))
+        
+        words = []
+        if "words" in seg and seg["words"]:
+            for w in seg["words"]:
+                words.append({
+                    "word": w.get("word", "").strip(),
+                    "start": float(w.get("start", 0.0)),
+                    "end": float(w.get("end", 0.0))
+                })
+        else:
+            words = split_segment_into_words(text, start, end)
+
+        segments.append({
+            "start": start,
+            "end": end,
+            "text": text,
+            "words": words
+        })
+
+    log(f"[SUCCESS] Transkripsi Groq selesai kilat! Ditemukan {len(segments)} segmen audio.", job_id=job_id)
+    return segments
+
+def transcribe_video(video_path, source_url=None, model_size="groq", job_id=None):
     is_youtube_url = source_url and ("youtube.com" in source_url or "youtu.be" in source_url)
+    video_id = extract_youtube_id(source_url) if is_youtube_url else None
     
     if model_size == "youtube":
         if not is_youtube_url:
             raise ValueError("Model transkripsi YouTube dipilih, tetapi video sumber bukan video YouTube.")
             
-        video_id = extract_youtube_id(source_url)
         if not video_id:
             raise ValueError("Gagal mengekstrak ID video YouTube dari URL.")
             
@@ -263,176 +252,55 @@ def transcribe_video(video_path, source_url=None, model_size="large-v3-turbo", j
             
         raise RuntimeError("Gagal mendapatkan transkrip/subtitle Bahasa Indonesia dari YouTube (dan mode YouTube saja dipilih).")
 
-    # FALLBACK CHAIN FOR WHISPER MODELS: 1. Local Cache -> 2. Faster-Whisper
-    if is_youtube_url:
-        video_id = extract_youtube_id(source_url)
-        if video_id:
-            # Check local cache first
-            from backend.utils import PROJECT_ROOT
-            import json
-            cache_dir = os.path.join(PROJECT_ROOT, "downloads", "transcripts")
-            os.makedirs(cache_dir, exist_ok=True)
-            cache_path = os.path.join(cache_dir, f"{video_id}_{model_size}.json")
-            
-            if os.path.exists(cache_path):
-                log(f"Memuat transkrip dari cache lokal: {cache_path}", job_id=job_id)
-                try:
-                    with open(cache_path, "r", encoding="utf-8") as f:
-                        segments = json.load(f)
-                    return segments
-                except Exception as e:
-                    log(f"Gagal memuat cache transkrip: {e}, melakukan fetch ulang...", job_id=job_id)
+    # Check local cache first
+    if is_youtube_url and video_id:
+        from backend.utils import PROJECT_ROOT
+        import json
+        cache_dir = os.path.join(PROJECT_ROOT, "downloads", "transcripts")
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_path = os.path.join(cache_dir, f"{video_id}_groq.json")
+        
+        if os.path.exists(cache_path):
+            log(f"Memuat transkrip dari cache lokal: {cache_path}", job_id=job_id)
+            try:
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    segments = json.load(f)
+                return segments
+            except Exception as e:
+                log(f"Gagal memuat cache transkrip: {e}, melakukan fetch ulang...", job_id=job_id)
 
-    # Step 3: Stable-Whisper (wraps Faster-Whisper with refined timestamps)
-    import stable_whisper
-    import torch
-    global _whisper_model
-
-    log("Extracting audio to .wav to prevent VRAM leak and speed up Whisper...", job_id=job_id)
-    temp_audio_path = tempfile.mktemp(suffix=".wav", dir=TEMP_DIR)
+    # Groq Cloud Whisper (Default & Ultra Cepat)
+    log("Mengekstrak audio terkompresi mono MP3 untuk Groq Whisper...", job_id=job_id)
+    temp_audio_path = tempfile.mktemp(suffix=".mp3", dir=TEMP_DIR)
+    # Ekstrak mono 48kbps 16kHz audio (ukuran file hanya ~15-20 MB untuk durasi 70+ menit)
     extract_cmd = [
-        "ffmpeg", "-y", "-i", video_path, 
-        "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", 
+        "ffmpeg", "-y", "-i", video_path,
+        "-vn", "-acodec", "libmp3lame", "-b:a", "48k", "-ar", "16000", "-ac", "1",
         temp_audio_path
     ]
     try:
-        run_command(extract_cmd, "Extracting Audio to WAV", job_id=job_id)
-    except Exception as e:
-        log(f"Audio extraction failed: {e}. Falling back to original video file.", job_id=job_id)
-        temp_audio_path = video_path
-
-    if torch.cuda.is_available():
-        device = "cuda"
-        compute_type = "float16"
-    else:
-        log("WARNING: GPU/CUDA tidak terdeteksi oleh sistem! Pytorch Anda mungkin versi CPU-only.", job_id=job_id)
-        log("Memaksa beralih ke mode CPU (transkripsi akan berjalan lebih lambat).", job_id=job_id)
-        device = "cpu"
-        compute_type = "int8"
-    
-    model_path_or_size = model_size
-    if model_size == "large-v3-turbo":
-        from backend.utils import PROJECT_ROOT
-        import shutil
+        run_command(extract_cmd, "Extracting lightweight audio for Groq", job_id=job_id)
+        segments = transcribe_with_groq(temp_audio_path, job_id=job_id)
         
-        # Tentukan folder data aplikasi yang aman (AppData/Local di Windows, .local/share di Linux/macOS)
-        if os.name == 'nt':
-            app_data_dir = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or os.path.expanduser("~")
-        else:
-            app_data_dir = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
-            
-        new_model_dir = os.path.join(app_data_dir, "vision-clipper", "whisper_models", "large-v3-turbo")
-        
-        # Lokasi-lokasi lama untuk migrasi
-        old_proj_dir = os.path.join(PROJECT_ROOT, "downloads", "whisper_models", "large-v3-turbo")
-        old_cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "whisper_models", "large-v3-turbo")
-        
-        # Migrasikan model lama jika ada di salah satu folder lama
-        for old_dir in [old_proj_dir, old_cache_dir]:
-            if os.path.exists(old_dir) and not os.path.exists(new_model_dir):
-                try:
-                    log(f"[INFO] Memindahkan model Whisper lama dari {old_dir} ke {new_model_dir}...", job_id=job_id)
-                    os.makedirs(os.path.dirname(new_model_dir), exist_ok=True)
-                    shutil.move(old_dir, new_model_dir)
-                    
-                    # Bersihkan folder parent lama jika kosong
-                    parent_dir = os.path.dirname(old_dir)
-                    if os.path.exists(parent_dir) and not os.listdir(parent_dir):
-                        os.rmdir(parent_dir)
-                    log("[SUCCESS] Migrasi model Whisper selesai!", job_id=job_id)
-                except Exception as e:
-                    log(f"[WARNING] Gagal memindahkan model Whisper dari {old_dir}: {e}", job_id=job_id)
-                    
-            # Hapus jika duplikat/tersisa di lokasi lama
-            if os.path.exists(old_dir) and os.path.exists(new_model_dir):
-                try:
-                    shutil.rmtree(old_dir)
-                    parent_dir = os.path.dirname(old_dir)
-                    if os.path.exists(parent_dir) and not os.listdir(parent_dir):
-                        os.rmdir(parent_dir)
-                except Exception:
-                    pass
-                    
-        model_dir = new_model_dir
-        repo_id = "deepdml/faster-whisper-large-v3-turbo-ct2"
-        try:
-            download_custom_whisper_model(model_dir, repo_id, job_id=job_id)
-            model_path_or_size = model_dir
-        except Exception as e:
-            log(f"[WARNING] Gagal mengunduh custom model secara langsung ({e}). Fallback ke library downloader...", job_id=job_id)
-            model_path_or_size = "deepdml/faster-whisper-large-v3-turbo-ct2"
-
-    log(f"Loading Stable-Whisper model '{model_size}' on device: {device} ({compute_type})", job_id=job_id)
-    
-    if _whisper_model is None:
-        _whisper_model = stable_whisper.load_faster_whisper(model_path_or_size, device=device, compute_type=compute_type)
-    
-    log("Transcribing audio with Stable-Whisper (refined word-level timestamps + VAD)...", job_id=job_id)
-    log("Progress Transkripsi: 0.0% | Sisa Waktu (ETA): Menghitung... | Stable-Whisper sedang memproses seluruh audio...", job_id=job_id)
-    
-    start_time = time.time()
-    
-    # transcribe_stable returns a WhisperResult with refined timestamps
-    # - vad=True: Voice Activity Detection to avoid hallucination during silence
-    # - regroup=True: Auto-regroup words into natural sentence boundaries
-    # - temperature=0.0: No randomness for consistent, deterministic output
-    # - condition_on_previous_text=False: Prevents drift/repetition on fast speech
-    result = _whisper_model.transcribe_stable(
-        temp_audio_path,
-        language="id",
-        vad=True,
-        regroup=True,
-        temperature=0.0,
-        condition_on_previous_text=False
-    )
-    
-    elapsed = time.time() - start_time
-    
-    # Convert stable-whisper WhisperResult to our standard dict format
-    segments = []
-    for segment in result.segments:
-        words_list = []
-        if segment.words:
-            for word in segment.words:
-                words_list.append({
-                    "word": word.word,
-                    "start": word.start,
-                    "end": word.end
-                })
-        
-        segments.append({
-            "start": segment.start,
-            "end": segment.end,
-            "text": segment.text,
-            "words": words_list
-        })
-
-    log(f"Progress Transkripsi: 100.0% | Sisa Waktu (ETA): 00:00:00 | Transkripsi Selesai.", job_id=job_id)
-    log(f"Transcription complete in {elapsed:.1f}s. {len(segments)} segments found (timestamps refined by Stable-Whisper).", job_id=job_id)
-    
-    if temp_audio_path != video_path and os.path.exists(temp_audio_path):
-        try:
-            os.remove(temp_audio_path)
-        except Exception as e:
-            log(f"Warning: Could not remove temp audio {temp_audio_path}: {e}", job_id=job_id)
-        
-    # Save local Whisper transcript result under same cache file if it was a YouTube video
-    if source_url and ("youtube.com" in source_url or "youtu.be" in source_url):
-        video_id = extract_youtube_id(source_url)
-        if video_id:
-            from backend.utils import PROJECT_ROOT
-            import json
-            cache_dir = os.path.join(PROJECT_ROOT, "downloads", "transcripts")
-            os.makedirs(cache_dir, exist_ok=True)
-            cache_path = os.path.join(cache_dir, f"{video_id}_{model_size}.json")
+        # Simpan ke cache jika ada video_id
+        if is_youtube_url and video_id and segments:
             try:
+                from backend.utils import PROJECT_ROOT
+                import json
+                cache_dir = os.path.join(PROJECT_ROOT, "downloads", "transcripts")
+                os.makedirs(cache_dir, exist_ok=True)
+                cache_path = os.path.join(cache_dir, f"{video_id}_groq.json")
                 with open(cache_path, "w", encoding="utf-8") as f:
                     json.dump(segments, f, indent=2, ensure_ascii=False)
-                log(f"Transkrip hasil Whisper disimpan ke cache lokal: {cache_path}", job_id=job_id)
-            except Exception as e:
-                log(f"Gagal menyimpan cache transkrip Whisper: {e}", job_id=job_id)
-                
-    return segments
+            except Exception:
+                pass
+        return segments
+    finally:
+        if os.path.exists(temp_audio_path):
+            try:
+                os.remove(temp_audio_path)
+            except Exception:
+                pass
 
 def build_transcript_text(segments):
     lines = []

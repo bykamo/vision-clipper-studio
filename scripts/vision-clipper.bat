@@ -38,8 +38,17 @@ if not exist ".venv" (
     call "%PROJECT_DIR%\scripts\install.bat"
 )
 
-:: Auto prompt config jika .env belum ada
-if not exist ".env" (
+:: Auto prompt config jika .env belum ada atau belum lengkap
+set "NEEDS_CFG=0"
+if not exist ".env" set "NEEDS_CFG=1"
+if exist ".env" (
+    findstr /r /c:"^ROUTER_API_KEY=$" ".env" >nul && set "NEEDS_CFG=1"
+    findstr /r /c:"^ROUTER_API_KEY=sk-xxxx" ".env" >nul && set "NEEDS_CFG=1"
+    findstr /r /c:"^GROQ_API_KEY=$" ".env" >nul && set "NEEDS_CFG=1"
+    findstr /r /c:"^GROQ_API_KEY=gsk_xxxx" ".env" >nul && set "NEEDS_CFG=1"
+)
+
+if "%NEEDS_CFG%"=="1" (
     call "%PROJECT_DIR%\scripts\configure_ai.bat"
 )
 

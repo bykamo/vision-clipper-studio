@@ -6,10 +6,7 @@ def download_video_profesional(url: str, job_id=None) -> str:
     log(f"Memulai Download URL (Mode Profesional): {url}", job_id=job_id)
     
     format_string = (
-        'bestvideo[height<=1080][ext=mp4][vcodec^=avc]+bestaudio[ext=m4a]/'
-        'bestvideo[height<=1080][ext=webm][vcodec^=vp9]+bestaudio/'
-        'bestvideo[height<=1080][vcodec!^=av01]+bestaudio/'
-        'best'
+        'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best'
     )
     
     download_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "downloads")
@@ -47,7 +44,15 @@ def download_video_profesional(url: str, job_id=None) -> str:
         'restrictfilenames': True,
         'noplaylist': True,
         'writethumbnail': False,
-        'postprocessors': [],
+        'postprocessors': [{
+            'key': 'FFmpegVideoConvertor',
+            'preferedformat': 'mp4',
+        }],
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['tv', 'ios', 'android', 'web']
+            }
+        },
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
         'http_headers': {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
