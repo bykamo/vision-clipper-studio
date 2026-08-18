@@ -50,7 +50,7 @@ def download_video_profesional(url: str, job_id=None) -> str:
         }],
         'extractor_args': {
             'youtube': {
-                'player_client': ['tv', 'ios', 'android', 'web']
+                'player_client': ['android_vr', 'web']
             }
         },
         'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',

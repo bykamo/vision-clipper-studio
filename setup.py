@@ -13,7 +13,6 @@ setup(
         "pydantic",
         "requests",
         "opencv-python",
-        "mediapipe",
         "moviepy",
         "yt-dlp",
         "youtube-transcript-api",

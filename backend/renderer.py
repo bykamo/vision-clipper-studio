@@ -1,13 +1,8 @@
 import os
 import sys
-import urllib.request
+import cv2
 from backend.utils import log, format_ass_timestamp, run_command, TEMP_DIR
 from moviepy import VideoFileClip
-import mediapipe as mp
-from mediapipe.tasks import python as mp_python
-from mediapipe.tasks.python import vision
-
-MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "blaze_face_short_range.tflite")
 
 def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, title_hook=None, sub_style="tiktok_viral"):
     """Generate .ass subtitle file with the specified style."""
@@ -212,17 +207,12 @@ class MoviePyLogger(ProgressBarLogger):
                 self.last_log_time = current_time
 
 def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None):
-    download_model(job_id=job_id)
     log(f"Applying AI Smart Crop (Cinematic Face Tracking v2)...", job_id=job_id)
     
     clip = VideoFileClip(video_path).subclipped(start_time, end_time)
     
-    base_options = mp_python.BaseOptions(model_asset_path=MODEL_PATH)
-    options = vision.FaceDetectorOptions(
-        base_options=base_options,
-        min_detection_confidence=0.65  # Filter weak/false detections
-    )
-    detector = vision.FaceDetector.create_from_options(options)
+    # Load universal OpenCV Cascade Face Detector (built-in, stable on all platforms)
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
     width, height = clip.size
     target_width = int(height * 9 / 16)
@@ -280,42 +270,40 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
         
         # ── Face Detection (every N frames) ──
         if frame_count % DETECT_INTERVAL == 0:
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
-            detection_result = detector.detect(mp_image)
+            try:
+                gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+                # Scale image down slightly for faster detection
+                detected_faces = face_cascade.detectMultiScale(
+                    gray,
+                    scaleFactor=1.15,
+                    minNeighbors=5,
+                    minSize=(int(width * 0.04), int(height * 0.04))
+                )
+            except Exception:
+                detected_faces = ()
             
             valid_faces = []
-            if detection_result.detections:
-                for detection in detection_result.detections:
-                    # Filter by confidence score
-                    score = detection.categories[0].score if detection.categories else 0
-                    if score < 0.65:
-                        continue
-                    
-                    bbox = detection.bounding_box
-                    face_area = bbox.width * bbox.height
-                    
-                    # Filter tiny detections (noise/artifacts)
+            if len(detected_faces) > 0:
+                for (fx, fy, fw, fh) in detected_faces:
+                    face_area = fw * fh
                     if face_area < MIN_FACE_AREA:
                         continue
                     
-                    face_center_x = bbox.origin_x + (bbox.width / 2)
-                    face_center_y = bbox.origin_y + (bbox.height / 2)
+                    face_center_x = fx + (fw / 2)
+                    face_center_y = fy + (fh / 2)
                     
                     # Filter faces that are outside reasonable vertical range
-                    # (skip detections near very top/bottom edges — likely artifacts)
                     if face_center_y < height * 0.05 or face_center_y > height * 0.95:
                         continue
                     
                     valid_faces.append({
                         "center_x": face_center_x,
                         "area": face_area,
-                        "score": score,
                         "distance": abs(face_center_x - smoothed_x)
                     })
             
             if valid_faces:
                 # Score faces: prefer large faces close to current position
-                # Weight: 60% proximity to current camera, 40% face area (larger = more important)
                 max_area = max(f["area"] for f in valid_faces)
                 max_dist = max(f["distance"] for f in valid_faces) or 1
                 
