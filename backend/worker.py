@@ -13,7 +13,7 @@ def main():
     parser.add_argument("--num-clips", type=int, default=5, help="Number of clips")
     parser.add_argument("--mode", type=str, default="hook", choices=["hook", "affiliate"], help="Analysis mode")
     parser.add_argument("--job-id", type=int, default=None, help="Job ID for DB logging")
-    parser.add_argument("--model", type=str, default="large-v3-turbo", help="Whisper model size")
+    parser.add_argument("--model", type=str, default="groq", help="Transcription provider")
     parser.add_argument("--out-dir", type=str, default=DEFAULT_OUT_DIR, help="Output directory")
     parser.add_argument("--sub-style", type=str, default="tiktok_viral", choices=["tiktok_viral", "karaoke", "minimalist", "word_pop", "none"], help="Subtitle style")
 
