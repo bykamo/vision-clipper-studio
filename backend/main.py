@@ -16,10 +16,14 @@ app = FastAPI()
 current_process = None
 
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
+DIST_DIR = os.path.join(FRONTEND_DIR, "dist")
+SERVE_DIR = DIST_DIR if os.path.exists(DIST_DIR) else FRONTEND_DIR
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    index_path = os.path.join(FRONTEND_DIR, "index.html")
+    index_path = os.path.join(SERVE_DIR, "index.html")
+    if not os.path.exists(index_path):
+        index_path = os.path.join(FRONTEND_DIR, "index.html")
     with open(index_path, "r", encoding="utf-8") as f:
         return f.read()
 
@@ -176,7 +180,7 @@ async def shutdown():
     return {"status": "shutting_down"}
 
 @app.get("/stream")
-async def stream(mode: str = "", source_type: str = "", source: str = "", num_clips: str = "5", sub_style: str = "tiktok_viral", whisper_model: str = "large-v3-turbo"):
+async def stream(mode: str = "", source_type: str = "", source: str = "", num_clips: str = "5", sub_style: str = "tiktok_viral", whisper_model: str = "groq"):
     
     cmd = [
         sys.executable, "-u", "-m", "backend.worker",
@@ -255,8 +259,8 @@ async def stream(mode: str = "", source_type: str = "", source: str = "", num_cl
             
     return StreamingResponse(generate(), media_type="text/event-stream")
 
-# Serve static files from frontend directory
-app.mount("/", StaticFiles(directory=FRONTEND_DIR), name="static")
+# Serve static files from frontend directory (production dist or root)
+app.mount("/", StaticFiles(directory=SERVE_DIR), name="static")
 
 if __name__ == '__main__':
     import uvicorn

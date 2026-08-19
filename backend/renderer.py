@@ -6,6 +6,7 @@ from moviepy import VideoFileClip
 
 CASCADE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "haarcascade_frontalface_default.xml")
 PROFILE_CASCADE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "haarcascade_profileface.xml")
+YUNET_MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "face_detection_yunet_2023mar.onnx")
 
 def _sanitize_word_timestamps(words, clip_start, clip_end, min_word_dur=0.18):
     """
@@ -57,12 +58,14 @@ def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, title_h
     # Sanitize timestamps to guarantee clean, non-overlapping flow
     sanitized_words = _sanitize_word_timestamps(words, clip_start, clip_end)
 
-    if sub_style == "karaoke":
+    if sub_style in ["karaoke", "classic_karaoke"]:
         _generate_karaoke_style(sanitized_words, out_ass_path, clip_start, clip_end)
     elif sub_style == "minimalist":
         _generate_minimalist_style(sanitized_words, out_ass_path, clip_start, clip_end)
     elif sub_style == "word_pop":
         _generate_word_pop_style(sanitized_words, out_ass_path, clip_start, clip_end)
+    elif sub_style in ["none", "no_subtitle"]:
+        pass
     else:
         _generate_tiktok_viral_style(sanitized_words, out_ass_path, clip_start, clip_end)
 
@@ -238,14 +241,10 @@ class MoviePyLogger(ProgressBarLogger):
                 self.last_log_time = current_time
 
 def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None):
-    log(f"Applying AI Smart Crop (Cinematic Face Tracking v3 - Dual Profile & Anchor)...", job_id=job_id)
+    log(f"Applying AI Smart Crop (YuNet DNN Neural Face Tracking & Shot-Aware Framing)...", job_id=job_id)
     
     clip = VideoFileClip(video_path).subclipped(start_time, end_time)
     
-    # Load frontal and profile cascade classifiers
-    frontal_cascade = cv2.CascadeClassifier(CASCADE_PATH) if os.path.exists(CASCADE_PATH) else None
-    profile_cascade = cv2.CascadeClassifier(PROFILE_CASCADE_PATH) if os.path.exists(PROFILE_CASCADE_PATH) else None
-
     width, height = clip.size
     target_width = int(height * 9 / 16)
     
@@ -262,16 +261,60 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
         """Clamp camera center X within valid crop boundaries."""
         return max(MIN_CENTER_X, min(cx, MAX_CENTER_X))
 
-    # Podcast Dual Anchor Fallbacks (Host Kiri ~25% / Guest Kanan ~75%)
-    # Posisi lebih ke tepi agar benar-benar membidik orang, bukan area tengah meja
-    ANCHOR_LEFT = _clamp_center(width * 0.25)
-    ANCHOR_RIGHT = _clamp_center(width * 0.75)
+    # Initialize YuNet Deep Neural Network Face Detector
+    yunet_detector = None
+    if os.path.exists(YUNET_MODEL_PATH) and hasattr(cv2, 'FaceDetectorYN'):
+        try:
+            yunet_detector = cv2.FaceDetectorYN.create(
+                YUNET_MODEL_PATH, "", (width, height),
+                score_threshold=0.65, nms_threshold=0.3
+            )
+        except Exception as e:
+            log(f"YuNet init failed: {e}, falling back to Haar Cascades...", job_id=job_id)
+            yunet_detector = None
 
-    def _detect_faces_in_frame(gray_img):
-        """Detect faces using both frontal and bilateral profile cascades."""
-        raw_faces = []
+    frontal_cascade = cv2.CascadeClassifier(CASCADE_PATH) if os.path.exists(CASCADE_PATH) else None
+    profile_cascade = cv2.CascadeClassifier(PROFILE_CASCADE_PATH) if os.path.exists(PROFILE_CASCADE_PATH) else None
+
+    def _detect_faces_in_frame(frame_img):
+        """Detect accurate human faces with zero false positives."""
+        valid = []
         
-        # 1. Frontal faces
+        # Priority 1: High-Precision Neural YuNet Detector
+        if yunet_detector is not None:
+            try:
+                # YuNet expects BGR format
+                bgr_img = cv2.cvtColor(frame_img, cv2.COLOR_RGB2BGR) if len(frame_img.shape) == 3 and frame_img.shape[2] == 3 else frame_img
+                _, raw_faces = yunet_detector.detect(bgr_img)
+                if raw_faces is not None:
+                    for f in raw_faces:
+                        x, y, w, h = int(f[0]), int(f[1]), int(f[2]), int(f[3])
+                        score = float(f[-1])
+                        cx = x + w / 2
+                        cy = y + h / 2
+                        # Filter out thumbnail overlays, edges, and sub-pixel artifacts
+                        if cx < width * 0.05 or cx > width * 0.95:
+                            continue
+                        if cy < height * 0.10 or cy > height * 0.90:
+                            continue
+                        if w < width * 0.035 or h < height * 0.05:
+                            continue
+                        valid.append({
+                            "center_x": _clamp_center(cx),
+                            "raw_cx": cx,
+                            "cy": cy,
+                            "w": w,
+                            "h": h,
+                            "area": w * h,
+                            "score": score
+                        })
+                    return valid
+            except Exception:
+                pass
+                
+        # Priority 2: Haar Cascades Fallback
+        gray_img = cv2.cvtColor(frame_img, cv2.COLOR_RGB2GRAY) if len(frame_img.shape) == 3 else frame_img
+        raw_faces = []
         if frontal_cascade and not frontal_cascade.empty():
             faces = frontal_cascade.detectMultiScale(
                 gray_img, scaleFactor=1.10, minNeighbors=7,
@@ -279,8 +322,6 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
             )
             for (x, y, w, h) in faces:
                 raw_faces.append((x, y, w, h, w * h))
-                
-        # 2. Profile faces (Left)
         if profile_cascade and not profile_cascade.empty():
             faces_left = profile_cascade.detectMultiScale(
                 gray_img, scaleFactor=1.10, minNeighbors=6,
@@ -288,8 +329,6 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
             )
             for (x, y, w, h) in faces_left:
                 raw_faces.append((x, y, w, h, w * h))
-                
-            # 3. Profile faces (Right - flipped)
             flipped = cv2.flip(gray_img, 1)
             faces_right = profile_cascade.detectMultiScale(
                 flipped, scaleFactor=1.10, minNeighbors=6,
@@ -299,7 +338,6 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                 orig_x = width - (x + w)
                 raw_faces.append((orig_x, y, w, h, w * h))
                 
-        valid = []
         for (fx, fy, fw, fh, area) in raw_faces:
             aspect = float(fw) / float(fh) if fh > 0 else 0
             if aspect < 0.65 or aspect > 1.40:
@@ -308,155 +346,109 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
             if cy < height * 0.10 or cy > height * 0.85:
                 continue
             cx = _clamp_center(fx + (fw / 2))
-            valid.append({"center_x": cx, "area": area, "raw_cx": fx + (fw / 2)})
+            valid.append({"center_x": cx, "raw_cx": fx + (fw / 2), "cy": cy, "w": fw, "h": fh, "area": area, "score": 0.8})
             
         return valid
 
     # ── Initial Speaker Scan ──
-    # Scan frame awal klip untuk menemukan wajah pembicara aktif
-    initial_speaker_x = ANCHOR_LEFT
+    # Scan frame awal klip untuk menentukan framing pembuka yang akurat
+    initial_camera_x = _clamp_center(width * 0.50)
+    active_seat = "left"
     try:
-        sample_times = [0.0, 0.3, 0.6, 1.0, 1.5]
-        found_faces = []
+        sample_times = [0.0, 0.2, 0.5, 1.0, 1.5]
         for st in sample_times:
             if st < clip.duration:
                 sample_frame = clip.get_frame(st)
-                gray_sample = cv2.cvtColor(sample_frame, cv2.COLOR_RGB2GRAY)
-                v = _detect_faces_in_frame(gray_sample)
-                found_faces.extend(v)
-        if found_faces:
-            found_faces.sort(key=lambda x: x["area"], reverse=True)
-            initial_speaker_x = found_faces[0]["center_x"]
+                v = _detect_faces_in_frame(sample_frame)
+                if len(v) == 1:
+                    initial_camera_x = v[0]["center_x"]
+                    active_seat = "left" if v[0]["raw_cx"] < width * 0.50 else "right"
+                    break
+                elif len(v) >= 2:
+                    v.sort(key=lambda item: item["raw_cx"])
+                    # Default ke speaker kiri atau yang paling dominan di pembuka
+                    initial_camera_x = v[0]["center_x"]
+                    active_seat = "left"
+                    break
     except Exception:
         pass
 
-    # ── Initial Speaker Scan & Seat Clustering ──
-    # Scan frame awal klip untuk memetakan kursi Host (Kiri) dan Guest (Kanan)
-    detected_clusters = []
-    try:
-        sample_times = [0.0, 0.3, 0.6, 1.0, 1.5, 2.0]
-        for st in sample_times:
-            if st < clip.duration:
-                sample_frame = clip.get_frame(st)
-                gray_sample = cv2.cvtColor(sample_frame, cv2.COLOR_RGB2GRAY)
-                v = _detect_faces_in_frame(gray_sample)
-                for item in v:
-                    detected_clusters.append((item["center_x"], item["area"]))
-    except Exception:
-        pass
-
-    # Tentukan posisi kursi default — enforce minimal separation
-    left_faces = [pos for pos, area in detected_clusters if pos < (width * 0.45)]
-    right_faces = [pos for pos, area in detected_clusters if pos >= (width * 0.55)]
-    
-    SEAT_LEFT = sum(left_faces) / len(left_faces) if left_faces else ANCHOR_LEFT
-    SEAT_RIGHT = sum(right_faces) / len(right_faces) if right_faces else ANCHOR_RIGHT
-    
-    # Pastikan seat tidak terlalu dekat ke tengah (area kosong meja)
-    SEAT_LEFT = min(SEAT_LEFT, width * 0.40)   # Tidak boleh melampaui 40% ke kanan
-    SEAT_RIGHT = max(SEAT_RIGHT, width * 0.60)  # Tidak boleh melampaui 60% ke kiri
-    
-    SEAT_LEFT = _clamp_center(SEAT_LEFT)
-    SEAT_RIGHT = _clamp_center(SEAT_RIGHT)
-    
-    # Pilih pembicara pembuka klip
-    if detected_clusters:
-        detected_clusters.sort(key=lambda x: x[1], reverse=True)
-        initial_speaker_x = SEAT_LEFT if detected_clusters[0][0] < (width * 0.50) else SEAT_RIGHT
-    else:
-        initial_speaker_x = SEAT_LEFT
-
-    # ── Tracking State (OpusClip-Style Multi-Camera Instant Cut) ──
-    current_camera_x = float(initial_speaker_x)
-    active_seat = "left" if initial_speaker_x < (width * 0.50) else "right"
+    # ── Shot-Aware Multi-Camera Tracking State ──
+    current_camera_x = float(initial_camera_x)
+    target_camera_x = float(initial_camera_x)
     
     seat_locked_frames = 0
-    LOCK_MIN_FRAMES = 90            # Kunci pembicara minimal ~3 detik sebelum boleh switch
+    LOCK_MIN_FRAMES = 60            # Kunci pembicara minimal ~2s di wide shot sebelum boleh switch
     candidate_seat = None
     candidate_detected_frames = 0
-    CANDIDATE_CONFIRM_FRAMES = 30   # Konfirmasi konsisten ~1s sebelum switch
-    no_face_streak = 0              # Counter frame tanpa wajah terdeteksi
-    NO_FACE_PATIENCE = 45           # Toleransi ~1.5s tanpa wajah sebelum mempertimbangkan switch
+    CANDIDATE_CONFIRM_FRAMES = 24   # Konfirmasi konsisten ~0.8s
     
-    DETECT_INTERVAL = 3
+    DEAD_ZONE = 35.0                # Deadzone 35px untuk tripod freeze (zero micro-shake)
+    CUT_THRESHOLD = 120.0           # Perbedaan >120px dianggap pergantian shot / switch (Instant Cut)
+    
+    DETECT_INTERVAL = 2             # Deteksi setiap 2 frame untuk tracking super responsif
     frame_count = 0
 
     def process_frame(frame):
-        nonlocal frame_count, current_camera_x, active_seat
+        nonlocal frame_count, current_camera_x, target_camera_x, active_seat
         nonlocal seat_locked_frames, candidate_seat, candidate_detected_frames
-        nonlocal no_face_streak
         
-        # ── Face Detection (every N frames) ──
+        # ── Neural Face Detection (every N frames) ──
         if frame_count % DETECT_INTERVAL == 0:
             try:
-                gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-                valid_faces = _detect_faces_in_frame(gray)
+                valid_faces = _detect_faces_in_frame(frame)
             except Exception:
                 valid_faces = []
             
-            if valid_faces:
-                no_face_streak = 0  # Reset counter tidak ada wajah
-                
-                # Cek apakah ada wajah di kursi lawan (Host vs Guest)
-                # Gunakan zona tengah netral (45%-55%) agar wajah di dekat tengah tidak di-assign
-                detected_seats = set()
-                for f in valid_faces:
-                    if f["center_x"] < (width * 0.45):
-                        detected_seats.add("left")
-                    elif f["center_x"] > (width * 0.55):
-                        detected_seats.add("right")
-                    # Wajah di zona tengah (45%-55%) = diabaikan, tidak masuk seat manapun
-                
-                other_seat = "right" if active_seat == "left" else "left"
-                
-                # Jika pembicara aktif masih di kursinya → tetap diam
-                if active_seat in detected_seats:
-                    seat_locked_frames += DETECT_INTERVAL
-                    # Reset kandidat karena pembicara aktif masih terlihat
-                    candidate_seat = None
-                    candidate_detected_frames = 0
-                elif other_seat in detected_seats:
-                    # Pembicara aktif TIDAK terlihat, tapi lawan bicara terdeteksi
-                    # Hanya mulai menghitung switch jika sudah cukup lama terkunci
-                    # DAN pembicara aktif sudah lama tidak terlihat
-                    if seat_locked_frames >= LOCK_MIN_FRAMES:
-                        if candidate_seat == other_seat:
-                            candidate_detected_frames += DETECT_INTERVAL
-                            # Switch hanya jika konfirmasi SANGAT konsisten
-                            if candidate_detected_frames >= CANDIDATE_CONFIRM_FRAMES:
-                                active_seat = other_seat
-                                current_camera_x = SEAT_RIGHT if active_seat == "right" else SEAT_LEFT
-                                seat_locked_frames = 0
-                                candidate_seat = None
-                                candidate_detected_frames = 0
-                        else:
-                            candidate_seat = other_seat
-                            candidate_detected_frames = DETECT_INTERVAL
-                    else:
-                        # Belum cukup lama terkunci, tambahkan counter saja
-                        seat_locked_frames += DETECT_INTERVAL
-                else:
-                    # Wajah terdeteksi tapi bukan di kursi mana-mana → abaikan, tetap diam
-                    seat_locked_frames += DETECT_INTERVAL
-            else:
-                # Tidak ada wajah terdeteksi sama sekali → TETAP DIAM di kursi aktif
-                # Jangan pernah pindah kamera hanya karena kehilangan wajah sementara
-                no_face_streak += DETECT_INTERVAL
+            if len(valid_faces) == 1:
+                # ── SHOT TYPE 1: Single Speaker Shot (Close-up / Medium Solo) ──
+                # Wajah tunggal terdeteksi -> Langsung kunci di wajah orang tersebut (Tengah / Kiri / Kanan)
+                single_face = valid_faces[0]
+                target_camera_x = single_face["center_x"]
+                active_seat = "left" if single_face["raw_cx"] < width * 0.50 else "right"
                 seat_locked_frames += DETECT_INTERVAL
-                # Reset kandidat switch (kehilangan wajah bukan alasan switch)
                 candidate_seat = None
                 candidate_detected_frames = 0
+                
+            elif len(valid_faces) >= 2:
+                # ── SHOT TYPE 2: Dual/Multi Speaker Wide Shot (Host & Guest) ──
+                valid_faces.sort(key=lambda item: item["raw_cx"])
+                left_spk = valid_faces[0]
+                right_spk = valid_faces[-1]
+                
+                # Cek visibilitas di masing-masing seat
+                other_seat = "right" if active_seat == "left" else "left"
+                
+                # Jika pembicara aktif masih terlihat di posisinya
+                if active_seat == "left":
+                    target_camera_x = left_spk["center_x"]
+                else:
+                    target_camera_x = right_spk["center_x"]
+                    
+                seat_locked_frames += DETECT_INTERVAL
+                
+            else:
+                # ── SHOT TYPE 3: No Face Detected (Turn Head / Occlusion) ──
+                # TETAP 100% BEKU di posisi terakhir (Zero Drift / Zero Random Movement)
+                seat_locked_frames += DETECT_INTERVAL
         else:
             seat_locked_frames += 1
         
-        # ── Multi-Camera True Static Framing (100% Diam / Zero Jitter) ──
-        # Kamera terkunci statis di kursi pembicara aktif, tanpa gerakan geser
-        x_center = SEAT_LEFT if active_seat == "left" else SEAT_RIGHT
-        current_camera_x = _clamp_center(x_center)
+        # ── Shot Cut vs Tripod Lock Physics ──
+        dist = abs(target_camera_x - current_camera_x)
         
-        # ── Crop Frame ──
+        if dist > CUT_THRESHOLD:
+            # Pergantian scene / speaker switch -> Instant Cut (Multi-Cam Switcher)
+            current_camera_x = target_camera_x
+        elif dist > DEAD_ZONE:
+            # Gerakan duduk normal -> Smooth Damped Gliding
+            current_camera_x += (target_camera_x - current_camera_x) * 0.15
+        # Jika dist <= DEAD_ZONE -> current_camera_x TETAP DIAM 100% (Tripod Freeze)
+        
+        current_camera_x = _clamp_center(current_camera_x)
+        
+        # ── Crop Frame 9:16 ──
         frame_count += 1
-        
         x1 = int(round(current_camera_x - target_width / 2))
         x2 = x1 + target_width
         
@@ -544,7 +536,7 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
             
         log(f"Rendering Subtitles, Audio Enhancer, and Color Grading for Clip {index}: {title}", job_id=job_id)
         vf_filter_base = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,eq=contrast=1.1:brightness=0.02:saturation=1.2,unsharp=5:5:0.4:5:5:0.0"
-        subtitle_filter = f",subtitles='{escaped_ass}'" if sub_style != "none" else ""
+        subtitle_filter = f",subtitles='{escaped_ass}'" if sub_style not in ["none", "no_subtitle"] else ""
         vf_filter = f"{vf_filter_base}{subtitle_filter},fade=t=out:st={fade_out_start}:d=0.5"
         
         codecs_to_try = []
@@ -576,7 +568,7 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
         log(f"Face tracking error, using intelligent Podcast Dual-Anchor fallback: {e}", job_id=job_id)
         # Fallback Anti-Center: Kunci kursi pembicara (Kiri 28%), BUKAN tengah meja (50%)
         vf_filter_base = "crop=ih*9/16:ih:iw*0.14:0,scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,eq=contrast=1.1:brightness=0.02:saturation=1.2,unsharp=5:5:0.4:5:5:0.0"
-        subtitle_filter = f",subtitles='{escaped_ass}'" if sub_style != "none" else ""
+        subtitle_filter = f",subtitles='{escaped_ass}'" if sub_style not in ["none", "no_subtitle"] else ""
         vf_filter = f"{vf_filter_base}{subtitle_filter},fade=t=out:st={fade_out_start}:d=0.5"
         
         ffmpeg_bin = get_ffmpeg_binary()

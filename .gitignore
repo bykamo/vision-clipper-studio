@@ -25,6 +25,8 @@ __pycache__/
 dist/
 build/
 .pytest_cache/
+node_modules/
+frontend/node_modules/
 
 # Virtual Environment
 .venv/

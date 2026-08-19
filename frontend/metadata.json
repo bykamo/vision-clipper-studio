@@ -1,0 +1,6 @@
+{
+  "name": "AI Video Clipper Studio",
+  "description": "Studio pemotong klip video AI vertikal 9:16 dengan pratinjau dinamis, kustomisasi subtitle instan, multiple themes, dan konsol terminal proses real-time.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
