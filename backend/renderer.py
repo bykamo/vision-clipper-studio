@@ -329,30 +329,51 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
     except Exception:
         pass
 
-    # ── Tracking State (Cinematic Damped Spring Physics) ──
-    smoothed_x = float(initial_speaker_x)
-    target_x = float(initial_speaker_x)
-    pan_velocity_x = 0.0            # Kecepatan kamera untuk akselerasi & deselerasi mulus
+    # ── Initial Speaker Scan & Seat Clustering ──
+    # Scan frame awal klip untuk memetakan kursi Host (Kiri) dan Guest (Kanan)
+    detected_clusters = []
+    try:
+        sample_times = [0.0, 0.3, 0.6, 1.0, 1.5, 2.0]
+        for st in sample_times:
+            if st < clip.duration:
+                sample_frame = clip.get_frame(st)
+                gray_sample = cv2.cvtColor(sample_frame, cv2.COLOR_RGB2GRAY)
+                v = _detect_faces_in_frame(gray_sample)
+                for item in v:
+                    detected_clusters.append((item["center_x"], item["area"]))
+    except Exception:
+        pass
+
+    # Tentukan posisi kursi default
+    left_faces = [pos for pos, area in detected_clusters if pos < (width * 0.50)]
+    right_faces = [pos for pos, area in detected_clusters if pos >= (width * 0.50)]
     
-    active_speaker_x = float(initial_speaker_x)
-    speaker_locked_frames = 0
-    LOCK_MIN_FRAMES = 75            # Kunci pembicara minimal ~2.5 detik
-    candidate_speaker_x = None
+    SEAT_LEFT = sum(left_faces) / len(left_faces) if left_faces else ANCHOR_LEFT
+    SEAT_RIGHT = sum(right_faces) / len(right_faces) if right_faces else ANCHOR_RIGHT
+    
+    # Pilih pembicara pembuka klip
+    if detected_clusters:
+        detected_clusters.sort(key=lambda x: x[1], reverse=True)
+        initial_speaker_x = SEAT_LEFT if detected_clusters[0][0] < (width * 0.50) else SEAT_RIGHT
+    else:
+        initial_speaker_x = SEAT_LEFT
+
+    # ── Tracking State (OpusClip-Style Multi-Camera Instant Cut) ──
+    current_camera_x = float(initial_speaker_x)
+    active_seat = "left" if initial_speaker_x < (width * 0.50) else "right"
+    
+    seat_locked_frames = 0
+    LOCK_MIN_FRAMES = 60            # Kunci pembicara minimal ~2 detik sebelum boleh switch
+    candidate_seat = None
     candidate_detected_frames = 0
-    CANDIDATE_CONFIRM_FRAMES = 15   # Konfirmasi konsisten ~0.5s sebelum switch
+    CANDIDATE_CONFIRM_FRAMES = 18   # Konfirmasi konsisten ~0.6s sebelum Instant Cut
     
     DETECT_INTERVAL = 3
-    # Parameter Fisika Kamera Sinematik (Gimbal Slider Model)
-    SPRING_CONSTANT = 0.038         # Gaya dorong kamera menuju target
-    VELOCITY_DAMPING = 0.86         # Redaman momentum untuk pengereman empuk (tanpa sentakan)
-    TRIPOD_THRESHOLD = width * 0.05 # Zona toleransi diam stabil
-    
     frame_count = 0
 
     def process_frame(frame):
-        nonlocal frame_count, smoothed_x, target_x, pan_velocity_x
-        nonlocal active_speaker_x, speaker_locked_frames
-        nonlocal candidate_speaker_x, candidate_detected_frames
+        nonlocal frame_count, current_camera_x, active_seat
+        nonlocal seat_locked_frames, candidate_seat, candidate_detected_frames
         
         # ── Face Detection (every N frames) ──
         if frame_count % DETECT_INTERVAL == 0:
@@ -363,60 +384,54 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                 valid_faces = []
             
             if valid_faces:
+                # Cek apakah ada wajah di kursi lawan (Host vs Guest)
+                detected_seats = set()
                 for f in valid_faces:
-                    f["dist_to_active"] = abs(f["center_x"] - active_speaker_x)
-                    
-                active_match = min(valid_faces, key=lambda f: f["dist_to_active"])
+                    if f["center_x"] < (width * 0.50):
+                        detected_seats.add("left")
+                    else:
+                        detected_seats.add("right")
+                
+                other_seat = "right" if active_seat == "left" else "left"
                 
                 # Jika pembicara aktif masih di kursinya
-                if active_match["dist_to_active"] < (width * 0.20):
-                    active_speaker_x = active_match["center_x"]
-                    speaker_locked_frames += DETECT_INTERVAL
-                    candidate_speaker_x = None
+                if active_seat in detected_seats:
+                    seat_locked_frames += DETECT_INTERVAL
+                    # Reset kandidat jika pembicara aktif masih dominan
+                    candidate_seat = None
                     candidate_detected_frames = 0
-                else:
-                    largest_other = max(valid_faces, key=lambda f: f["area"])
-                    if speaker_locked_frames >= LOCK_MIN_FRAMES:
-                        if candidate_speaker_x is None or abs(largest_other["center_x"] - candidate_speaker_x) > (width * 0.12):
-                            candidate_speaker_x = largest_other["center_x"]
-                            candidate_detected_frames = DETECT_INTERVAL
-                        else:
+                elif other_seat in detected_seats:
+                    # Pembicara aktif tidak terlihat / diam, dan lawan bicara terdeteksi
+                    if seat_locked_frames >= LOCK_MIN_FRAMES:
+                        if candidate_seat == other_seat:
                             candidate_detected_frames += DETECT_INTERVAL
+                            # Lakukan INSTANT CUT (Multi-Camera Switcher)
                             if candidate_detected_frames >= CANDIDATE_CONFIRM_FRAMES:
-                                active_speaker_x = candidate_speaker_x
-                                speaker_locked_frames = 0
-                                candidate_speaker_x = None
+                                active_seat = other_seat
+                                current_camera_x = SEAT_RIGHT if active_seat == "right" else SEAT_LEFT
+                                seat_locked_frames = 0
+                                candidate_seat = None
                                 candidate_detected_frames = 0
+                        else:
+                            candidate_seat = other_seat
+                            candidate_detected_frames = DETECT_INTERVAL
                     else:
-                        speaker_locked_frames += DETECT_INTERVAL
-                
-                target_x = active_speaker_x
+                        seat_locked_frames += DETECT_INTERVAL
             else:
-                # Pertahankan posisi terakhir pembicara aktif
-                speaker_locked_frames += DETECT_INTERVAL
-                target_x = active_speaker_x
+                # Wajah tidak terdeteksi sementara -> TETAP 100% DIAM di kursi aktif
+                seat_locked_frames += DETECT_INTERVAL
         else:
-            speaker_locked_frames += 1
+            seat_locked_frames += 1
         
-        # ── Cinematic Damped Spring Physics (Ultra Smooth Glide) ──
-        delta = target_x - smoothed_x
-        
-        # Jika berada sangat dekat di zona tripod, redam kecepatan secara perlahan
-        if abs(delta) < TRIPOD_THRESHOLD:
-            pan_velocity_x *= 0.75
-            if abs(pan_velocity_x) < 0.05 and abs(delta) < 2.0:
-                pan_velocity_x = 0.0
-                smoothed_x = target_x
-        else:
-            # Akselerasi lembut dan deselerasi sinematik (S-Curve)
-            force = delta * SPRING_CONSTANT
-            pan_velocity_x = (pan_velocity_x + force) * VELOCITY_DAMPING
-            smoothed_x = _clamp_center(smoothed_x + pan_velocity_x)
+        # ── Multi-Camera True Static Framing (100% Diam / Zero Jitter) ──
+        # Kamera terkunci statis di kursi pembicara aktif, tanpa gerakan geser
+        x_center = SEAT_LEFT if active_seat == "left" else SEAT_RIGHT
+        current_camera_x = _clamp_center(x_center)
         
         # ── Crop Frame ──
         frame_count += 1
         
-        x1 = int(round(smoothed_x - target_width / 2))
+        x1 = int(round(current_camera_x - target_width / 2))
         x2 = x1 + target_width
         
         if x1 < 0:
