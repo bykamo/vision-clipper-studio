@@ -378,20 +378,20 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
     target_camera_x = float(initial_camera_x)
     
     seat_locked_frames = 0
-    LOCK_MIN_FRAMES = 60            # Kunci pembicara minimal ~2s di wide shot sebelum boleh switch
-    candidate_seat = None
+    LOCK_MIN_FRAMES = 90            # Kunci pembicara minimal ~1.5s sebelum boleh switch
+    candidate_target_x = None
     candidate_detected_frames = 0
-    CANDIDATE_CONFIRM_FRAMES = 24   # Konfirmasi konsisten ~0.8s
+    CANDIDATE_CONFIRM_FRAMES = 18   # Konfirmasi konsisten ~0.3s sebelum Instant Cut
     
     DEAD_ZONE = 35.0                # Deadzone 35px untuk tripod freeze (zero micro-shake)
-    CUT_THRESHOLD = 120.0           # Perbedaan >120px dianggap pergantian shot / switch (Instant Cut)
+    CUT_THRESHOLD = 90.0            # Perbedaan >90px dianggap pergantian shot / switch (Instant Cut)
     
     DETECT_INTERVAL = 2             # Deteksi setiap 2 frame untuk tracking super responsif
     frame_count = 0
 
     def process_frame(frame):
         nonlocal frame_count, current_camera_x, target_camera_x, active_seat
-        nonlocal seat_locked_frames, candidate_seat, candidate_detected_frames
+        nonlocal seat_locked_frames, candidate_target_x, candidate_detected_frames
         
         # ── Neural Face Detection (every N frames) ──
         if frame_count % DETECT_INTERVAL == 0:
@@ -400,15 +400,13 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
             except Exception:
                 valid_faces = []
             
+            raw_target = target_camera_x
+            
             if len(valid_faces) == 1:
                 # ── SHOT TYPE 1: Single Speaker Shot (Close-up / Medium Solo) ──
-                # Wajah tunggal terdeteksi -> Langsung kunci di wajah orang tersebut (Tengah / Kiri / Kanan)
                 single_face = valid_faces[0]
-                target_camera_x = single_face["center_x"]
+                raw_target = single_face["center_x"]
                 active_seat = "left" if single_face["raw_cx"] < width * 0.50 else "right"
-                seat_locked_frames += DETECT_INTERVAL
-                candidate_seat = None
-                candidate_detected_frames = 0
                 
             elif len(valid_faces) >= 2:
                 # ── SHOT TYPE 2: Dual/Multi Speaker Wide Shot (Host & Guest) ──
@@ -416,49 +414,61 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                 left_spk = valid_faces[0]
                 right_spk = valid_faces[-1]
                 
-                # Cek visibilitas di masing-masing seat
-                other_seat = "right" if active_seat == "left" else "left"
-                
-                # Jika pembicara aktif masih terlihat di posisinya
-                if active_seat == "left":
-                    target_camera_x = left_spk["center_x"]
+                # Pilih speaker terdekat dengan framing aktif atau pembicara dominan
+                if abs(left_spk["center_x"] - current_camera_x) < abs(right_spk["center_x"] - current_camera_x):
+                    raw_target = left_spk["center_x"]
+                    active_seat = "left"
                 else:
-                    target_camera_x = right_spk["center_x"]
-                    
+                    raw_target = right_spk["center_x"]
+                    active_seat = "right"
+            
+            # ── Hysteresis & Anti-Glitch Stabilizer ──
+            dist_to_raw = abs(raw_target - target_camera_x)
+            
+            if dist_to_raw > CUT_THRESHOLD:
+                # Major scene cut or speaker switch candidate
+                if candidate_target_x is not None and abs(raw_target - candidate_target_x) < 50:
+                    candidate_detected_frames += DETECT_INTERVAL
+                    # Hanya switch jika pembicara saat ini sudah terkunci cukup lama
+                    if candidate_detected_frames >= CANDIDATE_CONFIRM_FRAMES and seat_locked_frames >= LOCK_MIN_FRAMES:
+                        target_camera_x = raw_target
+                        current_camera_x = raw_target  # Instant Cut TV-style
+                        candidate_target_x = None
+                        candidate_detected_frames = 0
+                        seat_locked_frames = 0
+                else:
+                    candidate_target_x = raw_target
+                    candidate_detected_frames = DETECT_INTERVAL
                 seat_locked_frames += DETECT_INTERVAL
-                
             else:
-                # ── SHOT TYPE 3: No Face Detected (Turn Head / Occlusion) ──
-                # TETAP 100% BEKU di posisi terakhir (Zero Drift / Zero Random Movement)
+                candidate_target_x = None
+                candidate_detected_frames = 0
                 seat_locked_frames += DETECT_INTERVAL
+                if dist_to_raw > DEAD_ZONE:
+                    target_camera_x += (raw_target - target_camera_x) * 0.20
         else:
             seat_locked_frames += 1
         
-        # ── Shot Cut vs Tripod Lock Physics ──
-        dist = abs(target_camera_x - current_camera_x)
-        
-        if dist > CUT_THRESHOLD:
-            # Pergantian scene / speaker switch -> Instant Cut (Multi-Cam Switcher)
+        # ── Smooth Tripod Gliding ──
+        dist_current = abs(target_camera_x - current_camera_x)
+        if dist_current > CUT_THRESHOLD:
             current_camera_x = target_camera_x
-        elif dist > DEAD_ZONE:
-            # Gerakan duduk normal -> Smooth Damped Gliding
-            current_camera_x += (target_camera_x - current_camera_x) * 0.15
-        # Jika dist <= DEAD_ZONE -> current_camera_x TETAP DIAM 100% (Tripod Freeze)
-        
+        elif dist_current > DEAD_ZONE:
+            current_camera_x += (target_camera_x - current_camera_x) * 0.12
+            
         current_camera_x = _clamp_center(current_camera_x)
         
-        # ── Crop Frame 9:16 ──
+        # ── Crop Frame 9:16 (Strict Even X1 for YUV420p Chroma Alignment) ──
         frame_count += 1
         x1 = int(round(current_camera_x - target_width / 2))
-        x2 = x1 + target_width
+        x1 = (x1 // 2) * 2  # Enforce even pixel boundary (eliminates chroma tear glitches)
         
         if x1 < 0:
             x1 = 0
-            x2 = target_width
-        if x2 > width:
-            x2 = width
-            x1 = width - target_width
-        
+        if x1 + target_width > width:
+            x1 = ((width - target_width) // 2) * 2
+            
+        x2 = x1 + target_width
         return frame[:, x1:x2]
 
     cropped_clip = clip.image_transform(process_frame)
@@ -557,7 +567,14 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
 
         ffmpeg_bin = get_ffmpeg_binary()
         for name, codec_params in codecs_to_try:
-            cmd = [ffmpeg_bin, "-y", "-i", temp_crop_file, "-vf", vf_filter, "-af", af_filter] + codec_params + [out_file]
+            cmd = [
+                ffmpeg_bin, "-y", 
+                "-fflags", "+genpts", 
+                "-i", temp_crop_file, 
+                "-vf", vf_filter, 
+                "-af", af_filter,
+                "-avoid_negative_ts", "make_zero"
+            ] + codec_params + [out_file]
             try:
                 run_command(cmd, f"Burning subtitles ({name})...", job_id=job_id, duration=duration)
                 break
