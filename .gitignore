@@ -34,9 +34,12 @@ ENV/
 env.bak/
 venv.bak/
 
-# Environment Variables
+# Environment Variables & Auth
 .env
 .env.*
+cookies.txt
+*.cookie
+*.cookies
 
 # OS Generated Files
 .DS_Store

@@ -1,8 +1,10 @@
 import os
 import sys
 import cv2
-from backend.utils import log, format_ass_timestamp, run_command, TEMP_DIR
+from backend.utils import log, format_ass_timestamp, run_command, get_ffmpeg_binary, TEMP_DIR
 from moviepy import VideoFileClip
+
+CASCADE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "haarcascade_frontalface_default.xml")
 
 def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, title_hook=None, sub_style="tiktok_viral"):
     """Generate .ass subtitle file with the specified style."""
@@ -211,8 +213,12 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
     
     clip = VideoFileClip(video_path).subclipped(start_time, end_time)
     
-    # Load universal OpenCV Cascade Face Detector (built-in, stable on all platforms)
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    # Load universal OpenCV Cascade Face Detector dari model lokal yang terverifikasi
+    if os.path.exists(CASCADE_PATH):
+        face_cascade = cv2.CascadeClassifier(CASCADE_PATH)
+    else:
+        cascade_default = getattr(cv2.data, 'haarcascades', '') + 'haarcascade_frontalface_default.xml'
+        face_cascade = cv2.CascadeClassifier(cascade_default)
 
     width, height = clip.size
     target_width = int(height * 9 / 16)
@@ -478,8 +484,9 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
                 ("libx264 (TikTok Golden)", tiktok_golden)
             ]
 
+        ffmpeg_bin = get_ffmpeg_binary()
         for name, codec_params in codecs_to_try:
-            cmd = ["ffmpeg", "-y", "-i", temp_crop_file, "-vf", vf_filter, "-af", af_filter] + codec_params + [out_file]
+            cmd = [ffmpeg_bin, "-y", "-i", temp_crop_file, "-vf", vf_filter, "-af", af_filter] + codec_params + [out_file]
             try:
                 run_command(cmd, f"Burning subtitles ({name})...", job_id=job_id, duration=duration)
                 break
@@ -492,9 +499,10 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
         subtitle_filter = f",subtitles='{escaped_ass}'" if sub_style != "none" else ""
         vf_filter = f"{vf_filter_base}{subtitle_filter},fade=t=out:st={fade_out_start}:d=0.5"
         
+        ffmpeg_bin = get_ffmpeg_binary()
         def build_fallback_cmd(codec_params):
             return [
-                "ffmpeg", "-y", "-ss", str(start), "-t", str(end - start), "-i", video_path,
+                ffmpeg_bin, "-y", "-ss", str(start), "-t", str(end - start), "-i", video_path,
                 "-vf", vf_filter,
                 "-af", af_filter
             ] + codec_params + [out_file]

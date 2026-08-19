@@ -58,6 +58,17 @@ for _pattern in ["tmp*.wav", "temp_crop_*.mp4", "temp_*.ass", "temp_sub*.vtt"]:
 VERTICAL_WIDTH = 1080
 VERTICAL_HEIGHT = 1920
 
+def get_ffmpeg_binary():
+    """Mengambil path binary FFmpeg terbaik yang mendukung filter subtitle & audio."""
+    try:
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if os.path.exists(exe):
+            return exe
+    except Exception:
+        pass
+    return "ffmpeg"
+
 def log(message, job_id=None):
     timestamp = datetime.now().strftime("%H:%M:%S")
     msg = f"[{timestamp}] {message}"
