@@ -733,7 +733,7 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
     log("Opus Smart Crop Berhasil (Zero Glitch & Natural Cut).", job_id=job_id)
     return output_path
 
-def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job_id=None, sub_style="tiktok_viral", framing_mode="auto"):
+def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job_id=None, sub_style="tiktok_viral"):
     start = max(0.0, float(clip_info.get("start", 0.0)) - 0.2)
     end = float(clip_info.get("end", 0.0)) + 1.2
     duration = end - start
@@ -764,13 +764,7 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
     af_filter = f"highpass=f=100,acompressor=threshold=-20dB:ratio=4:attack=5:release=50:makeup=8dB,afade=t=out:st={fade_out_start}:d=0.5"
     
     try:
-        if framing_mode in ["split_screen", "split"]:
-            apply_split_screen(video_path, start, end, temp_crop_file, job_id=job_id)
-        elif framing_mode in ["fit_blur", "blur", "fit"]:
-            apply_fit_blur(video_path, start, end, temp_crop_file, job_id=job_id)
-        else:
-            # Default / auto / hard_cut: Discrete Anchor Hard Cut Face Tracking
-            apply_smart_crop(video_path, start, end, temp_crop_file, job_id=job_id)
+        apply_smart_crop(video_path, start, end, temp_crop_file, job_id=job_id)
             
         log(f"Rendering Subtitles, Audio Enhancer, and Color Grading for Clip {index}: {title}", job_id=job_id)
         vf_filter_base = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,eq=contrast=1.1:brightness=0.02:saturation=1.2,unsharp=5:5:0.4:5:5:0.0"
