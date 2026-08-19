@@ -547,8 +547,9 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
                 log(f"{name} Encoding failed: {e}. Falling back to next codec...", job_id=job_id)
             
     except Exception as e:
-        log(f"Face tracking error, using simple ffmpeg center crop: {e}", job_id=job_id)
-        vf_filter_base = "crop=ih*9/16:ih,scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,eq=contrast=1.1:brightness=0.02:saturation=1.2,unsharp=5:5:0.4:5:5:0.0"
+        log(f"Face tracking error, using intelligent Podcast Dual-Anchor fallback: {e}", job_id=job_id)
+        # Fallback Anti-Center: Kunci kursi pembicara (Kiri 28%), BUKAN tengah meja (50%)
+        vf_filter_base = "crop=ih*9/16:ih:iw*0.14:0,scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,eq=contrast=1.1:brightness=0.02:saturation=1.2,unsharp=5:5:0.4:5:5:0.0"
         subtitle_filter = f",subtitles='{escaped_ass}'" if sub_style != "none" else ""
         vf_filter = f"{vf_filter_base}{subtitle_filter},fade=t=out:st={fade_out_start}:d=0.5"
         
