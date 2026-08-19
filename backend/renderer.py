@@ -28,8 +28,8 @@ def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, title_h
         _generate_tiktok_viral_style(words, out_ass_path, clip_start, clip_end)
 
 
-def _chunk_words(words, clip_start, clip_end, max_words=3, max_chars=18, uppercase=False):
-    """Split words into display chunks."""
+def _chunk_words(words, clip_start, clip_end, max_words=2, max_chars=14, uppercase=False):
+    """Split words into display chunks (compact for mobile screens)."""
     chunks, current_chunk = [], []
     for word_info in words:
         w_start = max(0, word_info["start"] - clip_start)
@@ -47,7 +47,7 @@ def _chunk_words(words, clip_start, clip_end, max_words=3, max_chars=18, upperca
 
 
 def _generate_tiktok_viral_style(words, out_ass_path, clip_start, clip_end):
-    """🎬 TikTok Viral: Bold white + yellow highlight pop on active word."""
+    """🎬 TikTok Viral: Bold white + yellow highlight pop on active word (Mobile Safe-Zone)."""
     ass_header = """[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
@@ -56,12 +56,12 @@ WrapStyle: 1
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: ViralStyle,Impact,115,&H00FFFFFF,&H000000FF,&H00000000,&H99000000,-1,0,0,0,100,100,0,0,1,12,7,2,60,60,650,1
+Style: ViralStyle,Impact,88,&H00FFFFFF,&H000000FF,&H00000000,&H99000000,-1,0,0,0,100,100,0,0,1,10,5,2,100,100,600,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    chunks = _chunk_words(words, clip_start, clip_end, uppercase=False)
+    chunks = _chunk_words(words, clip_start, clip_end, max_words=2, max_chars=14, uppercase=False)
     
     with open(out_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header)
@@ -74,7 +74,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     if j < i: 
                         display.append(chunk[j]["word"])
                     elif j == i: 
-                        display.append(f"{{\\c&H0000FFFF&}}{{\\fs125}}{chunk[j]['word']}{{\\fs115}}{{\\c&HFFFFFF&}}")
+                        display.append(f"{{\\c&H0000FFFF&}}{{\\fs98}}{chunk[j]['word']}{{\\fs88}}{{\\c&HFFFFFF&}}")
                     else: 
                         display.append(f"{{\\alpha&HFF&}}{chunk[j]['word']}{{\\alpha&H00&}}")
                 f.write(f"Dialogue: 0,{start_ass},{end_ass},ViralStyle,,0,0,0,,{' '.join(display)}\n")
@@ -90,32 +90,27 @@ WrapStyle: 1
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: KaraokeStyle,Arial Black,80,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,6,3,2,80,80,650,1
+Style: KaraokeStyle,Arial Black,68,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,6,3,2,100,100,600,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    # Build sentence-level chunks (bigger groups for karaoke feel)
-    chunks = _chunk_words(words, clip_start, clip_end, max_words=6, max_chars=35, uppercase=False)
+    # Build compact sentence chunks
+    chunks = _chunk_words(words, clip_start, clip_end, max_words=4, max_chars=22, uppercase=False)
     
     with open(out_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header)
         for chunk in chunks:
-            # Each word in chunk: show all previous words (white) + current word (green) 
-            # Words accumulate and stay visible
             for i in range(len(chunk)):
                 start_ass = format_ass_timestamp(chunk[i]["start"])
                 end_ass = format_ass_timestamp(chunk[i]["end"])
                 display = []
                 for j in range(len(chunk)):
                     if j < i:
-                        # Already spoken words — white
                         display.append(chunk[j]["word"])
                     elif j == i:
-                        # Active word — highlighted green
                         display.append(f"{{\\c&H00FF00&}}{chunk[j]['word']}{{\\c&HFFFFFF&}}")
                     else:
-                        # Future words — dim/semi-transparent
                         display.append(f"{{\\alpha&H80&}}{chunk[j]['word']}{{\\alpha&H00&}}")
                 f.write(f"Dialogue: 0,{start_ass},{end_ass},KaraokeStyle,,0,0,0,,{' '.join(display)}\n")
 
@@ -130,13 +125,12 @@ WrapStyle: 1
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: MinimalStyle,Arial Black,75,&H00FFFFFF,&H000000FF,&H50000000,&H00000000,1,0,0,0,100,100,0,0,1,4,0,2,120,120,350,1
+Style: MinimalStyle,Arial Black,65,&H00FFFFFF,&H000000FF,&H50000000,&H00000000,1,0,0,0,100,100,0,0,1,4,0,2,100,100,400,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    # Group into sentence-level chunks (longer groups, static display)
-    chunks = _chunk_words(words, clip_start, clip_end, max_words=6, max_chars=35, uppercase=False)
+    chunks = _chunk_words(words, clip_start, clip_end, max_words=4, max_chars=22, uppercase=False)
     
     with open(out_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header)
@@ -145,7 +139,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             chunk_start = format_ass_timestamp(chunk[0]["start"])
             chunk_end = format_ass_timestamp(chunk[-1]["end"])
             text = " ".join(w["word"] for w in chunk)
-            # Simple static text — no effects, no highlight
             f.write(f"Dialogue: 0,{chunk_start},{chunk_end},MinimalStyle,,0,0,0,,{text}\n")
 
 
@@ -228,62 +221,75 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
         target_width = width
         if target_width % 2 != 0: target_width -= 1
 
-    # ── Tracking State ──
-    # Boundary limits for camera center
+    # ── Boundary limits for camera center ──
     MIN_CENTER_X = target_width / 2
     MAX_CENTER_X = width - (target_width / 2)
-    
-    # Double exponential smoothing (position + velocity)
-    smoothed_x = width / 2          # Current smoothed camera position
-    velocity_x = 0.0                # Current camera velocity (for momentum)
-    target_x = width / 2            # Raw detection target
-    
-    # Tuning parameters
-    DETECT_INTERVAL = 3             # Detect face every N frames (more responsive)
-    POSITION_ALPHA = 0.06           # Position smoothing factor (lower = smoother)
-    VELOCITY_ALPHA = 0.03           # Velocity damping factor (lower = more cinematic)
-    DEAD_ZONE = width * 0.015       # Ignore movements smaller than 1.5% of width
-    MAX_VELOCITY = width * 0.02     # Max camera speed per frame (2% of width)
-    MIN_FACE_AREA = (width * 0.03) * (height * 0.03)  # Minimum face bounding box area to track
-    
-    # Face loss handling
-    frames_since_detection = 0       # Counter since last successful detection
-    FACE_LOSS_PATIENCE = 30          # Frames to wait before drifting to center
-    CENTER_DRIFT_SPEED = 0.005       # Slow drift speed toward center when face is lost
-    
-    # Detection history for stability (rolling median)
-    detection_history = []
-    HISTORY_SIZE = 5                 # Number of recent detections to keep
-    
-    frame_count = 0
 
     def _clamp_center(cx):
         """Clamp camera center X within valid crop boundaries."""
         return max(MIN_CENTER_X, min(cx, MAX_CENTER_X))
+
+    # ── Initial Speaker Scan (Anti-Sorot Tengah Kosong) ──
+    # Scan frame awal klip untuk langsung mengunci posisi pembicara utama dari detik 0.00
+    initial_speaker_x = width / 2
+    try:
+        sample_times = [0.0, 0.5, 1.0, 1.5]
+        found_faces = []
+        for st in sample_times:
+            if st < clip.duration:
+                sample_frame = clip.get_frame(st)
+                gray_sample = cv2.cvtColor(sample_frame, cv2.COLOR_RGB2GRAY)
+                raw_faces = face_cascade.detectMultiScale(
+                    gray_sample,
+                    scaleFactor=1.12,
+                    minNeighbors=7,
+                    minSize=(int(width * 0.06), int(height * 0.08))
+                )
+                for (fx, fy, fw, fh) in raw_faces:
+                    aspect_ratio = float(fw) / float(fh) if fh > 0 else 0
+                    if 0.75 <= aspect_ratio <= 1.30:
+                        found_faces.append((fw * fh, _clamp_center(fx + (fw / 2))))
+        if found_faces:
+            # Ambil wajah terbesar / paling dominan di awal klip
+            found_faces.sort(key=lambda x: x[0], reverse=True)
+            initial_speaker_x = found_faces[0][1]
+    except Exception:
+        pass
+
+    # ── Tracking State ──
+    smoothed_x = initial_speaker_x  # Frame 0 langsung berada di posisi pembicara
+    target_x = initial_speaker_x
     
-    def _get_median(values):
-        """Get median of a list of values for noise reduction."""
-        if not values: return None
-        sorted_vals = sorted(values)
-        mid = len(sorted_vals) // 2
-        if len(sorted_vals) % 2 == 0:
-            return (sorted_vals[mid - 1] + sorted_vals[mid]) / 2
-        return sorted_vals[mid]
+    active_speaker_x = initial_speaker_x
+    speaker_locked_frames = 0
+    LOCK_MIN_FRAMES = 75            # Kunci pembicara minimal ~2.5 detik sebelum boleh switch
+    candidate_speaker_x = None
+    candidate_detected_frames = 0
+    CANDIDATE_CONFIRM_FRAMES = 15   # Butuh ~0.5 detik konfirmasi konsisten untuk pindah
+    
+    # Tuning parameters (Tripod Lock Mode)
+    DETECT_INTERVAL = 3
+    PAN_SMOOTH_FACTOR = 0.035       # Kecepatan transisi kamera lambat & sinematik
+    TRIPOD_DEAD_ZONE = width * 0.08 # Freeze Tripod: Abaikan gerakan kepala kecil di bawah 8% lebar layar
+    MAX_PAN_STEP = width * 0.006    # Panning lembut bertahap per frame
+    MIN_FACE_AREA = (width * 0.06) * (height * 0.08)
+    
+    frame_count = 0
 
     def process_frame(frame):
-        nonlocal frame_count, smoothed_x, velocity_x, target_x
-        nonlocal frames_since_detection, detection_history
+        nonlocal frame_count, smoothed_x, target_x
+        nonlocal active_speaker_x, speaker_locked_frames
+        nonlocal candidate_speaker_x, candidate_detected_frames
         
         # ── Face Detection (every N frames) ──
         if frame_count % DETECT_INTERVAL == 0:
             try:
                 gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-                # Scale image down slightly for faster detection
                 detected_faces = face_cascade.detectMultiScale(
                     gray,
-                    scaleFactor=1.15,
-                    minNeighbors=5,
-                    minSize=(int(width * 0.04), int(height * 0.04))
+                    scaleFactor=1.12,
+                    minNeighbors=8,
+                    minSize=(int(width * 0.06), int(height * 0.08))
                 )
             except Exception:
                 detected_faces = ()
@@ -291,6 +297,10 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
             valid_faces = []
             if len(detected_faces) > 0:
                 for (fx, fy, fw, fh) in detected_faces:
+                    aspect_ratio = float(fw) / float(fh) if fh > 0 else 0
+                    if aspect_ratio < 0.75 or aspect_ratio > 1.30:
+                        continue
+                    
                     face_area = fw * fh
                     if face_area < MIN_FACE_AREA:
                         continue
@@ -298,89 +308,69 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                     face_center_x = fx + (fw / 2)
                     face_center_y = fy + (fh / 2)
                     
-                    # Filter faces that are outside reasonable vertical range
-                    if face_center_y < height * 0.05 or face_center_y > height * 0.95:
+                    if face_center_y < height * 0.10 or face_center_y > height * 0.85:
                         continue
                     
                     valid_faces.append({
-                        "center_x": face_center_x,
+                        "center_x": _clamp_center(face_center_x),
                         "area": face_area,
-                        "distance": abs(face_center_x - smoothed_x)
+                        "dist_to_active": abs(face_center_x - active_speaker_x)
                     })
             
             if valid_faces:
-                # Score faces: prefer large faces close to current position
-                max_area = max(f["area"] for f in valid_faces)
-                max_dist = max(f["distance"] for f in valid_faces) or 1
+                # Cari wajah yang paling dekat dengan pembicara yang sedang aktif
+                active_match = min(valid_faces, key=lambda f: f["dist_to_active"])
                 
-                best_face = None
-                best_score = -1
+                # Jika pembicara aktif masih di kursinya (toleransi < 18% lebar video)
+                if active_match["dist_to_active"] < (width * 0.18):
+                    active_speaker_x = active_match["center_x"]
+                    speaker_locked_frames += DETECT_INTERVAL
+                    candidate_speaker_x = None
+                    candidate_detected_frames = 0
+                else:
+                    # Ada wajah pembicara kedua di posisi lain (podcast guest/host)
+                    largest_other = max(valid_faces, key=lambda f: f["area"])
+                    
+                    if speaker_locked_frames >= LOCK_MIN_FRAMES:
+                        if candidate_speaker_x is None or abs(largest_other["center_x"] - candidate_speaker_x) > (width * 0.12):
+                            candidate_speaker_x = largest_other["center_x"]
+                            candidate_detected_frames = DETECT_INTERVAL
+                        else:
+                            candidate_detected_frames += DETECT_INTERVAL
+                            if candidate_detected_frames >= CANDIDATE_CONFIRM_FRAMES:
+                                active_speaker_x = candidate_speaker_x
+                                speaker_locked_frames = 0
+                                candidate_speaker_x = None
+                                candidate_detected_frames = 0
+                    else:
+                        speaker_locked_frames += DETECT_INTERVAL
                 
-                for face in valid_faces:
-                    proximity_score = 1.0 - (face["distance"] / max_dist) if max_dist > 0 else 1.0
-                    area_score = face["area"] / max_area if max_area > 0 else 0
-                    combined = (proximity_score * 0.6) + (area_score * 0.4)
-                    
-                    if combined > best_score:
-                        best_score = combined
-                        best_face = face
-                
-                if best_face:
-                    raw_target = _clamp_center(best_face["center_x"])
-                    
-                    # Add to rolling history for temporal stability
-                    detection_history.append(raw_target)
-                    if len(detection_history) > HISTORY_SIZE:
-                        detection_history.pop(0)
-                    
-                    # Use median of recent detections (removes outlier jitter)
-                    median_target = _get_median(detection_history)
-                    if median_target is not None:
-                        target_x = median_target
-                    
-                    frames_since_detection = 0
+                target_x = active_speaker_x
             else:
-                frames_since_detection += 1
+                # Jika wajah tidak terdeteksi sementara, TETAP KUNCI posisi terakhir (Tripod Lock)
+                # JANGAN pernah drift ke tengah ruangan kosong
+                speaker_locked_frames += DETECT_INTERVAL
+                target_x = active_speaker_x
         else:
-            frames_since_detection += 1
+            speaker_locked_frames += 1
         
-        # ── Camera Movement Logic ──
-        
-        # If face has been lost for too long, slowly drift toward center
-        if frames_since_detection > FACE_LOSS_PATIENCE:
-            center_x = width / 2
-            target_x = target_x + (center_x - target_x) * CENTER_DRIFT_SPEED
-            # Clear detection history since face is lost
-            detection_history.clear()
-        
-        # Calculate desired movement
+        # ── Tripod Stationary Logic & Smooth Pan ──
         delta = target_x - smoothed_x
         
-        # Apply dead zone — ignore micro-movements to prevent jitter
-        if abs(delta) < DEAD_ZONE:
+        # Tripod Mode: Kunci total (0 gerakan) jika kepala pembicara hanya goyang mikro
+        if abs(delta) < TRIPOD_DEAD_ZONE:
             delta = 0
         
-        # Double exponential smoothing:
-        # Update velocity with damping
-        velocity_x = velocity_x * (1 - VELOCITY_ALPHA) + delta * POSITION_ALPHA * VELOCITY_ALPHA
-        
-        # Clamp velocity to prevent sudden jumps
-        velocity_x = max(-MAX_VELOCITY, min(velocity_x, MAX_VELOCITY))
-        
-        # Update position with both smoothed delta and velocity (cinematic momentum)
-        smoothed_x = smoothed_x + delta * POSITION_ALPHA + velocity_x
-        
-        # Ensure smoothed position stays within valid bounds
-        smoothed_x = _clamp_center(smoothed_x)
+        step = delta * PAN_SMOOTH_FACTOR
+        step = max(-MAX_PAN_STEP, min(step, MAX_PAN_STEP))
+        smoothed_x = _clamp_center(smoothed_x + step)
         
         # ── Crop Frame ──
         frame_count += 1
         
-        # Calculate crop coordinates with sub-pixel precision then round
         x1 = int(round(smoothed_x - target_width / 2))
         x2 = x1 + target_width
         
-        # Safety clamp (should never trigger due to _clamp_center, but just in case)
         if x1 < 0:
             x1 = 0
             x2 = target_width

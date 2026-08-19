@@ -156,32 +156,55 @@ def transcribe_with_groq(audio_path, job_id=None):
     }
 
     with open(audio_path, "rb") as f:
-        files = {
-            "file": (os.path.basename(audio_path), f, "audio/mp3")
-        }
-        data = {
-            "model": "whisper-large-v3-turbo",
-            "response_format": "verbose_json",
-            "language": "id",
-            "temperature": "0.0"
-        }
+        files = [
+            ("file", (os.path.basename(audio_path), f, "audio/mp3")),
+            ("model", (None, "whisper-large-v3-turbo")),
+            ("response_format", (None, "verbose_json")),
+            ("language", (None, "id")),
+            ("temperature", (None, "0.0")),
+            ("timestamp_granularities[]", (None, "word")),
+            ("timestamp_granularities[]", (None, "segment")),
+        ]
         log("Menunggu respon dari Groq Cloud AI (estimasi: 2-8 detik)...", job_id=job_id)
-        resp = requests.post(url, headers=headers, files=files, data=data, timeout=120)
+        resp = requests.post(url, headers=headers, files=files, timeout=120)
 
     if resp.status_code != 200:
         raise RuntimeError(f"Groq API Error ({resp.status_code}): {resp.text}")
 
     result = resp.json()
     raw_segments = result.get("segments", [])
+    raw_words = result.get("words", [])
     
+    # Map words to segments accurately based on timestamp overlap
     segments = []
+    word_idx = 0
+    total_words = len(raw_words)
+
     for seg in raw_segments:
         text = seg.get("text", "").strip()
         start = float(seg.get("start", 0.0))
         end = float(seg.get("end", 0.0))
         
         words = []
-        if "words" in seg and seg["words"]:
+        # Ambil word timestamps langsung dari list kata asli Groq jika tersedia
+        if raw_words:
+            while word_idx < total_words:
+                w_item = raw_words[word_idx]
+                w_start = float(w_item.get("start", 0.0))
+                w_end = float(w_item.get("end", 0.0))
+                w_text = w_item.get("word", "").strip()
+                
+                # Masukkan kata ke dalam segmen ini jika berada dalam rentang waktu segmen
+                if w_start <= end + 0.15:
+                    words.append({
+                        "word": w_text,
+                        "start": w_start,
+                        "end": w_end
+                    })
+                    word_idx += 1
+                else:
+                    break
+        elif "words" in seg and seg["words"]:
             for w in seg["words"]:
                 words.append({
                     "word": w.get("word", "").strip(),
