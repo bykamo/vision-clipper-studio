@@ -1,6 +1,7 @@
 import os
 import sys
 import cv2
+import numpy as np
 from backend.utils import log, format_ass_timestamp, run_command, get_ffmpeg_binary, TEMP_DIR
 from moviepy import VideoFileClip
 
@@ -377,25 +378,33 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
     except Exception:
         pass
 
-    # ── Shot-Aware Multi-Camera Tracking State ──
+    # ── Shot-Aware Multi-Camera Tracking & Cinematic Dip-to-Black State ──
     current_camera_x = float(initial_camera_x)
     target_camera_x = float(initial_camera_x)
     
     seat_locked_frames = 0
-    LOCK_MIN_FRAMES = 90            # Kunci pembicara minimal ~1.5s sebelum boleh switch
+    LOCK_MIN_FRAMES = 75            # Kunci pembicara minimal ~1.2s sebelum boleh switch
     candidate_target_x = None
     candidate_detected_frames = 0
-    CANDIDATE_CONFIRM_FRAMES = 18   # Konfirmasi konsisten ~0.3s sebelum Instant Cut
+    CANDIDATE_CONFIRM_FRAMES = 16   # Konfirmasi konsisten ~0.25s sebelum transition
     
     DEAD_ZONE = 35.0                # Deadzone 35px untuk tripod freeze (zero micro-shake)
-    CUT_THRESHOLD = 90.0            # Perbedaan >90px dianggap pergantian shot / switch (Instant Cut)
+    CUT_THRESHOLD = 90.0            # Perbedaan >90px memicu Cinematic Dip-to-Black
     
     DETECT_INTERVAL = 2             # Deteksi setiap 2 frame untuk tracking super responsif
     frame_count = 0
 
+    # ── Dip-to-Black Transition Engine ──
+    # Kurva transisi 8 frame (~0.13 detik) untuk menutupi perpindahan sudut kamera 100%
+    TRANSITION_CURVE = [0.70, 0.35, 0.05, 0.00, 0.10, 0.40, 0.75, 1.00]
+    transition_idx = -1             # -1 = normal (tidak dalam transisi)
+    pending_cut_target = None
+    no_face_count = 0
+
     def process_frame(frame):
         nonlocal frame_count, current_camera_x, target_camera_x, active_seat
         nonlocal seat_locked_frames, candidate_target_x, candidate_detected_frames
+        nonlocal transition_idx, pending_cut_target, no_face_count
         
         # ── Frame 0 Instant Snap ──
         if frame_count == 0:
@@ -419,6 +428,11 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
             except Exception:
                 valid_faces = []
             
+            if not valid_faces:
+                no_face_count += DETECT_INTERVAL
+            else:
+                no_face_count = 0
+            
             raw_target = target_camera_x
             
             if len(valid_faces) == 1:
@@ -441,17 +455,17 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                     raw_target = right_spk["center_x"]
                     active_seat = "right"
             
-            # ── Hysteresis & Anti-Glitch Stabilizer ──
+            # ── Hysteresis & Cinematic Dip-to-Black Trigger ──
             dist_to_raw = abs(raw_target - target_camera_x)
             
             if dist_to_raw > CUT_THRESHOLD:
-                # Major scene cut or speaker switch candidate
                 if candidate_target_x is not None and abs(raw_target - candidate_target_x) < 50:
                     candidate_detected_frames += DETECT_INTERVAL
-                    # Hanya switch jika pembicara saat ini sudah terkunci cukup lama
+                    # Jika terkonfirmasi dan sudah terkunci cukup lama -> Picu Cinematic Dip-to-Black
                     if candidate_detected_frames >= CANDIDATE_CONFIRM_FRAMES and seat_locked_frames >= LOCK_MIN_FRAMES:
-                        target_camera_x = raw_target
-                        current_camera_x = raw_target  # Instant Cut TV-style
+                        if transition_idx == -1: # Mulai transisi gelap
+                            transition_idx = 0
+                            pending_cut_target = raw_target
                         candidate_target_x = None
                         candidate_detected_frames = 0
                         seat_locked_frames = 0
@@ -463,17 +477,34 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                 candidate_target_x = None
                 candidate_detected_frames = 0
                 seat_locked_frames += DETECT_INTERVAL
-                if dist_to_raw > DEAD_ZONE:
+                if dist_to_raw > DEAD_ZONE and transition_idx == -1:
                     target_camera_x += (raw_target - target_camera_x) * 0.20
         else:
             seat_locked_frames += 1
         
-        # ── Smooth Tripod Gliding ──
-        dist_current = abs(target_camera_x - current_camera_x)
-        if dist_current > CUT_THRESHOLD:
-            current_camera_x = target_camera_x
-        elif dist_current > DEAD_ZONE:
-            current_camera_x += (target_camera_x - current_camera_x) * 0.12
+        # ── Handle Dip-to-Black Transition Animation ──
+        current_brightness = 1.0
+        
+        if transition_idx >= 0:
+            current_brightness = TRANSITION_CURVE[transition_idx]
+            # Di titik gelap puncak (frame ke-3 / brightness 0.0), pindahkan kamera secara instan!
+            if transition_idx == 3 and pending_cut_target is not None:
+                target_camera_x = pending_cut_target
+                current_camera_x = pending_cut_target
+                pending_cut_target = None
+                
+            transition_idx += 1
+            if transition_idx >= len(TRANSITION_CURVE):
+                transition_idx = -1
+        else:
+            # Smooth Tripod Gliding normal (hanya untuk gerakan duduk mikro dalam deadzone)
+            dist_current = abs(target_camera_x - current_camera_x)
+            if dist_current > DEAD_ZONE:
+                current_camera_x += (target_camera_x - current_camera_x) * 0.12
+            
+            # Subtle Dimming jika pembicara hilang sejenak (> 1 detik)
+            if no_face_count > 30:
+                current_brightness = max(0.65, 1.0 - (no_face_count - 30) * 0.01)
             
         current_camera_x = _clamp_center(current_camera_x)
         
@@ -488,7 +519,13 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
             x1 = ((width - target_width) // 2) * 2
             
         x2 = x1 + target_width
-        return frame[:, x1:x2]
+        cropped = frame[:, x1:x2]
+        
+        # Apply Cinematic Brightness Modulation (Dip to Black / Auto-Dim)
+        if current_brightness < 0.99:
+            cropped = (cropped.astype(np.float32) * current_brightness).astype(np.uint8)
+            
+        return cropped
 
     cropped_clip = clip.image_transform(process_frame)
     my_logger = MoviePyLogger(job_id=job_id)
