@@ -292,10 +292,27 @@ def transcribe_video(video_path, source_url=None, model_size="groq", job_id=None
             except Exception as e:
                 log(f"Gagal memuat cache transkrip: {e}, melakukan fetch ulang...", job_id=job_id)
 
-    # Groq Cloud Whisper (Default & Ultra Cepat)
+    # Groq Cloud Whisper (Default & Ultra Cepat dengan Retry & Cache Lokal)
+    # Check local cache first berdasarkan nama file video
+    import hashlib
+    file_hash = hashlib.md5(os.path.basename(video_path).encode("utf-8")).hexdigest()[:12]
+    from backend.utils import PROJECT_ROOT
+    import json
+    cache_dir = os.path.join(PROJECT_ROOT, "downloads", "transcripts")
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_path = os.path.join(cache_dir, f"{file_hash}_groq.json")
+
+    if os.path.exists(cache_path):
+        log(f"Memuat transkrip dari cache lokal: {cache_path}", job_id=job_id)
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                segments = json.load(f)
+            return segments
+        except Exception as e:
+            log(f"Gagal memuat cache transkrip: {e}, melakukan transkripsi ulang...", job_id=job_id)
+
     log("Mengekstrak audio terkompresi mono MP3 untuk Groq Whisper...", job_id=job_id)
     temp_audio_path = tempfile.mktemp(suffix=".mp3", dir=TEMP_DIR)
-    # Ekstrak mono 48kbps 16kHz audio (ukuran file hanya ~15-20 MB untuk durasi 70+ menit)
     extract_cmd = [
         "ffmpeg", "-y", "-i", video_path,
         "-vn", "-acodec", "libmp3lame", "-b:a", "48k", "-ar", "16000", "-ac", "1",
@@ -303,18 +320,29 @@ def transcribe_video(video_path, source_url=None, model_size="groq", job_id=None
     ]
     try:
         run_command(extract_cmd, "Extracting lightweight audio for Groq", job_id=job_id)
-        segments = transcribe_with_groq(temp_audio_path, job_id=job_id)
         
-        # Simpan ke cache jika ada video_id
-        if is_youtube_url and video_id and segments:
+        # Retry loop dengan exponential backoff jika terjadi kendala jaringan/DNS sesaat
+        max_retries = 3
+        segments = None
+        for attempt in range(max_retries):
             try:
-                from backend.utils import PROJECT_ROOT
-                import json
-                cache_dir = os.path.join(PROJECT_ROOT, "downloads", "transcripts")
-                os.makedirs(cache_dir, exist_ok=True)
-                cache_path = os.path.join(cache_dir, f"{video_id}_groq.json")
+                segments = transcribe_with_groq(temp_audio_path, job_id=job_id)
+                if segments:
+                    break
+            except Exception as e:
+                log(f"Groq API call attempt {attempt + 1}/{max_retries} failed: {e}", job_id=job_id)
+                if attempt < max_retries - 1:
+                    wait_sec = (attempt + 1) * 3
+                    log(f"Mencoba kembali dalam {wait_sec} detik...", job_id=job_id)
+                    time.sleep(wait_sec)
+                else:
+                    raise e
+        
+        if segments:
+            try:
                 with open(cache_path, "w", encoding="utf-8") as f:
                     json.dump(segments, f, indent=2, ensure_ascii=False)
+                log(f"Transkrip disimpan ke cache lokal: {cache_path}", job_id=job_id)
             except Exception:
                 pass
         return segments

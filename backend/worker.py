@@ -16,8 +16,9 @@ def main():
     parser.add_argument("--model", type=str, default="groq", help="Transcription provider")
     parser.add_argument("--out-dir", type=str, default=DEFAULT_OUT_DIR, help="Output directory")
     parser.add_argument("--sub-style", type=str, default="tiktok_viral", choices=["tiktok_viral", "karaoke", "minimalist", "word_pop", "none"], help="Subtitle style")
+    parser.add_argument("--framing-mode", type=str, default=None, help="Deprecated/Ignored legacy framing mode")
 
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
 
     job_id = args.job_id
     if job_id:

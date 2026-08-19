@@ -695,9 +695,10 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
         run_command(cmd, "Rendering Opus Static Solo Crop...", job_id=job_id, duration=clip_dur)
     else:
         # Multi-Shot Seamless Concat Filter (Single Encode Pass)
+        # FFmpeg concat filter dengan v=1:a=1 mewajibkan urutan input berpasangan (interleaved):
+        # [v0][a0][v1][a1]...[vN-1][aN-1]
         filter_parts = []
-        concat_v_in = ""
-        concat_a_in = ""
+        concat_inputs = ""
 
         for idx, sh in enumerate(shots):
             rel_t0 = max(0.0, sh["t_start"])
@@ -711,10 +712,9 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                 f"[0:v]trim=start={rel_t0}:end={rel_t1},setpts=PTS-STARTPTS,crop={target_width}:{height}:{x1}:0[v{idx}];"
                 f"[0:a]atrim=start={rel_t0}:end={rel_t1},asetpts=PTS-STARTPTS[a{idx}];"
             )
-            concat_v_in += f"[v{idx}]"
-            concat_a_in += f"[a{idx}]"
+            concat_inputs += f"[v{idx}][a{idx}]"
 
-        filter_complex_str = "".join(filter_parts) + f"{concat_v_in}{concat_a_in}concat=n={len(shots)}:v=1:a=1[outv][outa]"
+        filter_complex_str = "".join(filter_parts) + f"{concat_inputs}concat=n={len(shots)}:v=1:a=1[outv][outa]"
 
         cmd = [
             ffmpeg_bin, "-y",
@@ -763,6 +763,22 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
     
     af_filter = f"highpass=f=100,acompressor=threshold=-20dB:ratio=4:attack=5:release=50:makeup=8dB,afade=t=out:st={fade_out_start}:d=0.5"
     
+    codecs_to_try = []
+    tiktok_golden = ["-c:v", "libx264", "-profile:v", "high", "-level", "4.2", "-pix_fmt", "yuv420p", "-g", "60", "-bf", "2", "-crf", "18", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]
+    nvenc_golden = ["-c:v", "h264_nvenc", "-preset", "slow", "-profile:v", "high", "-rc", "constqp", "-qp", "18", "-pix_fmt", "yuv420p", "-colorspace", "bt709", "-color_trc", "bt709", "-color_primaries", "bt709", "-g", "60", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]
+    
+    if sys.platform == "darwin":
+        codecs_to_try = [
+            ("VideoToolbox (TikTok Golden)", ["-c:v", "h264_videotoolbox", "-profile:v", "high", "-pix_fmt", "yuv420p", "-g", "60", "-b:v", "10M", "-maxrate", "12M", "-bufsize", "20M", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]),
+            ("libx264 (TikTok Golden)", tiktok_golden)
+        ]
+    else:
+        codecs_to_try = [
+            ("NVENC (TikTok Golden)", nvenc_golden),
+            ("Safer NVENC", ["-c:v", "h264_nvenc", "-preset", "p2", "-profile:v", "main", "-b:v", "8M", "-c:a", "aac", "-b:a", "192k"]),
+            ("libx264 (TikTok Golden)", tiktok_golden)
+        ]
+
     try:
         apply_smart_crop(video_path, start, end, temp_crop_file, job_id=job_id)
             
@@ -770,22 +786,6 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
         vf_filter_base = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,eq=contrast=1.1:brightness=0.02:saturation=1.2,unsharp=5:5:0.4:5:5:0.0"
         subtitle_filter = f",subtitles='{escaped_ass}'" if sub_style not in ["none", "no_subtitle"] else ""
         vf_filter = f"{vf_filter_base}{subtitle_filter},fade=t=out:st={fade_out_start}:d=0.5"
-        
-        codecs_to_try = []
-        tiktok_golden = ["-c:v", "libx264", "-profile:v", "high", "-level", "4.2", "-pix_fmt", "yuv420p", "-g", "60", "-bf", "2", "-crf", "18", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]
-        nvenc_golden = ["-c:v", "h264_nvenc", "-preset", "slow", "-profile:v", "high", "-rc", "constqp", "-qp", "18", "-pix_fmt", "yuv420p", "-colorspace", "bt709", "-color_trc", "bt709", "-color_primaries", "bt709", "-g", "60", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]
-        
-        if sys.platform == "darwin":
-            codecs_to_try = [
-                ("VideoToolbox (TikTok Golden)", ["-c:v", "h264_videotoolbox", "-profile:v", "high", "-pix_fmt", "yuv420p", "-g", "60", "-b:v", "10M", "-maxrate", "12M", "-bufsize", "20M", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]),
-                ("libx264 (TikTok Golden)", tiktok_golden)
-            ]
-        else:
-            codecs_to_try = [
-                ("NVENC (TikTok Golden)", nvenc_golden),
-                ("Safer NVENC", ["-c:v", "h264_nvenc", "-preset", "p2", "-profile:v", "main", "-b:v", "8M", "-c:a", "aac", "-b:a", "192k"]),
-                ("libx264 (TikTok Golden)", tiktok_golden)
-            ]
 
         ffmpeg_bin = get_ffmpeg_binary()
         for name, codec_params in codecs_to_try:
