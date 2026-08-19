@@ -450,7 +450,7 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
     profile_cascade = cv2.CascadeClassifier(PROFILE_CASCADE_PATH) if os.path.exists(PROFILE_CASCADE_PATH) else None
 
     def _detect_faces_in_frame(frame_img):
-        """Detect accurate human faces with zero false positives."""
+        """Detect accurate human faces with zero false positives on cups, microphones, and table items."""
         valid = []
         
         # Priority 1: High-Precision Neural YuNet Detector
@@ -460,19 +460,22 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                 bgr_img = cv2.cvtColor(frame_img, cv2.COLOR_RGB2BGR) if len(frame_img.shape) == 3 and frame_img.shape[2] == 3 else frame_img
                 _, raw_faces = yunet_detector.detect(bgr_img)
                 if raw_faces is not None:
+                    raw_candidates = []
                     for f in raw_faces:
                         x, y, w, h = int(f[0]), int(f[1]), int(f[2]), int(f[3])
                         score = float(f[-1])
                         cx = x + w / 2
                         cy = y + h / 2
-                        # Filter out thumbnail overlays, edges, and sub-pixel artifacts
+                        # ── Strict Face Zone ──
+                        # Human head in interviews/podcasts is located in the upper/mid portion (10% to 68% height)
+                        # Rejects images on cups/table items (which appear at bottom Y > 70%)
+                        if cy < height * 0.10 or cy > height * 0.68:
+                            continue
                         if cx < width * 0.05 or cx > width * 0.95:
                             continue
-                        if cy < height * 0.10 or cy > height * 0.90:
+                        if w < width * 0.04 or h < height * 0.07:
                             continue
-                        if w < width * 0.035 or h < height * 0.05:
-                            continue
-                        valid.append({
+                        raw_candidates.append({
                             "center_x": _clamp_center(cx),
                             "raw_cx": cx,
                             "cy": cy,
@@ -481,6 +484,14 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                             "area": w * h,
                             "score": score
                         })
+                    
+                    if raw_candidates:
+                        # Secondary filter: Suppress tiny secondary artifacts if a prominent main speaker face exists
+                        max_area = max(c["area"] for c in raw_candidates)
+                        for c in raw_candidates:
+                            if max_area > 15000 and c["area"] < 0.20 * max_area:
+                                continue
+                            valid.append(c)
                     return valid
             except Exception:
                 pass
@@ -516,7 +527,7 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
             if aspect < 0.65 or aspect > 1.40:
                 continue
             cy = fy + (fh / 2)
-            if cy < height * 0.10 or cy > height * 0.85:
+            if cy < height * 0.10 or cy > height * 0.68:
                 continue
             cx = _clamp_center(fx + (fw / 2))
             valid.append({"center_x": cx, "raw_cx": fx + (fw / 2), "cy": cy, "w": fw, "h": fh, "area": area, "score": 0.8})
