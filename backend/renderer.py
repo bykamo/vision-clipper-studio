@@ -262,9 +262,10 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
         """Clamp camera center X within valid crop boundaries."""
         return max(MIN_CENTER_X, min(cx, MAX_CENTER_X))
 
-    # Podcast Dual Anchor Fallbacks (Host Kiri ~28% / Guest Kanan ~72%)
-    ANCHOR_LEFT = _clamp_center(width * 0.28)
-    ANCHOR_RIGHT = _clamp_center(width * 0.72)
+    # Podcast Dual Anchor Fallbacks (Host Kiri ~25% / Guest Kanan ~75%)
+    # Posisi lebih ke tepi agar benar-benar membidik orang, bukan area tengah meja
+    ANCHOR_LEFT = _clamp_center(width * 0.25)
+    ANCHOR_RIGHT = _clamp_center(width * 0.75)
 
     def _detect_faces_in_frame(gray_img):
         """Detect faces using both frontal and bilateral profile cascades."""
@@ -344,12 +345,19 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
     except Exception:
         pass
 
-    # Tentukan posisi kursi default
-    left_faces = [pos for pos, area in detected_clusters if pos < (width * 0.50)]
-    right_faces = [pos for pos, area in detected_clusters if pos >= (width * 0.50)]
+    # Tentukan posisi kursi default — enforce minimal separation
+    left_faces = [pos for pos, area in detected_clusters if pos < (width * 0.45)]
+    right_faces = [pos for pos, area in detected_clusters if pos >= (width * 0.55)]
     
     SEAT_LEFT = sum(left_faces) / len(left_faces) if left_faces else ANCHOR_LEFT
     SEAT_RIGHT = sum(right_faces) / len(right_faces) if right_faces else ANCHOR_RIGHT
+    
+    # Pastikan seat tidak terlalu dekat ke tengah (area kosong meja)
+    SEAT_LEFT = min(SEAT_LEFT, width * 0.40)   # Tidak boleh melampaui 40% ke kanan
+    SEAT_RIGHT = max(SEAT_RIGHT, width * 0.60)  # Tidak boleh melampaui 60% ke kiri
+    
+    SEAT_LEFT = _clamp_center(SEAT_LEFT)
+    SEAT_RIGHT = _clamp_center(SEAT_RIGHT)
     
     # Pilih pembicara pembuka klip
     if detected_clusters:
@@ -363,10 +371,12 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
     active_seat = "left" if initial_speaker_x < (width * 0.50) else "right"
     
     seat_locked_frames = 0
-    LOCK_MIN_FRAMES = 60            # Kunci pembicara minimal ~2 detik sebelum boleh switch
+    LOCK_MIN_FRAMES = 90            # Kunci pembicara minimal ~3 detik sebelum boleh switch
     candidate_seat = None
     candidate_detected_frames = 0
-    CANDIDATE_CONFIRM_FRAMES = 18   # Konfirmasi konsisten ~0.6s sebelum Instant Cut
+    CANDIDATE_CONFIRM_FRAMES = 30   # Konfirmasi konsisten ~1s sebelum switch
+    no_face_streak = 0              # Counter frame tanpa wajah terdeteksi
+    NO_FACE_PATIENCE = 45           # Toleransi ~1.5s tanpa wajah sebelum mempertimbangkan switch
     
     DETECT_INTERVAL = 3
     frame_count = 0
@@ -374,6 +384,7 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
     def process_frame(frame):
         nonlocal frame_count, current_camera_x, active_seat
         nonlocal seat_locked_frames, candidate_seat, candidate_detected_frames
+        nonlocal no_face_streak
         
         # ── Face Detection (every N frames) ──
         if frame_count % DETECT_INTERVAL == 0:
@@ -384,28 +395,34 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                 valid_faces = []
             
             if valid_faces:
+                no_face_streak = 0  # Reset counter tidak ada wajah
+                
                 # Cek apakah ada wajah di kursi lawan (Host vs Guest)
+                # Gunakan zona tengah netral (45%-55%) agar wajah di dekat tengah tidak di-assign
                 detected_seats = set()
                 for f in valid_faces:
-                    if f["center_x"] < (width * 0.50):
+                    if f["center_x"] < (width * 0.45):
                         detected_seats.add("left")
-                    else:
+                    elif f["center_x"] > (width * 0.55):
                         detected_seats.add("right")
+                    # Wajah di zona tengah (45%-55%) = diabaikan, tidak masuk seat manapun
                 
                 other_seat = "right" if active_seat == "left" else "left"
                 
-                # Jika pembicara aktif masih di kursinya
+                # Jika pembicara aktif masih di kursinya → tetap diam
                 if active_seat in detected_seats:
                     seat_locked_frames += DETECT_INTERVAL
-                    # Reset kandidat jika pembicara aktif masih dominan
+                    # Reset kandidat karena pembicara aktif masih terlihat
                     candidate_seat = None
                     candidate_detected_frames = 0
                 elif other_seat in detected_seats:
-                    # Pembicara aktif tidak terlihat / diam, dan lawan bicara terdeteksi
+                    # Pembicara aktif TIDAK terlihat, tapi lawan bicara terdeteksi
+                    # Hanya mulai menghitung switch jika sudah cukup lama terkunci
+                    # DAN pembicara aktif sudah lama tidak terlihat
                     if seat_locked_frames >= LOCK_MIN_FRAMES:
                         if candidate_seat == other_seat:
                             candidate_detected_frames += DETECT_INTERVAL
-                            # Lakukan INSTANT CUT (Multi-Camera Switcher)
+                            # Switch hanya jika konfirmasi SANGAT konsisten
                             if candidate_detected_frames >= CANDIDATE_CONFIRM_FRAMES:
                                 active_seat = other_seat
                                 current_camera_x = SEAT_RIGHT if active_seat == "right" else SEAT_LEFT
@@ -416,10 +433,19 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                             candidate_seat = other_seat
                             candidate_detected_frames = DETECT_INTERVAL
                     else:
+                        # Belum cukup lama terkunci, tambahkan counter saja
                         seat_locked_frames += DETECT_INTERVAL
+                else:
+                    # Wajah terdeteksi tapi bukan di kursi mana-mana → abaikan, tetap diam
+                    seat_locked_frames += DETECT_INTERVAL
             else:
-                # Wajah tidak terdeteksi sementara -> TETAP 100% DIAM di kursi aktif
+                # Tidak ada wajah terdeteksi sama sekali → TETAP DIAM di kursi aktif
+                # Jangan pernah pindah kamera hanya karena kehilangan wajah sementara
+                no_face_streak += DETECT_INTERVAL
                 seat_locked_frames += DETECT_INTERVAL
+                # Reset kandidat switch (kehilangan wajah bukan alasan switch)
+                candidate_seat = None
+                candidate_detected_frames = 0
         else:
             seat_locked_frames += 1
         
