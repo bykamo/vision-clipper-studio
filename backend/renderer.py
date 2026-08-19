@@ -350,26 +350,30 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
             
         return valid
 
-    # ── Initial Speaker Scan ──
-    # Scan frame awal klip untuk menentukan framing pembuka yang akurat
-    initial_camera_x = _clamp_center(width * 0.50)
+    # ── Dense Initial Speaker Scan (Anti-Delay Framing 0.0s) ──
+    # Dense scan frame awal klip agar frame 0 langsung 100% pas membidik pembicara (Zero Millisecond Center Delay)
+    initial_camera_x = _clamp_center(width * 0.25)
     active_seat = "left"
     try:
-        sample_times = [0.0, 0.2, 0.5, 1.0, 1.5]
+        sample_times = [0.0, 0.05, 0.1, 0.2, 0.3, 0.5, 0.8, 1.0, 1.5, 2.0]
+        found_in_scan = []
         for st in sample_times:
             if st < clip.duration:
                 sample_frame = clip.get_frame(st)
                 v = _detect_faces_in_frame(sample_frame)
-                if len(v) == 1:
-                    initial_camera_x = v[0]["center_x"]
-                    active_seat = "left" if v[0]["raw_cx"] < width * 0.50 else "right"
-                    break
-                elif len(v) >= 2:
-                    v.sort(key=lambda item: item["raw_cx"])
-                    # Default ke speaker kiri atau yang paling dominan di pembuka
-                    initial_camera_x = v[0]["center_x"]
-                    active_seat = "left"
-                    break
+                if v:
+                    found_in_scan.extend(v)
+                    if len(v) == 1:
+                        initial_camera_x = v[0]["center_x"]
+                        active_seat = "left" if v[0]["raw_cx"] < width * 0.50 else "right"
+                        break
+                    elif len(v) >= 2:
+                        v.sort(key=lambda item: item["raw_cx"])
+                        initial_camera_x = v[0]["center_x"]
+                        active_seat = "left"
+                        break
+        if not found_in_scan and clip.duration > 0:
+            initial_camera_x = _clamp_center(width * 0.25)
     except Exception:
         pass
 
@@ -392,6 +396,21 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
     def process_frame(frame):
         nonlocal frame_count, current_camera_x, target_camera_x, active_seat
         nonlocal seat_locked_frames, candidate_target_x, candidate_detected_frames
+        
+        # ── Frame 0 Instant Snap ──
+        if frame_count == 0:
+            try:
+                f0_faces = _detect_faces_in_frame(frame)
+                if f0_faces:
+                    if len(f0_faces) == 1:
+                        current_camera_x = target_camera_x = f0_faces[0]["center_x"]
+                        active_seat = "left" if f0_faces[0]["raw_cx"] < width * 0.50 else "right"
+                    else:
+                        f0_faces.sort(key=lambda item: item["raw_cx"])
+                        current_camera_x = target_camera_x = f0_faces[0]["center_x"]
+                        active_seat = "left"
+            except Exception:
+                pass
         
         # ── Neural Face Detection (every N frames) ──
         if frame_count % DETECT_INTERVAL == 0:
