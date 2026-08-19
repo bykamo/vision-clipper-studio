@@ -16,7 +16,10 @@ import {
   FireIcon,
   MicrophoneIcon,
   ChatBubbleBottomCenterTextIcon,
-  EyeSlashIcon
+  EyeSlashIcon,
+  TvIcon,
+  RectangleStackIcon,
+  SparklesIcon
 } from '@heroicons/react/24/outline';
 import { 
   StopIcon as StopIconSolid,
@@ -47,6 +50,8 @@ export const SimpleClipperDashboard: React.FC = () => {
   const [transcriptionModel, setTranscriptionModel] = useState<string>('groq');
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [selectedPresetId, setSelectedPresetId] = useState<string>('tiktok_viral');
+  const [framingMode, setFramingMode] = useState<string>('hard_cut');
+  const [framingDropdownOpen, setFramingDropdownOpen] = useState(false);
 
   // Generated Clips & Output Folder
   const [outputDir, setOutputDir] = useState<string>('');
@@ -111,12 +116,12 @@ export const SimpleClipperDashboard: React.FC = () => {
     const startTimestamp = new Date().toTimeString().split(' ')[0];
     setLogs([
       `[${startTimestamp}] [SYSTEM] Inisialisasi ${activeTab.toUpperCase()} CLIPPER ENGINE...`,
-      `[${startTimestamp}] [SYSTEM] Model AI: ${transcriptionModel} | Subtitle Style: ${selectedPresetId}`,
+      `[${startTimestamp}] [SYSTEM] Model AI: ${transcriptionModel} | Subtitle Style: ${selectedPresetId} | Framing: ${framingMode}`,
       `[${startTimestamp}] [SYSTEM] Sumber video: ${source}`,
       `[${startTimestamp}] [SYSTEM] Memulai proses ekstraksi & analisis hook viral...`
     ]);
 
-    const streamUrl = `/stream?mode=${encodeURIComponent(activeTab)}&source_type=file&source=${encodeURIComponent(source)}&num_clips=${encodeURIComponent(clipCount)}&sub_style=${encodeURIComponent(selectedPresetId)}&whisper_model=${encodeURIComponent(transcriptionModel)}`;
+    const streamUrl = `/stream?mode=${encodeURIComponent(activeTab)}&source_type=file&source=${encodeURIComponent(source)}&num_clips=${encodeURIComponent(clipCount)}&sub_style=${encodeURIComponent(selectedPresetId)}&whisper_model=${encodeURIComponent(transcriptionModel)}&framing_mode=${encodeURIComponent(framingMode)}`;
     const es = new EventSource(streamUrl);
     eventSourceRef.current = es;
 
@@ -465,7 +470,60 @@ export const SimpleClipperDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Setting 2: AI Transcription Model */}
+          {/* Setting 2: AI Framing Mode */}
+          <div className="mb-5 relative">
+            <label className="block text-xs font-medium text-slate-400 mb-1.5">
+              Framing & Camera Tracking
+            </label>
+            <button
+              type="button"
+              onClick={() => setFramingDropdownOpen(!framingDropdownOpen)}
+              className="flex w-full items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2.5 text-left text-xs font-medium text-slate-200 hover:border-slate-700 transition-all shadow-inner"
+            >
+              <div className="flex items-center gap-2 truncate">
+                {framingMode === 'hard_cut' && <TvIcon className="h-4 w-4 stroke-[2] text-amber-400 flex-shrink-0" />}
+                {framingMode === 'split_screen' && <RectangleStackIcon className="h-4 w-4 stroke-[2] text-sky-400 flex-shrink-0" />}
+                {framingMode === 'fit_blur' && <FilmIconSolid className="h-4 w-4 text-purple-400 flex-shrink-0" />}
+                {framingMode === 'auto' && <SparklesIcon className="h-4 w-4 stroke-[2] text-emerald-400 flex-shrink-0" />}
+                <span className="truncate">
+                  {framingMode === 'hard_cut' && 'Multi-Cam Hard Cut (TV Style)'}
+                  {framingMode === 'split_screen' && 'Split-Screen (Top & Bottom)'}
+                  {framingMode === 'fit_blur' && 'Fit 16:9 + Blurred Background'}
+                  {framingMode === 'auto' && 'Auto Face Tracking (Hard Cut)'}
+                </span>
+              </div>
+              <ChevronDownIcon className={`h-4 w-4 stroke-[2] text-slate-400 transition-transform ${framingDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {framingDropdownOpen && (
+              <div className="absolute top-full left-0 right-0 mt-1 z-30 rounded-xl border border-slate-800 bg-slate-900 p-1 shadow-2xl backdrop-blur-md">
+                {[
+                  { id: 'hard_cut', label: 'Multi-Cam Hard Cut (TV Style)', desc: 'Kamera diam di narasumber, cut instan 0ms saat ganti orang' },
+                  { id: 'split_screen', label: 'Split-Screen (Top & Bottom)', desc: 'Layar atas Host & bawah Guest (100% statis)' },
+                  { id: 'fit_blur', label: 'Fit 16:9 + Blurred Background', desc: 'Video utuh di tengah dengan background blur halus' },
+                  { id: 'auto', label: 'Auto Framing (Smart)', desc: 'Pilihan cerdas berbasis deteksi wajah' }
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setFramingMode(item.id);
+                      setFramingDropdownOpen(false);
+                    }}
+                    className={`flex w-full flex-col rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
+                      framingMode === item.id
+                        ? `${themeClasses.pillActive} font-semibold`
+                        : 'text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="font-semibold">{item.label}</span>
+                    <span className="text-[10px] text-slate-400">{item.desc}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Setting 3: AI Transcription Model */}
           <div className="mb-5 relative">
             <label className="block text-xs font-medium text-slate-400 mb-1.5">
               AI Transcription Model
