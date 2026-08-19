@@ -329,11 +329,12 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
     except Exception:
         pass
 
-    # ── Tracking State ──
-    smoothed_x = initial_speaker_x
-    target_x = initial_speaker_x
+    # ── Tracking State (Cinematic Damped Spring Physics) ──
+    smoothed_x = float(initial_speaker_x)
+    target_x = float(initial_speaker_x)
+    pan_velocity_x = 0.0            # Kecepatan kamera untuk akselerasi & deselerasi mulus
     
-    active_speaker_x = initial_speaker_x
+    active_speaker_x = float(initial_speaker_x)
     speaker_locked_frames = 0
     LOCK_MIN_FRAMES = 75            # Kunci pembicara minimal ~2.5 detik
     candidate_speaker_x = None
@@ -341,14 +342,15 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
     CANDIDATE_CONFIRM_FRAMES = 15   # Konfirmasi konsisten ~0.5s sebelum switch
     
     DETECT_INTERVAL = 3
-    PAN_SMOOTH_FACTOR = 0.035
-    TRIPOD_DEAD_ZONE = width * 0.08 # Freeze Tripod mode
-    MAX_PAN_STEP = width * 0.006
+    # Parameter Fisika Kamera Sinematik (Gimbal Slider Model)
+    SPRING_CONSTANT = 0.038         # Gaya dorong kamera menuju target
+    VELOCITY_DAMPING = 0.86         # Redaman momentum untuk pengereman empuk (tanpa sentakan)
+    TRIPOD_THRESHOLD = width * 0.05 # Zona toleransi diam stabil
     
     frame_count = 0
 
     def process_frame(frame):
-        nonlocal frame_count, smoothed_x, target_x
+        nonlocal frame_count, smoothed_x, target_x, pan_velocity_x
         nonlocal active_speaker_x, speaker_locked_frames
         nonlocal candidate_speaker_x, candidate_detected_frames
         
@@ -366,7 +368,7 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                     
                 active_match = min(valid_faces, key=lambda f: f["dist_to_active"])
                 
-                # Jika pembicara aktif masih terlihat di areanya
+                # Jika pembicara aktif masih di kursinya
                 if active_match["dist_to_active"] < (width * 0.20):
                     active_speaker_x = active_match["center_x"]
                     speaker_locked_frames += DETECT_INTERVAL
@@ -390,21 +392,26 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                 
                 target_x = active_speaker_x
             else:
-                # Jika sedang tidak ada deteksi wajah di frame ini, TETAP KUNCI posisi pembicara aktif
-                # JANGAN pernah kembali ke tengah meja kosong
+                # Pertahankan posisi terakhir pembicara aktif
                 speaker_locked_frames += DETECT_INTERVAL
                 target_x = active_speaker_x
         else:
             speaker_locked_frames += 1
         
-        # ── Tripod Stationary Logic & Smooth Pan ──
+        # ── Cinematic Damped Spring Physics (Ultra Smooth Glide) ──
         delta = target_x - smoothed_x
-        if abs(delta) < TRIPOD_DEAD_ZONE:
-            delta = 0
         
-        step = delta * PAN_SMOOTH_FACTOR
-        step = max(-MAX_PAN_STEP, min(step, MAX_PAN_STEP))
-        smoothed_x = _clamp_center(smoothed_x + step)
+        # Jika berada sangat dekat di zona tripod, redam kecepatan secara perlahan
+        if abs(delta) < TRIPOD_THRESHOLD:
+            pan_velocity_x *= 0.75
+            if abs(pan_velocity_x) < 0.05 and abs(delta) < 2.0:
+                pan_velocity_x = 0.0
+                smoothed_x = target_x
+        else:
+            # Akselerasi lembut dan deselerasi sinematik (S-Curve)
+            force = delta * SPRING_CONSTANT
+            pan_velocity_x = (pan_velocity_x + force) * VELOCITY_DAMPING
+            smoothed_x = _clamp_center(smoothed_x + pan_velocity_x)
         
         # ── Crop Frame ──
         frame_count += 1
