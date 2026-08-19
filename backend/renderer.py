@@ -535,24 +535,19 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
         return valid
 
     # ═══════════════════════════════════════════════════════════════
-    # PASS 1: FULL-CLIP OPUS-STYLE SHOT ANALYSIS
-    # Aturan Opus Clip untuk Podcast/Interview:
-    #   1. Active Speaker Priority: Wajah lebih besar & tengah-aktif = pembicara utama.
-    #   2. High Shot Stability (3.0s minimum): Mencegah kamera berganti terlalu cepat.
-    #   3. Confirmation Gate (1.6s): Kandidat harus stabil berbicara sebelum cut.
-    #   4. Post-Cut Cooldown (3.6s): Kamera dilarang cut kembali dalam 3.6s.
+    # PASS 1: FULL-CLIP OPUS-STYLE SHOT & CLUSTER ANALYSIS
     # ═══════════════════════════════════════════════════════════════
     SAMPLE_INTERVAL = 0.4            # 2.5 fps sampling untuk deteksi responsif
     HOLD_MIN = 7                     # ~2.8s wajib bertahan di pembicara aktif
     CONFIRM = 4                      # ~1.6s konfirmasi kandidat baru konsisten
-    ABSENT_GRACE = 5                 # ~2.0s toleransi jika wajah tertutup sejenak
+    ABSENT_GRACE = 6                 # ~2.4s toleransi jika wajah tertutup sejenak
     SWITCH_COOLDOWN = 9              # ~3.6s larangan cut ulang setelah berganti
     MIN_SHOT_DURATION = 3.0          # Minimum durasi shot gaya Opus Clip
 
     clip_duration = clip.duration
     sample_count = max(1, int(clip_duration / SAMPLE_INTERVAL) + 1)
-    samples = []                     # {"t", "seat", "cxs"}
-    left_cxs, right_cxs = [], []
+    samples = []                     # {"t", "cxs", "primary_cx"}
+    all_detected_cxs = []
 
     for i in range(sample_count):
         t = i * SAMPLE_INTERVAL
@@ -564,39 +559,63 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
         except Exception:
             faces = []
 
-        cxs = [f["raw_cx"] for f in faces]
-        if len(faces) == 0:
-            seat = "absent"
-        elif len(faces) == 1:
-            seat = "left" if faces[0]["raw_cx"] < width * 0.5 else "right"
+        if faces:
+            # Sort faces by area descending (wajah paling dominan/besar di depan)
+            faces.sort(key=lambda f: f["area"], reverse=True)
+            cxs = [f["raw_cx"] for f in faces]
+            primary_cx = faces[0]["raw_cx"]
+            all_detected_cxs.extend(cxs)
         else:
-            # Multi-face (Opus Rule): Skor kombinasi area wajah + skor confidence
-            left_score = sum(f["area"] * (1.2 if f["score"] > 0.8 else 1.0) for f in faces if f["raw_cx"] < width * 0.5)
-            right_score = sum(f["area"] * (1.2 if f["score"] > 0.8 else 1.0) for f in faces if f["raw_cx"] >= width * 0.5)
-            seat = "left" if left_score >= right_score else "right"
+            cxs = []
+            primary_cx = None
 
-        samples.append({"t": t, "seat": seat, "cxs": cxs})
-        if seat == "left" and cxs:
-            left_cxs.append(min(cxs))
-        elif seat == "right" and cxs:
-            right_cxs.append(max(cxs))
+        samples.append({"t": t, "cxs": cxs, "primary_cx": primary_cx})
 
     clip.close()
 
-    left_anchor = _clamp_center(float(np.median(left_cxs))) if left_cxs else _clamp_center(width * 0.25)
-    right_anchor = _clamp_center(float(np.median(right_cxs))) if right_cxs else _clamp_center(width * 0.75)
-    is_multi_speaker = len(left_cxs) >= 4 and len(right_cxs) >= 4
+    # ── K-Means / Bimodal Cluster Analysis untuk Mendeteksi Speaker Asli ──
+    # Mencegah pembagian kaku 50% layar yang sering salah anggap solo speaker sebagai dual speaker
+    if len(all_detected_cxs) >= 8:
+        sorted_cxs = sorted(all_detected_cxs)
+        half = len(sorted_cxs) // 2
+        left_med = float(np.median(sorted_cxs[:half]))
+        right_med = float(np.median(sorted_cxs[half:]))
+        
+        # Hanya anggap Multi-Speaker jika ada dua kluster wajah dengan jarak signifikan (> 22% lebar video)
+        if (right_med - left_med) > (width * 0.22):
+            left_anchor = _clamp_center(left_med)
+            right_anchor = _clamp_center(right_med)
+            split_boundary_x = (left_anchor + right_anchor) / 2.0
+            is_multi_speaker = True
+        else:
+            solo_med = float(np.median(sorted_cxs))
+            left_anchor = right_anchor = _clamp_center(solo_med)
+            split_boundary_x = solo_med
+            is_multi_speaker = False
+    else:
+        solo_med = float(np.median(all_detected_cxs)) if all_detected_cxs else (width * 0.50)
+        left_anchor = right_anchor = _clamp_center(solo_med)
+        split_boundary_x = solo_med
+        is_multi_speaker = False
+
+    # Beri label seat pada setiap sampel berdasarkan batas kluster dinamis
+    for s in samples:
+        if s["primary_cx"] is None:
+            s["seat"] = "absent"
+        elif not is_multi_speaker:
+            s["seat"] = "solo"
+        else:
+            s["seat"] = "left" if s["primary_cx"] < split_boundary_x else "right"
 
     log(f"Opus Face Engine: left_anchor={left_anchor:.0f}px right_anchor={right_anchor:.0f}px multi_speaker={is_multi_speaker}", job_id=job_id)
 
     shots = []
     if not is_multi_speaker:
-        # ── Single Speaker Shot (Opus Solo Track) ──
-        all_cxs = [c for s in samples for c in s["cxs"]]
-        solo_x = _clamp_center(float(np.median(all_cxs))) if all_cxs else _clamp_center(width * 0.25)
+        # ── Single Speaker Track: 100% Mengikuti Koordinat Wajah Asli ──
+        solo_x = _clamp_center(float(np.median(all_detected_cxs))) if all_detected_cxs else _clamp_center(width * 0.50)
         shots = [{"seat": "solo", "t_start": 0.0, "t_end": clip_duration, "anchor_x": solo_x}]
     else:
-        # ── Multi Speaker Shot (Opus Dual-Speaker Auto Cut) ──
+        # ── Multi Speaker Track: State Machine Debounce ──
         active = None
         hold = 0
         candidate = None
@@ -652,10 +671,10 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
             shots.append({"seat": active, "t_start": shot_start, "t_end": clip_duration})
 
         if not shots:
-            fallback_seat = "left" if left_cxs else "right"
+            fallback_seat = "left" if left_anchor else "right"
             shots = [{"seat": fallback_seat, "t_start": 0.0, "t_end": clip_duration}]
 
-        # Merge short shots (< MIN_SHOT_DURATION) agar pergantian kamera sangat tenang & natural
+        # Merge short shots (< MIN_SHOT_DURATION) agar pergantian kamera sangat tenang
         merged = []
         for sh in shots:
             if merged and (sh["t_end"] - sh["t_start"]) < MIN_SHOT_DURATION:
@@ -664,17 +683,21 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                 merged.append(sh)
         shots = merged
 
+        # ── Kunci Anchor Per-Shot Berdasarkan Wajah Aktual di Dalam Rentang Waktu Tersebut ──
+        # Mencegah kamera mengunci koordinat kursi kosong/benda saat angle video asli berubah
         for sh in shots:
-            cx_pool = []
+            shot_actual_cxs = []
             for s in samples:
-                if (sh["t_start"] - 0.01) <= s["t"] <= (sh["t_end"] + 0.01):
-                    if s["seat"] == sh["seat"]:
-                        cx_pool.extend(s["cxs"])
-            if not cx_pool:
-                cx_pool = [left_anchor if sh["seat"] == "left" else right_anchor]
-            sh["anchor_x"] = _clamp_center(float(np.median(cx_pool)))
+                if (sh["t_start"] - 0.05) <= s["t"] <= (sh["t_end"] + 0.05):
+                    if s["primary_cx"] is not None:
+                        shot_actual_cxs.append(s["primary_cx"])
+            
+            if shot_actual_cxs:
+                sh["anchor_x"] = _clamp_center(float(np.median(shot_actual_cxs)))
+            else:
+                sh["anchor_x"] = left_anchor if sh["seat"] == "left" else right_anchor
 
-    log(f"Opus Cut Sequence: {[{'start': round(s['t_start'],1), 'end': round(s['t_end'],1), 'speaker': s['seat']} for s in shots]}", job_id=job_id)
+    log(f"Opus Cut Sequence: {[{'start': round(s['t_start'],1), 'end': round(s['t_end'],1), 'speaker': s['seat'], 'anchor_x': round(s['anchor_x'])} for s in shots]}", job_id=job_id)
 
     # ═══════════════════════════════════════════════════════════════
     # PASS 2: SEAMLESS NATIVE FFMPEG FILTER GRAPH (ZERO GLITCH / FAST)
