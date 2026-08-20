@@ -12,7 +12,7 @@ setup(
         "uvicorn",
         "pydantic",
         "requests",
-        "opencv-python",
+        "opencv-python-headless",
         "moviepy",
         "yt-dlp",
         "youtube-transcript-api",

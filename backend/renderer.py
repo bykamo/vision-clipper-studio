@@ -414,432 +414,175 @@ class MoviePyLogger(ProgressBarLogger):
                 self.last_log_time = current_time
 
 def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None):
-    log(f"Applying AI Smart Crop (Shot-Based Multi-Camera Hard Cut Engine)...", job_id=job_id)
+    """
+    M1 Native Smart Face Tracker & Auto-Clipper.
+    Combines OpenCV Face Detection + Exponential Moving Average (EMA) smoothing for seamless 9:16 cinematic panning.
+    """
+    log(f"Applying M1 Smart Face Tracker (EMA Smooth Panning 9:16)...", job_id=job_id)
     
-    clip = VideoFileClip(video_path).subclipped(start_time, end_time)
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        raise RuntimeError(f"Gagal membuka video: {video_path}")
+
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    orig_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    orig_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     
-    width, height = clip.size
-    target_width = int(height * 9 / 16)
-    
-    if target_width % 2 != 0: target_width -= 1
-    if target_width > width:
-        target_width = width
-        if target_width % 2 != 0: target_width -= 1
+    start_frame = max(0, int(start_time * fps))
+    end_frame = int(end_time * fps)
+    total_clip_frames = max(1, end_frame - start_frame)
 
-    # ── Boundary limits for camera center ──
-    MIN_CENTER_X = target_width / 2
-    MAX_CENTER_X = width - (target_width / 2)
+    # Set posisi frame awal
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
 
-    def _clamp_center(cx):
-        """Clamp camera center X within valid crop boundaries."""
-        return max(MIN_CENTER_X, min(cx, MAX_CENTER_X))
+    # Dimensi crop vertikal 9:16
+    target_aspect_ratio = 9.0 / 16.0
+    crop_h = orig_h
+    crop_w = int(crop_h * target_aspect_ratio)
+    if crop_w % 2 != 0: crop_w -= 1
+    if crop_w > orig_w:
+        crop_w = orig_w
+        if crop_w % 2 != 0: crop_w -= 1
+        crop_h = int(crop_w / target_aspect_ratio)
 
-    # Initialize YuNet Deep Neural Network Face Detector
+    smoothing_factor = 0.08
+    min_face_size_ratio = 0.04
+    min_pixel_size = int(orig_w * min_face_size_ratio)
+
+    default_center_x = (orig_w - crop_w) / 2.0
+    curr_crop_x = default_center_x
+
+    # Inisialisasi Face Detector (YuNet DNN jika ada, fallback ke Haar Cascade)
     yunet_detector = None
     if os.path.exists(YUNET_MODEL_PATH) and hasattr(cv2, 'FaceDetectorYN'):
         try:
             yunet_detector = cv2.FaceDetectorYN.create(
-                YUNET_MODEL_PATH, "", (width, height),
-                score_threshold=0.65, nms_threshold=0.3
+                YUNET_MODEL_PATH, "", (orig_w, orig_h),
+                score_threshold=0.55, nms_threshold=0.3
             )
-        except Exception as e:
-            log(f"YuNet init failed: {e}, falling back to Haar Cascades...", job_id=job_id)
+        except Exception:
             yunet_detector = None
 
-    frontal_cascade = cv2.CascadeClassifier(CASCADE_PATH) if os.path.exists(CASCADE_PATH) else None
-    profile_cascade = cv2.CascadeClassifier(PROFILE_CASCADE_PATH) if os.path.exists(PROFILE_CASCADE_PATH) else None
+    cascade_path = CASCADE_PATH if os.path.exists(CASCADE_PATH) else (getattr(cv2.data, 'haarcascades', '') + 'haarcascade_frontalface_default.xml')
+    face_cascade = cv2.CascadeClassifier(cascade_path) if os.path.exists(cascade_path) else None
 
-    def _detect_faces_in_frame(frame_img):
-        """Detect accurate human faces with zero false positives on cups, microphones, and table items."""
-        valid = []
-        
-        # Priority 1: High-Precision Neural YuNet Detector
-        if yunet_detector is not None:
-            try:
-                # YuNet expects BGR format
-                bgr_img = cv2.cvtColor(frame_img, cv2.COLOR_RGB2BGR) if len(frame_img.shape) == 3 and frame_img.shape[2] == 3 else frame_img
-                _, raw_faces = yunet_detector.detect(bgr_img)
-                if raw_faces is not None:
-                    raw_candidates = []
-                    for f in raw_faces:
-                        x, y, w, h = int(f[0]), int(f[1]), int(f[2]), int(f[3])
-                        score = float(f[-1])
-                        cx = x + w / 2
-                        cy = y + h / 2
-                        # ── Strict Face Zone ──
-                        # Human head in interviews/podcasts is located in the upper/mid portion (10% to 68% height)
-                        # Rejects images on cups/table items (which appear at bottom Y > 70%)
-                        if cy < height * 0.10 or cy > height * 0.68:
-                            continue
-                        if cx < width * 0.05 or cx > width * 0.95:
-                            continue
-                        if w < width * 0.04 or h < height * 0.07:
-                            continue
-                        raw_candidates.append({
-                            "center_x": _clamp_center(cx),
-                            "raw_cx": cx,
-                            "cy": cy,
-                            "w": w,
-                            "h": h,
-                            "area": w * h,
-                            "score": score
-                        })
-                    
-                    if raw_candidates:
-                        # Secondary filter: Suppress tiny secondary artifacts if a prominent main speaker face exists
-                        max_area = max(c["area"] for c in raw_candidates)
-                        for c in raw_candidates:
-                            if max_area > 15000 and c["area"] < 0.20 * max_area:
-                                continue
-                            valid.append(c)
-                    return valid
-            except Exception:
-                pass
-                
-        # Priority 2: Haar Cascades Fallback
-        gray_img = cv2.cvtColor(frame_img, cv2.COLOR_RGB2GRAY) if len(frame_img.shape) == 3 else frame_img
-        raw_faces = []
-        if frontal_cascade and not frontal_cascade.empty():
-            faces = frontal_cascade.detectMultiScale(
-                gray_img, scaleFactor=1.10, minNeighbors=7,
-                minSize=(int(width * 0.05), int(height * 0.07))
-            )
-            for (x, y, w, h) in faces:
-                raw_faces.append((x, y, w, h, w * h))
-        if profile_cascade and not profile_cascade.empty():
-            faces_left = profile_cascade.detectMultiScale(
-                gray_img, scaleFactor=1.10, minNeighbors=6,
-                minSize=(int(width * 0.05), int(height * 0.07))
-            )
-            for (x, y, w, h) in faces_left:
-                raw_faces.append((x, y, w, h, w * h))
-            flipped = cv2.flip(gray_img, 1)
-            faces_right = profile_cascade.detectMultiScale(
-                flipped, scaleFactor=1.10, minNeighbors=6,
-                minSize=(int(width * 0.05), int(height * 0.07))
-            )
-            for (x, y, w, h) in faces_right:
-                orig_x = width - (x + w)
-                raw_faces.append((orig_x, y, w, h, w * h))
-                
-        for (fx, fy, fw, fh, area) in raw_faces:
-            aspect = float(fw) / float(fh) if fh > 0 else 0
-            if aspect < 0.65 or aspect > 1.40:
-                continue
-            cy = fy + (fh / 2)
-            if cy < height * 0.10 or cy > height * 0.68:
-                continue
-            cx = _clamp_center(fx + (fw / 2))
-            valid.append({"center_x": cx, "raw_cx": fx + (fw / 2), "cy": cy, "w": fw, "h": fh, "area": area, "score": 0.8})
-            
-        return valid
+    temp_video_path = os.path.join(TEMP_DIR, f"temp_m1_video_{int(time.time()*1000)}.mp4")
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(temp_video_path, fourcc, fps, (crop_w, crop_h))
 
-    # ═══════════════════════════════════════════════════════════════
-    # PASS 1: FULL-CLIP OPUS-STYLE SHOT & HYBRID CLUSTER ANALYSIS
-    # ═══════════════════════════════════════════════════════════════
-    SAMPLE_INTERVAL = 0.4            # 2.5 fps sampling untuk deteksi responsif
-    HOLD_MIN = 7                     # ~2.8s wajib bertahan di pembicara aktif
-    CONFIRM = 4                      # ~1.6s konfirmasi kandidat baru konsisten
-    ABSENT_GRACE = 6                 # ~2.4s toleransi jika wajah tertutup sejenak
-    SWITCH_COOLDOWN = 9              # ~3.6s larangan cut ulang setelah berganti
-    MIN_SHOT_DURATION = 3.0          # Minimum durasi shot gaya Opus Clip
+    frame_count = 0
+    start_proc_time = time.time()
+    last_log_time = 0
 
-    clip_duration = clip.duration
-    sample_count = max(1, int(clip_duration / SAMPLE_INTERVAL) + 1)
-    samples = []                     # {"t", "cxs", "primary_cx", "is_split_scene"}
-    all_detected_cxs = []
-    split_scene_votes = 0
+    try:
+        while cap.isOpened() and (start_frame + frame_count) < end_frame:
+            ret, frame = cap.read()
+            if not ret:
+                break
 
-    # Middle deadzone boundary: 40% s/d 60% lebar layar dilarang dijadikan anchor
-    MID_DEADZONE_MIN = width * 0.40
-    MID_DEADZONE_MAX = width * 0.60
+            frame_count += 1
+            target_center_x = orig_w / 2.0
+            detected_valid_face = False
 
-    def _avoid_center_anchor(raw_x, fallback_to="left"):
-        """Anti-Center: Cegah kamera membidik garis pemisah/rak buku di tengah (40%-60%)."""
-        cx = _clamp_center(raw_x)
-        if MID_DEADZONE_MIN <= cx <= MID_DEADZONE_MAX:
-            if fallback_to == "right" or cx > width * 0.50:
-                cx = _clamp_center(width * 0.75)
-            else:
-                cx = _clamp_center(width * 0.25)
-        return cx
+            # Priority 1: YuNet DNN (Faster & more accurate)
+            if yunet_detector is not None:
+                try:
+                    _, raw_faces = yunet_detector.detect(frame)
+                    if raw_faces is not None and len(raw_faces) > 0:
+                        best_face = max(raw_faces, key=lambda f: float(f[2]) * float(f[3]))
+                        fx, fy, fw, fh = int(best_face[0]), int(best_face[1]), int(best_face[2]), int(best_face[3])
+                        if fw >= min_pixel_size and (fy + fh / 2) < orig_h * 0.75:
+                            detected_valid_face = True
+                            face_center_x = fx + (fw / 2.0)
+                            target_center_x = face_center_x
+                except Exception:
+                    pass
 
-    for i in range(sample_count):
-        t = i * SAMPLE_INTERVAL
-        if t >= clip_duration:
-            break
-        try:
-            frame = clip.get_frame(t)
-            faces = _detect_faces_in_frame(frame)
-        except Exception:
-            faces = []
+            # Priority 2: Haar Cascade Fallback
+            if not detected_valid_face and face_cascade and not face_cascade.empty():
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                faces = face_cascade.detectMultiScale(
+                    gray,
+                    scaleFactor=1.15,
+                    minNeighbors=5,
+                    minSize=(min_pixel_size, min_pixel_size)
+                )
+                if len(faces) > 0:
+                    best_face = max(faces, key=lambda b: b[2] * b[3])
+                    fx, fy, fw, fh = best_face
+                    if fw >= min_pixel_size and (fy + fh / 2) < orig_h * 0.75:
+                        detected_valid_face = True
+                        face_center_x = fx + (fw / 2.0)
+                        target_center_x = face_center_x
 
-        # Deteksi apakah frame ini merupakan adegan split-screen 2 orang bawaan
-        # (terdapat 2 wajah simultan: 1 di kiri <45% dan 1 di kanan >55%)
-        is_split = False
-        if len(faces) >= 2:
-            left_side_faces = [f for f in faces if f["raw_cx"] < width * 0.45]
-            right_side_faces = [f for f in faces if f["raw_cx"] > width * 0.55]
-            if left_side_faces and right_side_faces:
-                is_split = True
-                split_scene_votes += 1
+            # Hitung target crop X
+            target_crop_x = target_center_x - (crop_w / 2.0)
 
-        if faces:
-            faces.sort(key=lambda f: f["area"], reverse=True)
-            cxs = [f["raw_cx"] for f in faces]
-            primary_cx = faces[0]["raw_cx"]
-            all_detected_cxs.extend(cxs)
-        else:
-            cxs = []
-            primary_cx = None
+            # Jika tidak ada wajah valid -> smooth drift ke center
+            if not detected_valid_face:
+                target_crop_x = default_center_x
 
-        samples.append({"t": t, "cxs": cxs, "primary_cx": primary_cx, "is_split": is_split})
+            # Clamping batas layar
+            target_crop_x = max(0, min(orig_w - crop_w, target_crop_x))
 
-    clip.close()
+            # Smoothing Exponential Moving Average (EMA)
+            curr_crop_x = curr_crop_x + smoothing_factor * (target_crop_x - curr_crop_x)
 
-    # ── K-Means / Bimodal Cluster Analysis untuk Mendeteksi Speaker Asli ──
-    if len(all_detected_cxs) >= 8:
-        sorted_cxs = sorted(all_detected_cxs)
-        half = len(sorted_cxs) // 2
-        left_med = float(np.median(sorted_cxs[:half]))
-        right_med = float(np.median(sorted_cxs[half:]))
-        
-        # Hanya anggap Multi-Speaker jika ada dua kluster wajah dengan jarak fisik nyata (> 22% lebar video)
-        if (right_med - left_med) > (width * 0.22):
-            left_anchor = _avoid_center_anchor(left_med, "left")
-            right_anchor = _avoid_center_anchor(right_med, "right")
-            split_boundary_x = (left_anchor + right_anchor) / 2.0
-            is_multi_speaker = True
-        else:
-            solo_med = float(np.median(sorted_cxs))
-            solo_anchor = _avoid_center_anchor(solo_med, "left")
-            left_anchor = right_anchor = solo_anchor
-            split_boundary_x = solo_med
-            is_multi_speaker = False
-    else:
-        solo_med = float(np.median(all_detected_cxs)) if all_detected_cxs else (width * 0.50)
-        solo_anchor = _avoid_center_anchor(solo_med, "left")
-        left_anchor = right_anchor = solo_anchor
-        split_boundary_x = solo_med
-        is_multi_speaker = False
+            # Slicing frame
+            x1 = int(round(curr_crop_x))
+            x2 = x1 + crop_w
+            y1 = int((orig_h - crop_h) / 2)
+            y2 = y1 + crop_h
 
-    # Beri label seat pada setiap sampel
-    for s in samples:
-        if s["primary_cx"] is None:
-            s["seat"] = "absent"
-        elif not is_multi_speaker:
-            s["seat"] = "solo"
-        else:
-            s["seat"] = "left" if s["primary_cx"] < split_boundary_x else "right"
+            cropped_frame = frame[y1:y2, x1:x2]
+            out.write(cropped_frame)
 
-    log(f"Opus Face Engine: left_anchor={left_anchor:.0f}px right_anchor={right_anchor:.0f}px multi_speaker={is_multi_speaker}", job_id=job_id)
+            # Periodic Progress Log
+            curr_time = time.time()
+            if (curr_time - last_log_time >= 1.5) or (frame_count == total_clip_frames):
+                percent = min(100.0, (frame_count / total_clip_frames) * 100)
+                elapsed = curr_time - start_proc_time
+                eta = (elapsed / (percent / 100) - elapsed) if percent > 0 else 0
+                from backend.utils import format_timestamp
+                eta_str = format_timestamp(eta).split('.')[0]
+                log(f"Progress Smart Face Tracker: {percent:.1f}% ({frame_count}/{total_clip_frames} frames) | ETA: {eta_str}", job_id=job_id)
+                last_log_time = curr_time
 
-    shots = []
-    if not is_multi_speaker:
-        # ── Single Speaker Track ──
-        # Tentukan layout: jika mayoritas frame adalah split scene bawaan, gunakan fit_blur
-        is_dominant_split = (split_scene_votes / max(1, sample_count)) > 0.40
-        layout = "fit_blur" if is_dominant_split else "crop"
-        solo_x = left_anchor
-        shots = [{"seat": "solo", "t_start": 0.0, "t_end": clip_duration, "anchor_x": solo_x, "layout": layout}]
-    else:
-        # ── Multi Speaker Track: State Machine Debounce ──
-        active = None
-        hold = 0
-        candidate = None
-        cand_streak = 0
-        absent_streak = 0
-        cooldown = 0
-        shot_start = 0.0
+    finally:
+        cap.release()
+        out.release()
 
-        for s in samples:
-            t, seat = s["t"], s["seat"]
-            if cooldown > 0:
-                cooldown -= 1
-
-            if active is None:
-                if seat != "absent":
-                    active = seat
-                    hold = 1
-                    shot_start = t
-                continue
-
-            if seat == "absent":
-                hold += 1
-                absent_streak += 1
-                cand_streak = 0
-                candidate = None
-            elif seat == active:
-                hold += 1
-                absent_streak = 0
-                cand_streak = 0
-                candidate = None
-            else:
-                hold += 1
-                absent_streak = 0
-                if candidate == seat:
-                    cand_streak += 1
-                else:
-                    candidate = seat
-                    cand_streak = 1
-
-            should_switch = (hold >= HOLD_MIN and cooldown == 0 and
-                             (cand_streak >= CONFIRM or absent_streak >= ABSENT_GRACE))
-            if should_switch and candidate is not None and candidate != active:
-                shots.append({"seat": active, "t_start": shot_start, "t_end": t})
-                active = candidate
-                hold = 0
-                cand_streak = 0
-                candidate = None
-                absent_streak = 0
-                cooldown = SWITCH_COOLDOWN
-                shot_start = t
-
-        if active is not None and shot_start < clip_duration - 0.05:
-            shots.append({"seat": active, "t_start": shot_start, "t_end": clip_duration})
-
-        if not shots:
-            fallback_seat = "left" if left_anchor else "right"
-            shots = [{"seat": fallback_seat, "t_start": 0.0, "t_end": clip_duration}]
-
-        # Merge short shots (< MIN_SHOT_DURATION) agar pergantian kamera sangat tenang
-        merged = []
-        for sh in shots:
-            if merged and (sh["t_end"] - sh["t_start"]) < MIN_SHOT_DURATION:
-                merged[-1]["t_end"] = sh["t_end"]
-            else:
-                merged.append(sh)
-        shots = merged
-
-        # ── Kunci Anchor & Layout Per-Shot (Hybrid Mode 1 + Mode 2) ──
-        for sh in shots:
-            shot_actual_cxs = []
-            shot_split_votes = 0
-            shot_samples_count = 0
-            
-            for s in samples:
-                if (sh["t_start"] - 0.05) <= s["t"] <= (sh["t_end"] + 0.05):
-                    shot_samples_count += 1
-                    if s["is_split"]:
-                        shot_split_votes += 1
-                    if s["primary_cx"] is not None:
-                        shot_actual_cxs.append(s["primary_cx"])
-            
-            # Jika shot ini terdeteksi sebagai scene 2 orang simultan bawaan (>50% votes) -> Gunakan Mode 2 (Fit Blur)
-            # Selain itu -> Gunakan Mode 1 (Fullscreen 9:16 Crop dengan Anti-Center)
-            if shot_samples_count > 0 and (shot_split_votes / shot_samples_count) >= 0.50:
-                sh["layout"] = "fit_blur"
-                sh["anchor_x"] = _clamp_center(width * 0.50)
-            else:
-                sh["layout"] = "crop"
-                if shot_actual_cxs:
-                    target_seat = "left" if sh["seat"] == "left" else "right"
-                    sh["anchor_x"] = _avoid_center_anchor(float(np.median(shot_actual_cxs)), target_seat)
-                else:
-                    sh["anchor_x"] = left_anchor if sh["seat"] == "left" else right_anchor
-
-    log(f"Opus Hybrid Cut Sequence: {[{'start': round(s['t_start'],1), 'end': round(s['t_end'],1), 'speaker': s['seat'], 'layout': s['layout'], 'anchor_x': round(s['anchor_x'])} for s in shots]}", job_id=job_id)
-
-    # ═══════════════════════════════════════════════════════════════
-    # PASS 2: SEAMLESS HYBRID FFMPEG FILTER GRAPH (ZERO GLITCH / FAST)
-    # Mode 1 (crop): Fullscreen 9:16 crop dengan anti-center
-    # Mode 2 (fit_blur): Fit 16:9 di tengah + background kaca buram
-    # ═══════════════════════════════════════════════════════════════
+    # Muxing audio asli dengan FFmpeg
     ffmpeg_bin = get_ffmpeg_binary()
     clip_dur = end_time - start_time
+    log("Menggabungkan audio asli ke video hasil crop...", job_id=job_id)
+    
+    ffmpeg_cmd = [
+        ffmpeg_bin, "-y",
+        "-i", temp_video_path,
+        "-ss", str(start_time),
+        "-t", str(clip_dur),
+        "-i", video_path,
+        "-c:v", "libx264",
+        "-preset", "fast",
+        "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-map", "0:v:0",
+        "-map", "1:a:0?",
+        "-avoid_negative_ts", "make_zero",
+        output_path
+    ]
+    run_command(ffmpeg_cmd, "Muxing final smart crop audio...", job_id=job_id, duration=clip_dur)
 
-    # Generator filter untuk satu segmen shot (crop atau fit_blur)
-    def _build_shot_video_filter(in_label, out_label, sh_layout, anchor_x):
-        if sh_layout == "fit_blur":
-            # Hybrid Mode 2: Fit 16:9 di tengah + blurred background
-            return (
-                f"[{in_label}]split=2[{in_label}_bg][{in_label}_fg];"
-                f"[{in_label}_bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5,eq=brightness=-0.08[{in_label}_bgb];"
-                f"[{in_label}_fg]scale=1080:-1[{in_label}_fgsc];"
-                f"[{in_label}_bgb][{in_label}_fgsc]overlay=(W-w)/2:(H-h)/2[{out_label}];"
-            )
-        else:
-            # Hybrid Mode 1: Fullscreen 9:16 crop
-            x1 = int(round(anchor_x - target_width / 2))
-            x1 = (x1 // 2) * 2
-            x1 = max(0, min(x1, width - target_width))
-            return f"[{in_label}]crop={target_width}:{height}:{x1}:0,scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2[{out_label}];"
+    if os.path.exists(temp_video_path):
+        try:
+            os.remove(temp_video_path)
+        except Exception:
+            pass
 
-    if len(shots) == 1:
-        # Single Shot Direct Pass
-        sh0 = shots[0]
-        if sh0["layout"] == "fit_blur":
-            fc_filter = (
-                f"[0:v]split=2[bg_in][fg_in];"
-                f"[bg_in]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5,eq=brightness=-0.08[bg];"
-                f"[fg_in]scale=1080:-1[fg];"
-                f"[bg][fg]overlay=(W-w)/2:(H-h)/2[outv]"
-            )
-            cmd = [
-                ffmpeg_bin, "-y",
-                "-ss", str(start_time),
-                "-t", str(clip_dur),
-                "-i", video_path,
-                "-filter_complex", fc_filter,
-                "-map", "[outv]", "-map", "0:a:0?",
-                "-c:v", "libx264", "-preset", "fast", "-crf", "17",
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac", "-b:a", "192k",
-                output_path
-            ]
-        else:
-            x1 = int(round(sh0["anchor_x"] - target_width / 2))
-            x1 = (x1 // 2) * 2
-            x1 = max(0, min(x1, width - target_width))
-            cmd = [
-                ffmpeg_bin, "-y",
-                "-ss", str(start_time),
-                "-t", str(clip_dur),
-                "-i", video_path,
-                "-vf", f"crop={target_width}:{height}:{x1}:0",
-                "-map", "0:v:0", "-map", "0:a:0?",
-                "-c:v", "libx264", "-preset", "fast", "-crf", "17",
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac", "-b:a", "192k",
-                output_path
-            ]
-        run_command(cmd, f"Rendering Opus Static Solo ({sh0['layout']})...", job_id=job_id, duration=clip_dur)
-    else:
-        # Multi-Shot Seamless Concat Filter (Single Encode Pass)
-        filter_parts = []
-        concat_inputs = ""
-
-        for idx, sh in enumerate(shots):
-            rel_t0 = max(0.0, sh["t_start"])
-            rel_t1 = min(clip_dur, sh["t_end"])
-
-            # 1. Potong rentang waktu via trim & atrim
-            filter_parts.append(
-                f"[0:v]trim=start={rel_t0}:end={rel_t1},setpts=PTS-STARTPTS[raw_v{idx}];"
-                f"[0:a]atrim=start={rel_t0}:end={rel_t1},asetpts=PTS-STARTPTS[a{idx}];"
-            )
-            # 2. Terapkan filter visual sesuai layout shot (crop vs fit_blur)
-            filter_parts.append(_build_shot_video_filter(f"raw_v{idx}", f"v{idx}", sh["layout"], sh["anchor_x"]))
-            
-            concat_inputs += f"[v{idx}][a{idx}]"
-
-        filter_complex_str = "".join(filter_parts) + f"{concat_inputs}concat=n={len(shots)}:v=1:a=1[outv][outa]"
-
-        cmd = [
-            ffmpeg_bin, "-y",
-            "-ss", str(start_time),
-            "-t", str(clip_dur),
-            "-i", video_path,
-            "-filter_complex", filter_complex_str,
-            "-map", "[outv]", "-map", "[outa]",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "17",
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac", "-b:a", "192k",
-            output_path
-        ]
-        run_command(cmd, f"Rendering Opus Multi-Shot Video ({len(shots)} shots)...", job_id=job_id, duration=clip_dur)
-
-    log("Opus Smart Crop Berhasil (Zero Glitch & Natural Cut).", job_id=job_id)
+    log("Smart Face Tracker selesai dengan mulus.", job_id=job_id)
     return output_path
 
 def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job_id=None, sub_style="tiktok_viral"):

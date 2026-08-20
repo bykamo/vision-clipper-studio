@@ -170,8 +170,8 @@ Mode alternatif — Dioptimalkan untuk konten *affiliate/review*, memotong segme
 |----------|-----------|
 | Web Framework | **FastAPI** + **Uvicorn** + Server-Sent Events (SSE) |
 | Speech-to-Text | **Groq Cloud Whisper** (`whisper-large-v3-turbo`) / **Faster Whisper** |
-| Video Processing | **FFmpeg** + **MoviePy** + **OpenCV** |
-| Face Detection | **OpenCV Face Tracker** (Cinematic Smooth Panning) |
+| Video Processing | **FFmpeg** + **MoviePy** + **OpenCV Headless** |
+| Face Detection | **OpenCV Headless Face Tracker** (Cinematic Smooth Panning) |
 | AI Analysis | LLM via OpenRouter / OpenAI / Custom Provider |
 | Database | **SQLite3** Session & Job Logging |
 
