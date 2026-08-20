@@ -388,6 +388,36 @@ def apply_fit_blur(video_path, start_time, end_time, output_path, job_id=None):
     run_command(cmd, "Rendering Fit-Blur format...", job_id=job_id, duration=clip_dur)
     return output_path
 
+def apply_fit_black(video_path, start_time, end_time, output_path, job_id=None):
+    """
+    Render 9:16 vertical video using Fit + Clean Black Letterbox (Top & Bottom).
+    Main video centered in 1080x1920 canvas with clean black bars.
+    """
+    log("Applying Fit 16:9 with Clean Black Letterbox...", job_id=job_id)
+    ffmpeg_bin = get_ffmpeg_binary()
+    clip_dur = end_time - start_time
+
+    fc_filter = (
+        "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black"
+    )
+
+    cmd = [
+        ffmpeg_bin, "-y",
+        "-ss", str(start_time),
+        "-t", str(clip_dur),
+        "-i", video_path,
+        "-vf", fc_filter,
+        "-c:v", "libx264",
+        "-preset", "fast",
+        "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        output_path
+    ]
+    run_command(cmd, "Rendering Fit-Black format...", job_id=job_id, duration=clip_dur)
+    return output_path
+
 
 class MoviePyLogger(ProgressBarLogger):
     def __init__(self, job_id=None):
@@ -535,7 +565,7 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
         return valid
 
     # ═══════════════════════════════════════════════════════════════
-    # PASS 1: FULL-CLIP OPUS-STYLE SHOT & HYBRID CLUSTER ANALYSIS
+    # PASS 1: FULL-CLIP OPUS-STYLE SHOT & CLUSTER ANALYSIS
     # ═══════════════════════════════════════════════════════════════
     SAMPLE_INTERVAL = 0.4            # 2.5 fps sampling untuk deteksi responsif
     HOLD_MIN = 7                     # ~2.8s wajib bertahan di pembicara aktif
@@ -546,23 +576,8 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
 
     clip_duration = clip.duration
     sample_count = max(1, int(clip_duration / SAMPLE_INTERVAL) + 1)
-    samples = []                     # {"t", "cxs", "primary_cx", "is_split_scene"}
+    samples = []                     # {"t", "cxs", "primary_cx"}
     all_detected_cxs = []
-    split_scene_votes = 0
-
-    # Middle deadzone boundary: 40% s/d 60% lebar layar dilarang dijadikan anchor
-    MID_DEADZONE_MIN = width * 0.40
-    MID_DEADZONE_MAX = width * 0.60
-
-    def _avoid_center_anchor(raw_x, fallback_to="left"):
-        """Anti-Center: Cegah kamera membidik garis pemisah/rak buku di tengah (40%-60%)."""
-        cx = _clamp_center(raw_x)
-        if MID_DEADZONE_MIN <= cx <= MID_DEADZONE_MAX:
-            if fallback_to == "right" or cx > width * 0.50:
-                cx = _clamp_center(width * 0.75)
-            else:
-                cx = _clamp_center(width * 0.25)
-        return cx
 
     for i in range(sample_count):
         t = i * SAMPLE_INTERVAL
@@ -574,17 +589,8 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
         except Exception:
             faces = []
 
-        # Deteksi apakah frame ini merupakan adegan split-screen 2 orang bawaan
-        # (terdapat 2 wajah simultan: 1 di kiri <45% dan 1 di kanan >55%)
-        is_split = False
-        if len(faces) >= 2:
-            left_side_faces = [f for f in faces if f["raw_cx"] < width * 0.45]
-            right_side_faces = [f for f in faces if f["raw_cx"] > width * 0.55]
-            if left_side_faces and right_side_faces:
-                is_split = True
-                split_scene_votes += 1
-
         if faces:
+            # Sort faces by area descending (wajah paling dominan/besar di depan)
             faces.sort(key=lambda f: f["area"], reverse=True)
             cxs = [f["raw_cx"] for f in faces]
             primary_cx = faces[0]["raw_cx"]
@@ -593,37 +599,36 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
             cxs = []
             primary_cx = None
 
-        samples.append({"t": t, "cxs": cxs, "primary_cx": primary_cx, "is_split": is_split})
+        samples.append({"t": t, "cxs": cxs, "primary_cx": primary_cx})
 
     clip.close()
 
     # ── K-Means / Bimodal Cluster Analysis untuk Mendeteksi Speaker Asli ──
+    # Mencegah pembagian kaku 50% layar yang sering salah anggap solo speaker sebagai dual speaker
     if len(all_detected_cxs) >= 8:
         sorted_cxs = sorted(all_detected_cxs)
         half = len(sorted_cxs) // 2
         left_med = float(np.median(sorted_cxs[:half]))
         right_med = float(np.median(sorted_cxs[half:]))
         
-        # Hanya anggap Multi-Speaker jika ada dua kluster wajah dengan jarak fisik nyata (> 22% lebar video)
+        # Hanya anggap Multi-Speaker jika ada dua kluster wajah dengan jarak signifikan (> 22% lebar video)
         if (right_med - left_med) > (width * 0.22):
-            left_anchor = _avoid_center_anchor(left_med, "left")
-            right_anchor = _avoid_center_anchor(right_med, "right")
+            left_anchor = _clamp_center(left_med)
+            right_anchor = _clamp_center(right_med)
             split_boundary_x = (left_anchor + right_anchor) / 2.0
             is_multi_speaker = True
         else:
             solo_med = float(np.median(sorted_cxs))
-            solo_anchor = _avoid_center_anchor(solo_med, "left")
-            left_anchor = right_anchor = solo_anchor
+            left_anchor = right_anchor = _clamp_center(solo_med)
             split_boundary_x = solo_med
             is_multi_speaker = False
     else:
         solo_med = float(np.median(all_detected_cxs)) if all_detected_cxs else (width * 0.50)
-        solo_anchor = _avoid_center_anchor(solo_med, "left")
-        left_anchor = right_anchor = solo_anchor
+        left_anchor = right_anchor = _clamp_center(solo_med)
         split_boundary_x = solo_med
         is_multi_speaker = False
 
-    # Beri label seat pada setiap sampel
+    # Beri label seat pada setiap sampel berdasarkan batas kluster dinamis
     for s in samples:
         if s["primary_cx"] is None:
             s["seat"] = "absent"
@@ -636,12 +641,9 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
 
     shots = []
     if not is_multi_speaker:
-        # ── Single Speaker Track ──
-        # Tentukan layout: jika mayoritas frame adalah split scene bawaan, gunakan fit_blur
-        is_dominant_split = (split_scene_votes / max(1, sample_count)) > 0.40
-        layout = "fit_blur" if is_dominant_split else "crop"
-        solo_x = left_anchor
-        shots = [{"seat": "solo", "t_start": 0.0, "t_end": clip_duration, "anchor_x": solo_x, "layout": layout}]
+        # ── Single Speaker Track: 100% Mengikuti Koordinat Wajah Asli ──
+        solo_x = _clamp_center(float(np.median(all_detected_cxs))) if all_detected_cxs else _clamp_center(width * 0.50)
+        shots = [{"seat": "solo", "t_start": 0.0, "t_end": clip_duration, "anchor_x": solo_x}]
     else:
         # ── Multi Speaker Track: State Machine Debounce ──
         active = None
@@ -711,116 +713,69 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
                 merged.append(sh)
         shots = merged
 
-        # ── Kunci Anchor & Layout Per-Shot (Hybrid Mode 1 + Mode 2) ──
+        # ── Kunci Anchor Per-Shot Berdasarkan Wajah Aktual di Dalam Rentang Waktu Tersebut ──
+        # Mencegah kamera mengunci koordinat kursi kosong/benda saat angle video asli berubah
         for sh in shots:
             shot_actual_cxs = []
-            shot_split_votes = 0
-            shot_samples_count = 0
-            
             for s in samples:
                 if (sh["t_start"] - 0.05) <= s["t"] <= (sh["t_end"] + 0.05):
-                    shot_samples_count += 1
-                    if s["is_split"]:
-                        shot_split_votes += 1
                     if s["primary_cx"] is not None:
                         shot_actual_cxs.append(s["primary_cx"])
             
-            # Jika shot ini terdeteksi sebagai scene 2 orang simultan bawaan (>50% votes) -> Gunakan Mode 2 (Fit Blur)
-            # Selain itu -> Gunakan Mode 1 (Fullscreen 9:16 Crop dengan Anti-Center)
-            if shot_samples_count > 0 and (shot_split_votes / shot_samples_count) >= 0.50:
-                sh["layout"] = "fit_blur"
-                sh["anchor_x"] = _clamp_center(width * 0.50)
+            if shot_actual_cxs:
+                sh["anchor_x"] = _clamp_center(float(np.median(shot_actual_cxs)))
             else:
-                sh["layout"] = "crop"
-                if shot_actual_cxs:
-                    target_seat = "left" if sh["seat"] == "left" else "right"
-                    sh["anchor_x"] = _avoid_center_anchor(float(np.median(shot_actual_cxs)), target_seat)
-                else:
-                    sh["anchor_x"] = left_anchor if sh["seat"] == "left" else right_anchor
+                sh["anchor_x"] = left_anchor if sh["seat"] == "left" else right_anchor
 
-    log(f"Opus Hybrid Cut Sequence: {[{'start': round(s['t_start'],1), 'end': round(s['t_end'],1), 'speaker': s['seat'], 'layout': s['layout'], 'anchor_x': round(s['anchor_x'])} for s in shots]}", job_id=job_id)
+    log(f"Opus Cut Sequence: {[{'start': round(s['t_start'],1), 'end': round(s['t_end'],1), 'speaker': s['seat'], 'anchor_x': round(s['anchor_x'])} for s in shots]}", job_id=job_id)
 
     # ═══════════════════════════════════════════════════════════════
-    # PASS 2: SEAMLESS HYBRID FFMPEG FILTER GRAPH (ZERO GLITCH / FAST)
-    # Mode 1 (crop): Fullscreen 9:16 crop dengan anti-center
-    # Mode 2 (fit_blur): Fit 16:9 di tengah + background kaca buram
+    # PASS 2: SEAMLESS NATIVE FFMPEG FILTER GRAPH (ZERO GLITCH / FAST)
+    # Merender seluruh shot dalam 1 kali run FFmpeg via filter complex
+    # (trim + crop + concat filter). Mengeliminasi audio pop, frame drop,
+    # dan lag sinkronisasi PTS secara total.
     # ═══════════════════════════════════════════════════════════════
     ffmpeg_bin = get_ffmpeg_binary()
     clip_dur = end_time - start_time
 
-    # Generator filter untuk satu segmen shot (crop atau fit_blur)
-    def _build_shot_video_filter(in_label, out_label, sh_layout, anchor_x):
-        if sh_layout == "fit_blur":
-            # Hybrid Mode 2: Fit 16:9 di tengah + blurred background
-            return (
-                f"[{in_label}]split=2[{in_label}_bg][{in_label}_fg];"
-                f"[{in_label}_bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5,eq=brightness=-0.08[{in_label}_bgb];"
-                f"[{in_label}_fg]scale=1080:-1[{in_label}_fgsc];"
-                f"[{in_label}_bgb][{in_label}_fgsc]overlay=(W-w)/2:(H-h)/2[{out_label}];"
-            )
-        else:
-            # Hybrid Mode 1: Fullscreen 9:16 crop
-            x1 = int(round(anchor_x - target_width / 2))
-            x1 = (x1 // 2) * 2
-            x1 = max(0, min(x1, width - target_width))
-            return f"[{in_label}]crop={target_width}:{height}:{x1}:0,scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2[{out_label}];"
-
     if len(shots) == 1:
-        # Single Shot Direct Pass
-        sh0 = shots[0]
-        if sh0["layout"] == "fit_blur":
-            fc_filter = (
-                f"[0:v]split=2[bg_in][fg_in];"
-                f"[bg_in]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5,eq=brightness=-0.08[bg];"
-                f"[fg_in]scale=1080:-1[fg];"
-                f"[bg][fg]overlay=(W-w)/2:(H-h)/2[outv]"
-            )
-            cmd = [
-                ffmpeg_bin, "-y",
-                "-ss", str(start_time),
-                "-t", str(clip_dur),
-                "-i", video_path,
-                "-filter_complex", fc_filter,
-                "-map", "[outv]", "-map", "0:a:0?",
-                "-c:v", "libx264", "-preset", "fast", "-crf", "17",
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac", "-b:a", "192k",
-                output_path
-            ]
-        else:
-            x1 = int(round(sh0["anchor_x"] - target_width / 2))
-            x1 = (x1 // 2) * 2
-            x1 = max(0, min(x1, width - target_width))
-            cmd = [
-                ffmpeg_bin, "-y",
-                "-ss", str(start_time),
-                "-t", str(clip_dur),
-                "-i", video_path,
-                "-vf", f"crop={target_width}:{height}:{x1}:0",
-                "-map", "0:v:0", "-map", "0:a:0?",
-                "-c:v", "libx264", "-preset", "fast", "-crf", "17",
-                "-pix_fmt", "yuv420p",
-                "-c:a", "aac", "-b:a", "192k",
-                output_path
-            ]
-        run_command(cmd, f"Rendering Opus Static Solo ({sh0['layout']})...", job_id=job_id, duration=clip_dur)
+        # Single Shot Direct Crop
+        x1 = int(round(shots[0]["anchor_x"] - target_width / 2))
+        x1 = (x1 // 2) * 2
+        x1 = max(0, min(x1, width - target_width))
+
+        cmd = [
+            ffmpeg_bin, "-y",
+            "-ss", str(start_time),
+            "-t", str(clip_dur),
+            "-i", video_path,
+            "-vf", f"crop={target_width}:{height}:{x1}:0",
+            "-map", "0:v:0", "-map", "0:a:0?",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "17",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k",
+            output_path
+        ]
+        run_command(cmd, "Rendering Opus Static Solo Crop...", job_id=job_id, duration=clip_dur)
     else:
         # Multi-Shot Seamless Concat Filter (Single Encode Pass)
+        # FFmpeg concat filter dengan v=1:a=1 mewajibkan urutan input berpasangan (interleaved):
+        # [v0][a0][v1][a1]...[vN-1][aN-1]
         filter_parts = []
         concat_inputs = ""
 
         for idx, sh in enumerate(shots):
             rel_t0 = max(0.0, sh["t_start"])
             rel_t1 = min(clip_dur, sh["t_end"])
+            
+            x1 = int(round(sh["anchor_x"] - target_width / 2))
+            x1 = (x1 // 2) * 2
+            x1 = max(0, min(x1, width - target_width))
 
-            # 1. Potong rentang waktu via trim & atrim
             filter_parts.append(
-                f"[0:v]trim=start={rel_t0}:end={rel_t1},setpts=PTS-STARTPTS[raw_v{idx}];"
+                f"[0:v]trim=start={rel_t0}:end={rel_t1},setpts=PTS-STARTPTS,crop={target_width}:{height}:{x1}:0[v{idx}];"
                 f"[0:a]atrim=start={rel_t0}:end={rel_t1},asetpts=PTS-STARTPTS[a{idx}];"
             )
-            # 2. Terapkan filter visual sesuai layout shot (crop vs fit_blur)
-            filter_parts.append(_build_shot_video_filter(f"raw_v{idx}", f"v{idx}", sh["layout"], sh["anchor_x"]))
-            
             concat_inputs += f"[v{idx}][a{idx}]"
 
         filter_complex_str = "".join(filter_parts) + f"{concat_inputs}concat=n={len(shots)}:v=1:a=1[outv][outa]"
@@ -842,7 +797,7 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
     log("Opus Smart Crop Berhasil (Zero Glitch & Natural Cut).", job_id=job_id)
     return output_path
 
-def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job_id=None, sub_style="tiktok_viral"):
+def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job_id=None, sub_style="tiktok_viral", framing_mode="auto_face_track"):
     start = max(0.0, float(clip_info.get("start", 0.0)) - 0.2)
     end = float(clip_info.get("end", 0.0)) + 1.2
     duration = end - start
@@ -889,7 +844,15 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
         ]
 
     try:
-        apply_smart_crop(video_path, start, end, temp_crop_file, job_id=job_id)
+        # Route based on selected framing mode
+        if framing_mode == "split_screen":
+            apply_split_screen(video_path, start, end, temp_crop_file, job_id=job_id)
+        elif framing_mode == "fit_blur":
+            apply_fit_blur(video_path, start, end, temp_crop_file, job_id=job_id)
+        elif framing_mode == "fit_black":
+            apply_fit_black(video_path, start, end, temp_crop_file, job_id=job_id)
+        else: # auto_face_track or default
+            apply_smart_crop(video_path, start, end, temp_crop_file, job_id=job_id)
             
         log(f"Rendering Subtitles, Audio Enhancer, and Color Grading for Clip {index}: {title}", job_id=job_id)
         vf_filter_base = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,eq=contrast=1.1:brightness=0.02:saturation=1.2,unsharp=5:5:0.4:5:5:0.0"

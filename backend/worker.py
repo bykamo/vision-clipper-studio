@@ -16,7 +16,7 @@ def main():
     parser.add_argument("--model", type=str, default="groq", help="Transcription provider")
     parser.add_argument("--out-dir", type=str, default=DEFAULT_OUT_DIR, help="Output directory")
     parser.add_argument("--sub-style", type=str, default="tiktok_viral", choices=["tiktok_viral", "karaoke", "minimalist", "word_pop", "none"], help="Subtitle style")
-    parser.add_argument("--framing-mode", type=str, default=None, help="Deprecated/Ignored legacy framing mode")
+    parser.add_argument("--framing-mode", type=str, default="auto_face_track", choices=["auto_face_track", "split_screen", "fit_blur", "fit_black"], help="Video framing mode")
 
     args, unknown = parser.parse_known_args()
 
@@ -66,7 +66,7 @@ def main():
             log(f"Score: {clip.get('viral_score')}", job_id=job_id)
             
             try:
-                extract_and_format_clip(video_path, clip, i, segments, actual_out_dir, job_id=job_id, sub_style=args.sub_style)
+                extract_and_format_clip(video_path, clip, i, segments, actual_out_dir, job_id=job_id, sub_style=args.sub_style, framing_mode=args.framing_mode)
             except Exception as e:
                 log(f"Failed to render clip {i}: {e}", job_id=job_id)
                 
