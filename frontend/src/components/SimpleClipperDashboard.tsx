@@ -263,18 +263,11 @@ export const SimpleClipperDashboard: React.FC = () => {
     switch (presetId) {
       case 'tiktok_viral':
         return <FireIcon className="h-3.5 w-3.5 stroke-[2] text-amber-400" />;
-      case 'classic_karaoke':
-      case 'karaoke':
-        return <MicrophoneIcon className="h-3.5 w-3.5 stroke-[2] text-sky-400" />;
-      case 'minimalist':
-        return <DocumentTextIcon className="h-3.5 w-3.5 stroke-[2] text-slate-300" />;
-      case 'word_pop':
-        return <ChatBubbleBottomCenterTextIcon className="h-3.5 w-3.5 stroke-[2] text-pink-400" />;
       case 'no_subtitle':
       case 'none':
         return <EyeSlashIcon className="h-3.5 w-3.5 stroke-[2] text-rose-400" />;
       default:
-        return <DocumentTextIcon className="h-3.5 w-3.5 stroke-[2] text-slate-400" />;
+        return <FireIcon className="h-3.5 w-3.5 stroke-[2] text-amber-400" />;
     }
   };
 
@@ -557,26 +550,6 @@ export const SimpleClipperDashboard: React.FC = () => {
                           VIRAL
                         </span>
                         <span className="text-white drop-shadow-[0_1px_2px_rgba(0,0,0,1)]"> 🔥</span>
-                      </div>
-                    )}
-
-                    {preset.presetId === 'classic_karaoke' && (
-                      <div className="relative rounded bg-black/75 px-1.5 py-0.5 border border-white/10 font-['Plus_Jakarta_Sans'] text-[9px] font-semibold text-center whitespace-nowrap">
-                        <span className="text-slate-400">Kata </span>
-                        <span className="text-sky-400 font-bold bg-sky-500/20 px-0.5 rounded">muncul</span>
-                        <span className="text-white"> bertahap</span>
-                      </div>
-                    )}
-
-                    {preset.presetId === 'minimalist' && (
-                      <div className="relative rounded-full bg-black/60 backdrop-blur-xs px-2 py-0.5 font-['Plus_Jakarta_Sans'] text-[9px] text-white tracking-wide border border-white/15 text-center truncate">
-                        Minimalist clean text
-                      </div>
-                    )}
-
-                    {preset.presetId === 'word_pop' && (
-                      <div className="relative font-['Outfit'] font-extrabold uppercase text-[11px] text-pink-500 drop-shadow-[0_0_8px_rgba(236,72,153,0.6)] scale-105 tracking-wide">
-                        BOOM! 💥
                       </div>
                     )}
 

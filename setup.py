@@ -12,11 +12,12 @@ setup(
         "uvicorn",
         "pydantic",
         "requests",
-        "opencv-python-headless",
+        "opencv-python-headless>=4.8.0",
         "moviepy",
         "yt-dlp",
         "youtube-transcript-api",
-        "webvtt-py"
+        "webvtt-py",
+        "ultralytics"
     ],
     entry_points={
         "console_scripts": [

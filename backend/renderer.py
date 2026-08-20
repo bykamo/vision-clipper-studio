@@ -1,14 +1,16 @@
 import os
 import sys
+import time
 import cv2
 import numpy as np
-from backend.utils import log, format_ass_timestamp, run_command, get_ffmpeg_binary, TEMP_DIR
+from backend.utils import log, format_ass_timestamp, format_timestamp, run_command, get_ffmpeg_binary, TEMP_DIR
 from moviepy import VideoFileClip
 from proglog import ProgressBarLogger
 
 CASCADE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "haarcascade_frontalface_default.xml")
 PROFILE_CASCADE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "haarcascade_profileface.xml")
 YUNET_MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "face_detection_yunet_2023mar.onnx")
+YOLO_MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "yolov8n.pt")
 
 def _sanitize_word_timestamps(words, clip_start, clip_end, min_word_dur=0.18):
     """
@@ -46,8 +48,10 @@ def _sanitize_word_timestamps(words, clip_start, clip_end, min_word_dur=0.18):
     return sanitized
 
 def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, title_hook=None, sub_style="tiktok_viral"):
-    """Generate .ass subtitle file with the specified style."""
-    
+    """Generate .ass subtitle file for TikTok Viral style (or skip if no_subtitle)."""
+    if sub_style in ["none", "no_subtitle"]:
+        return
+
     # Collect words from segments
     words = []
     for seg in segments:
@@ -59,17 +63,7 @@ def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, title_h
 
     # Sanitize timestamps to guarantee clean, non-overlapping flow
     sanitized_words = _sanitize_word_timestamps(words, clip_start, clip_end)
-
-    if sub_style in ["karaoke", "classic_karaoke"]:
-        _generate_karaoke_style(sanitized_words, out_ass_path, clip_start, clip_end)
-    elif sub_style == "minimalist":
-        _generate_minimalist_style(sanitized_words, out_ass_path, clip_start, clip_end)
-    elif sub_style == "word_pop":
-        _generate_word_pop_style(sanitized_words, out_ass_path, clip_start, clip_end)
-    elif sub_style in ["none", "no_subtitle"]:
-        pass
-    else:
-        _generate_tiktok_viral_style(sanitized_words, out_ass_path, clip_start, clip_end)
+    _generate_tiktok_viral_style(sanitized_words, out_ass_path, clip_start, clip_end)
 
 
 def _chunk_words(words, max_words=2, max_chars=14, uppercase=False):
@@ -122,91 +116,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     else: 
                         display.append(f"{{\\alpha&HFF&}}{chunk[j]['word']}{{\\alpha&H00&}}")
                 f.write(f"Dialogue: 0,{start_ass},{end_ass},ViralStyle,,0,0,0,,{' '.join(display)}\n")
-
-
-def _generate_karaoke_style(words, out_ass_path, clip_start, clip_end):
-    """🎤 Classic Karaoke: Words appear cumulatively, active word highlighted green."""
-    ass_header = """[Script Info]
-ScriptType: v4.00+
-PlayResX: 1080
-PlayResY: 1920
-WrapStyle: 1
-
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: KaraokeStyle,Arial Black,68,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,6,3,2,100,100,600,1
-
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-"""
-    chunks = _chunk_words(words, max_words=4, max_chars=22, uppercase=False)
-    
-    with open(out_ass_path, "w", encoding="utf-8") as f:
-        f.write(ass_header)
-        for chunk in chunks:
-            for i in range(len(chunk)):
-                start_ass = format_ass_timestamp(chunk[i]["start"])
-                next_start = chunk[i+1]["start"] if i + 1 < len(chunk) else chunk[-1]["end"]
-                end_ass = format_ass_timestamp(max(chunk[i]["end"], next_start))
-                display = []
-                for j in range(len(chunk)):
-                    if j < i:
-                        display.append(chunk[j]["word"])
-                    elif j == i:
-                        display.append(f"{{\\c&H00FF00&}}{chunk[j]['word']}{{\\c&HFFFFFF&}}")
-                    else:
-                        display.append(f"{{\\alpha&H80&}}{chunk[j]['word']}{{\\alpha&H00&}}")
-                f.write(f"Dialogue: 0,{start_ass},{end_ass},KaraokeStyle,,0,0,0,,{' '.join(display)}\n")
-
-
-def _generate_minimalist_style(words, out_ass_path, clip_start, clip_end):
-    """📄 Minimalist: Clean static text, no animation, modern font."""
-    ass_header = """[Script Info]
-ScriptType: v4.00+
-PlayResX: 1080
-PlayResY: 1920
-WrapStyle: 1
-
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: MinimalStyle,Arial Black,65,&H00FFFFFF,&H000000FF,&H50000000,&H00000000,1,0,0,0,100,100,0,0,1,4,0,2,100,100,400,1
-
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-"""
-    chunks = _chunk_words(words, max_words=4, max_chars=22, uppercase=False)
-    
-    with open(out_ass_path, "w", encoding="utf-8") as f:
-        f.write(ass_header)
-        for chunk in chunks:
-            if not chunk: continue
-            chunk_start = format_ass_timestamp(chunk[0]["start"])
-            chunk_end = format_ass_timestamp(chunk[-1]["end"])
-            text = " ".join(w["word"] for w in chunk)
-            f.write(f"Dialogue: 0,{chunk_start},{chunk_end},MinimalStyle,,0,0,0,,{text}\n")
-
-
-def _generate_word_pop_style(words, out_ass_path, clip_start, clip_end):
-    """💥 Word Pop (Reels): Single word pops in center, one at a time."""
-    ass_header = """[Script Info]
-ScriptType: v4.00+
-PlayResX: 1080
-PlayResY: 1920
-WrapStyle: 1
-
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: WordPop,Impact,110,&H00FFFFFF,&H000000FF,&H00000000,&H99000000,-1,0,0,0,100,100,0,0,1,10,5,5,60,60,0,1
-
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-"""
-    with open(out_ass_path, "w", encoding="utf-8") as f:
-        f.write(ass_header)
-        for word_info in words:
-            start_ass = format_ass_timestamp(word_info["start"])
-            end_ass = format_ass_timestamp(word_info["end"])
-            text = word_info["word"].strip()
             if not text: continue
             f.write(f"Dialogue: 0,{start_ass},{end_ass},WordPop,,0,0,0,,{{\\fscx110\\fscy110\\t(0,80,\\fscx100\\fscy100)}}{text}\n")
 
@@ -413,12 +322,34 @@ class MoviePyLogger(ProgressBarLogger):
                 log(f"Progress Smart Crop: {percent:.1f}% | Sisa Waktu (ETA): {eta_str}", job_id=self.job_id)
                 self.last_log_time = current_time
 
+def _gaussian_smooth(arr, sigma=28):
+    """Filter Gaussian 1D untuk menghasilkan pergerakan kamera sinematik/gimbal gliding."""
+    radius = int(sigma * 3)
+    x = np.arange(-radius, radius + 1)
+    kernel = np.exp(-0.5 * (x / sigma) ** 2)
+    kernel /= kernel.sum()
+    padded = np.pad(arr, radius, mode='edge')
+    smoothed = np.convolve(padded, kernel, mode='valid')
+    return smoothed
+
 def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None):
     """
-    M1 Native Smart Face Tracker & Auto-Clipper.
-    Combines OpenCV Face Detection + Exponential Moving Average (EMA) smoothing for seamless 9:16 cinematic panning.
+    Turbo Cinema Clipper (MPS/CUDA GPU Accelerated + Stride 5 + 384px Downscaling + Interpolation).
+    Pass 1: Fast YOLOv8 Scanning (Step Stride) + Linear Interpolation + Deadzone + Gaussian Gimbal.
+    Pass 2: High-Speed 9:16 Frame Slicing with zero jitter.
     """
-    log(f"Applying M1 Smart Face Tracker (EMA Smooth Panning 9:16)...", job_id=job_id)
+    import torch
+    device = 'mps' if (hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()) else ('cuda' if torch.cuda.is_available() else 'cpu')
+    log(f"Applying Turbo Cinema Clipper (YOLOv8 [{device.upper()}] + Stride 5 + Gaussian 9:16)...", job_id=job_id)
+
+    # Inisialisasi model YOLOv8 (nano)
+    yolo_model = None
+    try:
+        from ultralytics import YOLO
+        yolo_model = YOLO(YOLO_MODEL_PATH)
+    except Exception as e:
+        log(f"Warning: YOLOv8 failed to load ({e}), falling back to YuNet Face Detector...", job_id=job_id)
+        yolo_model = None
     
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -432,10 +363,7 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
     end_frame = int(end_time * fps)
     total_clip_frames = max(1, end_frame - start_frame)
 
-    # Set posisi frame awal
-    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-
-    # Dimensi crop vertikal 9:16
+    # Ukuran crop vertikal 9:16
     target_aspect_ratio = 9.0 / 16.0
     crop_h = orig_h
     crop_w = int(crop_h * target_aspect_ratio)
@@ -445,16 +373,14 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
         if crop_w % 2 != 0: crop_w -= 1
         crop_h = int(crop_w / target_aspect_ratio)
 
-    smoothing_factor = 0.08
-    min_face_size_ratio = 0.04
-    min_pixel_size = int(orig_w * min_face_size_ratio)
+    stride = 5            # Jalankan AI tiap 5 frame (memotong beban 80%)
+    deadzone_ratio = 0.08  # 8% lebar layar = toleransi diam (kunci tripod)
+    deadzone_px = orig_w * deadzone_ratio
+    default_center_x = orig_w / 2.0
 
-    default_center_x = (orig_w - crop_w) / 2.0
-    curr_crop_x = default_center_x
-
-    # Inisialisasi Face Detector (YuNet DNN jika ada, fallback ke Haar Cascade)
+    # Fallback detector (YuNet DNN) jika YOLOv8 tidak tersedia
     yunet_detector = None
-    if os.path.exists(YUNET_MODEL_PATH) and hasattr(cv2, 'FaceDetectorYN'):
+    if yolo_model is None and os.path.exists(YUNET_MODEL_PATH) and hasattr(cv2, 'FaceDetectorYN'):
         try:
             yunet_detector = cv2.FaceDetectorYN.create(
                 YUNET_MODEL_PATH, "", (orig_w, orig_h),
@@ -463,99 +389,193 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
         except Exception:
             yunet_detector = None
 
-    cascade_path = CASCADE_PATH if os.path.exists(CASCADE_PATH) else (getattr(cv2.data, 'haarcascades', '') + 'haarcascade_frontalface_default.xml')
-    face_cascade = cv2.CascadeClassifier(cascade_path) if os.path.exists(cascade_path) else None
-
-    temp_video_path = os.path.join(TEMP_DIR, f"temp_m1_video_{int(time.time()*1000)}.mp4")
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(temp_video_path, fourcc, fps, (crop_w, crop_h))
-
-    frame_count = 0
-    start_proc_time = time.time()
+    # ═══════════════════════════════════════════════════════════════
+    # PASS 1: TURBO SCANNING & TRAJECTORY INTERPOLATION
+    # ═══════════════════════════════════════════════════════════════
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    sample_indices = []
+    sample_positions = []
+    last_valid_x = default_center_x
+    frame_idx = 0
+    start_pass1_time = time.time()
     last_log_time = 0
 
-    try:
-        while cap.isOpened() and (start_frame + frame_count) < end_frame:
-            ret, frame = cap.read()
-            if not ret:
-                break
+    log(f"[Pass 1/2] Fast Scanning narasumber ({total_clip_frames} frames, stride={stride})...", job_id=job_id)
 
-            frame_count += 1
-            target_center_x = orig_w / 2.0
-            detected_valid_face = False
+    while cap.isOpened() and (start_frame + frame_idx) < end_frame:
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-            # Priority 1: YuNet DNN (Faster & more accurate)
-            if yunet_detector is not None:
+        # Hanya jalankan inferensi AI pada frame stride tertentu
+        if frame_idx % stride == 0 or frame_idx == total_clip_frames - 1:
+            current_target_x = last_valid_x
+            detected_target = False
+
+            # Priority 1: YOLOv8 Person Tracking (Downscaled 384px + GPU Acceleration)
+            if yolo_model is not None:
+                try:
+                    results = yolo_model.predict(
+                        source=frame,
+                        classes=[0],
+                        conf=0.30,
+                        imgsz=384,
+                        device=device,
+                        verbose=False
+                    )
+                    if len(results) > 0 and results[0].boxes is not None and len(results[0].boxes) > 0:
+                        boxes = results[0].boxes.xyxy.cpu().numpy()
+                        best_box = None
+                        max_area = 0
+
+                        for box in boxes:
+                            bx1, by1, bx2, by2 = box
+                            bw = bx2 - bx1
+                            bh = by2 - by1
+                            area = bw * bh
+
+                            if area > max_area and bw > (orig_w * 0.05):
+                                max_area = area
+                                best_box = box
+
+                        if best_box is not None:
+                            detected_target = True
+                            bx1, by1, bx2, by2 = best_box
+                            current_target_x = bx1 + (bx2 - bx1) / 2.0
+                            last_valid_x = current_target_x
+                except Exception:
+                    pass
+
+            # Priority 2: YuNet Face Fallback
+            if not detected_target and yunet_detector is not None:
                 try:
                     _, raw_faces = yunet_detector.detect(frame)
                     if raw_faces is not None and len(raw_faces) > 0:
                         best_face = max(raw_faces, key=lambda f: float(f[2]) * float(f[3]))
                         fx, fy, fw, fh = int(best_face[0]), int(best_face[1]), int(best_face[2]), int(best_face[3])
-                        if fw >= min_pixel_size and (fy + fh / 2) < orig_h * 0.75:
-                            detected_valid_face = True
-                            face_center_x = fx + (fw / 2.0)
-                            target_center_x = face_center_x
+                        if fw >= (orig_w * 0.04) and (fy + fh / 2) < orig_h * 0.75:
+                            detected_target = True
+                            current_target_x = fx + (fw / 2.0)
+                            last_valid_x = current_target_x
                 except Exception:
                     pass
 
-            # Priority 2: Haar Cascade Fallback
-            if not detected_valid_face and face_cascade and not face_cascade.empty():
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                faces = face_cascade.detectMultiScale(
-                    gray,
-                    scaleFactor=1.15,
-                    minNeighbors=5,
-                    minSize=(min_pixel_size, min_pixel_size)
-                )
-                if len(faces) > 0:
-                    best_face = max(faces, key=lambda b: b[2] * b[3])
-                    fx, fy, fw, fh = best_face
-                    if fw >= min_pixel_size and (fy + fh / 2) < orig_h * 0.75:
-                        detected_valid_face = True
-                        face_center_x = fx + (fw / 2.0)
-                        target_center_x = face_center_x
+            sample_indices.append(frame_idx)
+            sample_positions.append(current_target_x)
 
-            # Hitung target crop X
-            target_crop_x = target_center_x - (crop_w / 2.0)
+        frame_idx += 1
 
-            # Jika tidak ada wajah valid -> smooth drift ke center
-            if not detected_valid_face:
-                target_crop_x = default_center_x
+        curr_time = time.time()
+        if (curr_time - last_log_time >= 1.5) or (frame_idx == total_clip_frames):
+            percent = min(100.0, (frame_idx / total_clip_frames) * 100)
+            elapsed = curr_time - start_pass1_time
+            eta = (elapsed / (percent / 100) - elapsed) if percent > 0 else 0
+            eta_str = format_timestamp(eta).split('.')[0]
+            log(f"Progress Pass 1 (Turbo Scan): {percent:.1f}% ({frame_idx}/{total_clip_frames}) | ETA: {eta_str}", job_id=job_id)
+            last_log_time = curr_time
 
-            # Clamping batas layar
-            target_crop_x = max(0, min(orig_w - crop_w, target_crop_x))
+    cap.release()
 
-            # Smoothing Exponential Moving Average (EMA)
-            curr_crop_x = curr_crop_x + smoothing_factor * (target_crop_x - curr_crop_x)
+    if not sample_indices:
+        sample_indices = [0]
+        sample_positions = [default_center_x]
 
-            # Slicing frame
-            x1 = int(round(curr_crop_x))
+    # Linear Interpolation: Isi posisi seluruh frame secara instan
+    all_frame_indices = np.arange(total_clip_frames)
+    full_positions = np.interp(all_frame_indices, sample_indices, sample_positions)
+
+    # 1. Deadzone Filter (Kunci tripod jika gerakan mikro di bawah toleransi)
+    deadzoned_positions = np.zeros_like(full_positions)
+    current_anchor = full_positions[0]
+
+    for i in range(len(full_positions)):
+        if abs(full_positions[i] - current_anchor) > deadzone_px:
+            current_anchor = full_positions[i]
+        deadzoned_positions[i] = current_anchor
+
+    # 2. Gaussian Smoothing (Kurva Gimbal Lembut)
+    smooth_center_x = _gaussian_smooth(deadzoned_positions, sigma=25)
+
+    # Konversi target center ke sudut kiri atas (X1) & clamp batas video
+    smooth_crop_x = smooth_center_x - (crop_w / 2.0)
+    smooth_crop_x = np.clip(smooth_crop_x, 0, orig_w - crop_w)
+    smooth_crop_x = np.clip(smooth_crop_x, 0, orig_w - crop_w)
+
+    # ═══════════════════════════════════════════════════════════════
+    # PASS 2: RENDERING VIDEO
+    # ═══════════════════════════════════════════════════════════════
+    log(f"[Pass 2/2] Rendering Video 9:16 ({crop_w}x{crop_h})...", job_id=job_id)
+    cap = cv2.VideoCapture(video_path)
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+
+    temp_video_path = os.path.join(TEMP_DIR, f"temp_cinema_{int(time.time()*1000)}.mp4")
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(temp_video_path, fourcc, fps, (crop_w, crop_h))
+
+    render_idx = 0
+    y1 = int((orig_h - crop_h) / 2)
+    y2 = y1 + crop_h
+    start_pass2_time = time.time()
+    last_log_time = 0
+
+    try:
+        while cap.isOpened() and render_idx < len(smooth_crop_x):
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            x1 = int(round(smooth_crop_x[render_idx]))
             x2 = x1 + crop_w
-            y1 = int((orig_h - crop_h) / 2)
-            y2 = y1 + crop_h
 
             cropped_frame = frame[y1:y2, x1:x2]
             out.write(cropped_frame)
 
-            # Periodic Progress Log
+            render_idx += 1
             curr_time = time.time()
-            if (curr_time - last_log_time >= 1.5) or (frame_count == total_clip_frames):
-                percent = min(100.0, (frame_count / total_clip_frames) * 100)
-                elapsed = curr_time - start_proc_time
+            if (curr_time - last_log_time >= 2.0) or (render_idx == len(smooth_crop_x)):
+                percent = min(100.0, (render_idx / len(smooth_crop_x)) * 100)
+                elapsed = curr_time - start_pass2_time
                 eta = (elapsed / (percent / 100) - elapsed) if percent > 0 else 0
-                from backend.utils import format_timestamp
                 eta_str = format_timestamp(eta).split('.')[0]
-                log(f"Progress Smart Face Tracker: {percent:.1f}% ({frame_count}/{total_clip_frames} frames) | ETA: {eta_str}", job_id=job_id)
+                log(f"Progress Pass 2 (Rendering): {percent:.1f}% ({render_idx}/{len(smooth_crop_x)}) | ETA: {eta_str}", job_id=job_id)
                 last_log_time = curr_time
 
     finally:
         cap.release()
         out.release()
 
-    # Muxing audio asli dengan FFmpeg
+    # Muxing Audio Asli dengan FFmpeg
     ffmpeg_bin = get_ffmpeg_binary()
     clip_dur = end_time - start_time
-    log("Menggabungkan audio asli ke video hasil crop...", job_id=job_id)
+    log("Menggabungkan audio asli ke video hasil render...", job_id=job_id)
+    
+    ffmpeg_cmd = [
+        ffmpeg_bin, "-y",
+        "-i", temp_video_path,
+        "-ss", str(start_time),
+        "-t", str(clip_dur),
+        "-i", video_path,
+        "-c:v", "libx264",
+        "-preset", "fast",
+        "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-map", "0:v:0",
+        "-map", "1:a:0?",
+        "-avoid_negative_ts", "make_zero",
+        output_path
+    ]
+    run_command(ffmpeg_cmd, "Muxing final cinema video & audio...", job_id=job_id, duration=clip_dur)
+
+    if os.path.exists(temp_video_path):
+        try:
+            os.remove(temp_video_path)
+        except Exception:
+            pass
+
+    log("Cinema Clipper selesai 100% dengan mulus.", job_id=job_id)
+    return output_path
     
     ffmpeg_cmd = [
         ffmpeg_bin, "-y",

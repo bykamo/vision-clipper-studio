@@ -1,1 +1,5 @@
 recursive-include frontend *
+include backend/*.onnx
+include backend/*.xml
+include backend/*.pt
+
