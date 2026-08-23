@@ -362,20 +362,21 @@ def apply_split_screen(video_path, start_time, end_time, output_path, anchors=No
 def apply_fit_blur(video_path, start_time, end_time, output_path, job_id=None):
     """
     Render 9:16 vertical video using Fit + Blurred Background.
-    Main 16:9 video centered with heavy Gaussian blur at top and bottom.
+    Main 16:9 video dinaikkan 10% ke atas agar area bawah lega untuk subtitle tanpa menabrak garis batas blur.
     """
-    log("Applying Fit 16:9 with Blurred Background (Letterbox)...", job_id=job_id)
+    log("Applying Fit 16:9 with Blurred Background (Video dinaikkan 10% untuk ruang subtitle)...", job_id=job_id)
     ffmpeg_bin = get_ffmpeg_binary()
     clip_dur = end_time - start_time
 
     # FFmpeg filter:
     # Background: scale to 1080x1920 crop, heavy blur & slight darken
-    # Foreground: scale to 1080:-1 (approx 1080x608), centered
+    # Foreground: scale to 1080:-1 (approx 1080x608), dinaikkan 10% dari posisi tengah
+    # Posisi tengah = (H-h)/2. Dinaikkan 10% (192px) = (H-h)/2 - (H*0.10)
     fc_filter = (
         f"[0:v]split=2[bg_in][fg_in];"
         f"[bg_in]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5,eq=brightness=-0.08[bg];"
         f"[fg_in]scale=1080:-1[fg];"
-        f"[bg][fg]overlay=(W-w)/2:(H-h)/2[v]"
+        f"[bg][fg]overlay=(W-w)/2:(H-h)/2-(H*0.10)[v]"
     )
 
     cmd = [
