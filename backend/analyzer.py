@@ -43,7 +43,7 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 - The `title_hook` is a 1-3 word BOLD text shown in the first second of the video (think: "STOP BUYING THIS", "GAME CHANGER", "$9 VS $200"). It must create immediate curiosity or shock.
 - `viral_score` ranges from 0-100. Score based on: hook strength (30%), sales potential (40%), emotional impact (15%), shareability (15%).
 - `caption` must be written as a real TikTok creator would post, in a highly casual and everyday Indonesian slang/style (using lu-gue/casual colloquial Indonesian, to-the-point). Do NOT use rigid, AI-looking template phrases (avoid things like "Apakah kamu...", "Ini dia...", "Pernahkah Anda..."). Limit emojis to a maximum of 1-2. Include a strong hook sentence, value proposition, and CTA.
-- `hashtags` must include: 3 product-specific, 3 niche hashtags, 2 trending/broad reach, 2 community hashtags.
+- `hashtags`: Provide EXACTLY 4 to 5 HIGH-TRAFFIC, PROVEN Indonesian viral hashtags directly matching the video product and niche (e.g. ["#fyp", "#racuntiktok", "#bisnis", "#edukasi", "#trending"]). DO NOT output more than 5 hashtags.
 
 ## RESPONSE FORMAT (ONLY valid JSON, no explanation, no markdown)
 
@@ -60,7 +60,7 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
       "viral_score": 95,
       "sales_score": 88,
       "caption": "Hook sentence + value + CTA + emojis for TikTok caption",
-      "hashtags": ["#tag1", "#tag2", "#tag3", "#tag4", "#tag5", "#tag6", "#tag7", "#tag8", "#tag9", "#tag10"]
+      "hashtags": ["#fyp", "#racuntiktok", "#bisnis", "#edukasi", "#trending"]
     }}
   ]
 }}
@@ -109,7 +109,7 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 - `title_options` should provide 3 distinct angles: (1) curiosity-driven, (2) benefit-driven, (3) controversial/provocative.
 - `viral_score` ranges from 0-100. Weight: hook strength (35%), emotional intensity (25%), shareability (20%), comment potential (20%).
 - `caption` must be written as a real TikTok creator would post, in a highly casual and everyday Indonesian slang/style (using lu-gue/casual colloquial Indonesian, to-the-point). Do NOT use rigid, AI-looking template phrases (avoid things like "Apakah kamu...", "Ini dia...", "Pernahkah Anda..."). Limit emojis to a maximum of 1-2. Include a hook line, context, and CTA. Max 150 chars.
-- `hashtags`: 3 niche-specific, 3 trending/broad, 2 emotional/mood tags, 2 format tags (#fyp, #viral, etc).
+- `hashtags`: Provide EXACTLY 4 to 5 HIGH-TRAFFIC, PROVEN Indonesian viral hashtags directly matching the video topic (e.g. ["#fyp", "#beranda", "#bisnis", "#mindset", "#motivasi"]). DO NOT output more than 5 hashtags.
 
 ## RESPONSE FORMAT (ONLY valid JSON, no explanation, no markdown)
 
@@ -123,7 +123,7 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
       "reason": "Which viral triggers from the framework are present and why this will go viral",
       "viral_score": 95,
       "caption": "Hook + context + CTA + emojis (max 150 chars)",
-      "hashtags": ["#tag1", "#tag2", "#tag3", "#tag4", "#tag5", "#tag6", "#tag7", "#tag8", "#tag9", "#tag10"]
+      "hashtags": ["#fyp", "#beranda", "#bisnis", "#mindset", "#motivasi"]
     }}
   ]
 }}

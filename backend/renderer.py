@@ -93,7 +93,7 @@ def _chunk_words(words, max_words=2, max_chars=14, uppercase=False):
 
 
 def _generate_tiktok_viral_style(words, out_ass_path, clip_start, clip_end):
-    """🎬 TikTok Viral: Bold white + yellow highlight pop on active word (Mobile Safe-Zone)."""
+    """🎬 TikTok Viral: Plus Jakarta Sans Bold + Outline Tipis Modern + Highlight Kuning Pop."""
     ass_header = """[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
@@ -102,7 +102,7 @@ WrapStyle: 1
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: ViralStyle,Impact,88,&H00FFFFFF,&H000000FF,&H00000000,&H99000000,-1,0,0,0,100,100,0,0,1,10,5,2,100,100,600,1
+Style: ViralStyle,Plus Jakarta Sans,84,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3.5,2,2,100,100,600,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -122,14 +122,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     if j < i: 
                         display.append(chunk[j]["word"])
                     elif j == i: 
-                        display.append(f"{{\\c&H0000FFFF&}}{{\\fs98}}{chunk[j]['word']}{{\\fs88}}{{\\c&HFFFFFF&}}")
+                        display.append(f"{{\\c&H0000FFFF&}}{{\\fs92}}{chunk[j]['word']}{{\\fs84}}{{\\c&HFFFFFF&}}")
                     else: 
                         display.append(f"{{\\alpha&HFF&}}{chunk[j]['word']}{{\\alpha&H00&}}")
                 f.write(f"Dialogue: 0,{start_ass},{end_ass},ViralStyle,,0,0,0,,{' '.join(display)}\n")
 
 
 def _generate_classic_karaoke_style(words, out_ass_path, clip_start, clip_end):
-    """🎤 Classic Karaoke: Sapuan highlight warna cyan/kuning cerah per kata yang sinkron."""
+    """🎤 Classic Karaoke: Teks natural case dengan sapuan highlight Electric Cyan / Mint per kata sesuai preview."""
     ass_header = """[Script Info]
 ScriptType: v4.00+
 PlayResX: 1080
@@ -138,7 +138,7 @@ WrapStyle: 1
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: KaraokeStyle,Montserrat,82,&H00FFFFFF,&H000000FF,&H00000000,&HB0000000,-1,0,0,0,100,100,0,0,1,8,4,2,80,80,580,1
+Style: KaraokeStyle,Montserrat,84,&H00FFFFFF,&H000000FF,&H00000000,&HB0000000,-1,0,0,0,100,100,0,0,1,8,4,2,80,80,580,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -156,14 +156,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 display = []
                 for j in range(len(chunk)):
                     if j < i:
-                        # Kata yang sudah lewat (putih agak pudar / cyan selesai)
-                        display.append(f"{{\\c&H00E0E0E0&}}{chunk[j]['word']}{{\\c&H00FFFFFF&}}")
+                        # Kata yang sudah lewat: Tetap putih bersih
+                        display.append(f"{{\\c&H00FFFFFF&}}{chunk[j]['word']}")
                     elif j == i:
-                        # Kata aktif: Highlight Cyan Keemasan yang mencolok
-                        display.append(f"{{\\c&H0000FFFF&}}{{\\fs90}}{chunk[j]['word']}{{\\fs82}}{{\\c&H00FFFFFF&}}")
+                        # Kata aktif: Highlight Electric Cyan / Mint cerah (&H00D4F500&) dengan pop font
+                        display.append(f"{{\\c&H00D4F500&}}{{\\fs94}}{chunk[j]['word']}{{\\fs84}}{{\\c&H00FFFFFF&}}")
                     else:
-                        # Kata mendatang: Tetap terlihat tapi agak redup
-                        display.append(f"{{\\c&H00888888&}}{chunk[j]['word']}{{\\c&H00FFFFFF&}}")
+                        # Kata mendatang: Putih solid
+                        display.append(f"{{\\c&H00FFFFFF&}}{chunk[j]['word']}")
                 f.write(f"Dialogue: 0,{start_ass},{end_ass},KaraokeStyle,,0,0,0,,{' '.join(display)}\n")
 
 
