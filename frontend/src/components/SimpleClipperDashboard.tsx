@@ -16,7 +16,9 @@ import {
   FireIcon,
   MicrophoneIcon,
   ChatBubbleBottomCenterTextIcon,
-  EyeSlashIcon
+  EyeSlashIcon,
+  VideoCameraIcon,
+  SparklesIcon
 } from '@heroicons/react/24/outline';
 import { 
   StopIcon as StopIconSolid,
@@ -47,6 +49,7 @@ export const SimpleClipperDashboard: React.FC = () => {
   const [transcriptionModel, setTranscriptionModel] = useState<string>('groq');
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [selectedPresetId, setSelectedPresetId] = useState<string>('tiktok_viral');
+  const [framingMode, setFramingMode] = useState<'smart_crop' | 'fit_blur'>('smart_crop');
 
   // Generated Clips & Output Folder
   const [outputDir, setOutputDir] = useState<string>('');
@@ -116,7 +119,7 @@ export const SimpleClipperDashboard: React.FC = () => {
       `[${startTimestamp}] [SYSTEM] Memulai proses ekstraksi & analisis hook viral...`
     ]);
 
-    const streamUrl = `/stream?mode=${encodeURIComponent(activeTab)}&source_type=file&source=${encodeURIComponent(source)}&num_clips=${encodeURIComponent(clipCount)}&sub_style=${encodeURIComponent(selectedPresetId)}&whisper_model=${encodeURIComponent(transcriptionModel)}`;
+    const streamUrl = `/stream?mode=${encodeURIComponent(activeTab)}&source_type=file&source=${encodeURIComponent(source)}&num_clips=${encodeURIComponent(clipCount)}&sub_style=${encodeURIComponent(selectedPresetId)}&whisper_model=${encodeURIComponent(transcriptionModel)}&framing_mode=${encodeURIComponent(framingMode)}`;
     const es = new EventSource(streamUrl);
     eventSourceRef.current = es;
 
@@ -263,6 +266,12 @@ export const SimpleClipperDashboard: React.FC = () => {
     switch (presetId) {
       case 'tiktok_viral':
         return <FireIcon className="h-3.5 w-3.5 stroke-[2] text-amber-400" />;
+      case 'classic_karaoke':
+        return <MicrophoneIcon className="h-3.5 w-3.5 stroke-[2] text-cyan-400" />;
+      case 'minimalist':
+        return <SparklesIcon className="h-3.5 w-3.5 stroke-[2] text-emerald-400" />;
+      case 'word_pop':
+        return <BoltIcon className="h-3.5 w-3.5 stroke-[2] text-yellow-400" />;
       case 'no_subtitle':
       case 'none':
         return <EyeSlashIcon className="h-3.5 w-3.5 stroke-[2] text-rose-400" />;
@@ -504,7 +513,87 @@ export const SimpleClipperDashboard: React.FC = () => {
             )}
           </div>
 
-          {/* 3. SUBTITLE STYLE SECTION */}
+          {/* 3. VIDEO LAYOUT SECTION */}
+          <div className="mb-5">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider">
+                <VideoCameraIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
+                <span>LAYOUT VIDEO</span>
+              </div>
+              <span className="text-[9px] font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-500/40 px-1.5 py-0.5 rounded-md">
+                NEW
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {/* Option 1: 9:16 Smart Face Tracker */}
+              <button
+                type="button"
+                onClick={() => setFramingMode('smart_crop')}
+                className={`flex flex-col items-start rounded-xl p-2 text-left transition-all border ${
+                  framingMode === 'smart_crop'
+                    ? `border-emerald-500 bg-emerald-950/30 shadow-xs ring-2 ring-emerald-500/20`
+                    : `border-slate-800 bg-slate-950/50 hover:bg-slate-900 hover:border-slate-700`
+                }`}
+              >
+                <div className="flex items-center justify-between w-full mb-1 px-0.5">
+                  <span className={`text-[11px] font-bold truncate ${framingMode === 'smart_crop' ? themeClasses.accentText : 'text-slate-200'}`}>
+                    9:16 Smart Follow
+                  </span>
+                  {framingMode === 'smart_crop' && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 flex-shrink-0 animate-pulse" />
+                  )}
+                </div>
+
+                {/* Visual Preview Box */}
+                <div className="w-full h-12 rounded-lg bg-neutral-950 border border-neutral-800 flex items-center justify-center overflow-hidden px-1 shadow-inner relative select-none">
+                  <div className="w-6 h-9 rounded border border-emerald-500/60 bg-emerald-500/10 flex flex-col items-center justify-center gap-1 shadow-sm">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                    <span className="h-2 w-3 rounded-t-sm bg-emerald-500/60" />
+                  </div>
+                </div>
+                <span className="mt-1 text-[9px] text-slate-400 px-0.5 leading-tight">
+                  AI Face Tracking (Solo / Talk)
+                </span>
+              </button>
+
+              {/* Option 2: 16:9 Fit Blur */}
+              <button
+                type="button"
+                onClick={() => setFramingMode('fit_blur')}
+                className={`flex flex-col items-start rounded-xl p-2 text-left transition-all border ${
+                  framingMode === 'fit_blur'
+                    ? `border-emerald-500 bg-emerald-950/30 shadow-xs ring-2 ring-emerald-500/20`
+                    : `border-slate-800 bg-slate-950/50 hover:bg-slate-900 hover:border-slate-700`
+                }`}
+              >
+                <div className="flex items-center justify-between w-full mb-1 px-0.5">
+                  <span className={`text-[11px] font-bold truncate ${framingMode === 'fit_blur' ? themeClasses.accentText : 'text-slate-200'}`}>
+                    16:9 Fit (Blur)
+                  </span>
+                  {framingMode === 'fit_blur' && (
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 flex-shrink-0 animate-pulse" />
+                  )}
+                </div>
+
+                {/* Visual Preview Box */}
+                <div className="w-full h-12 rounded-lg bg-neutral-950 border border-neutral-800 flex flex-col items-center justify-center overflow-hidden p-1 shadow-inner relative select-none">
+                  {/* Blurred BG Mock */}
+                  <div className="absolute inset-0 bg-slate-700/30 backdrop-blur-sm" />
+                  {/* Centered 16:9 box */}
+                  <div className="relative w-full h-5 rounded border border-cyan-400/80 bg-slate-900 flex items-center justify-center gap-1 shadow-md">
+                    <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                  </div>
+                </div>
+                <span className="mt-1 text-[9px] text-slate-400 px-0.5 leading-tight">
+                  Podcast / Livestream 16:9
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* 4. SUBTITLE STYLE SECTION */}
           <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider mb-2.5">
             <PaintBrushIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
             <span>SUBTITLE STYLE</span>
@@ -550,6 +639,25 @@ export const SimpleClipperDashboard: React.FC = () => {
                           VIRAL
                         </span>
                         <span className="text-white drop-shadow-[0_1px_2px_rgba(0,0,0,1)]"> 🔥</span>
+                      </div>
+                    )}
+
+                    {preset.presetId === 'classic_karaoke' && (
+                      <div className="relative font-['Montserrat'] font-bold text-[10px] tracking-tight leading-none text-center">
+                        <span className="text-cyan-300 font-extrabold drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">Bikin </span>
+                        <span className="text-white drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">Konten</span>
+                      </div>
+                    )}
+
+                    {preset.presetId === 'minimalist' && (
+                      <div className="relative font-sans font-medium text-[10px] text-white tracking-wide leading-none text-center drop-shadow-sm">
+                        <span>Ide bisnis kreatif</span>
+                      </div>
+                    )}
+
+                    {preset.presetId === 'word_pop' && (
+                      <div className="relative font-['Impact'] font-black uppercase text-[12px] text-yellow-300 tracking-wider leading-none text-center drop-shadow-[0_2px_4px_rgba(0,0,0,1)] scale-110">
+                        <span>FOKUS!</span>
                       </div>
                     )}
 

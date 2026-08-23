@@ -48,7 +48,7 @@ def _sanitize_word_timestamps(words, clip_start, clip_end, min_word_dur=0.18):
     return sanitized
 
 def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, title_hook=None, sub_style="tiktok_viral"):
-    """Generate .ass subtitle file for TikTok Viral style (or skip if no_subtitle)."""
+    """Generate .ass subtitle file for specified style (or skip if no_subtitle)."""
     if sub_style in ["none", "no_subtitle"]:
         return
 
@@ -63,7 +63,17 @@ def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, title_h
 
     # Sanitize timestamps to guarantee clean, non-overlapping flow
     sanitized_words = _sanitize_word_timestamps(words, clip_start, clip_end)
-    _generate_tiktok_viral_style(sanitized_words, out_ass_path, clip_start, clip_end)
+    if not sanitized_words:
+        return
+
+    if sub_style == "classic_karaoke":
+        _generate_classic_karaoke_style(sanitized_words, out_ass_path, clip_start, clip_end)
+    elif sub_style == "minimalist":
+        _generate_minimalist_style(sanitized_words, out_ass_path, clip_start, clip_end)
+    elif sub_style == "word_pop":
+        _generate_word_pop_style(sanitized_words, out_ass_path, clip_start, clip_end)
+    else:
+        _generate_tiktok_viral_style(sanitized_words, out_ass_path, clip_start, clip_end)
 
 
 def _chunk_words(words, max_words=2, max_chars=14, uppercase=False):
@@ -116,6 +126,98 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     else: 
                         display.append(f"{{\\alpha&HFF&}}{chunk[j]['word']}{{\\alpha&H00&}}")
                 f.write(f"Dialogue: 0,{start_ass},{end_ass},ViralStyle,,0,0,0,,{' '.join(display)}\n")
+
+
+def _generate_classic_karaoke_style(words, out_ass_path, clip_start, clip_end):
+    """🎤 Classic Karaoke: Sapuan highlight warna cyan/kuning cerah per kata yang sinkron."""
+    ass_header = """[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 1
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: KaraokeStyle,Montserrat,82,&H00FFFFFF,&H000000FF,&H00000000,&HB0000000,-1,0,0,0,100,100,0,0,1,8,4,2,80,80,580,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    # 2-3 words per chunk for readable karaoke phrasing
+    chunks = _chunk_words(words, max_words=3, max_chars=18, uppercase=False)
+    
+    with open(out_ass_path, "w", encoding="utf-8") as f:
+        f.write(ass_header)
+        for chunk in chunks:
+            for i in range(len(chunk)):
+                start_ass = format_ass_timestamp(chunk[i]["start"])
+                next_start = chunk[i+1]["start"] if i + 1 < len(chunk) else chunk[-1]["end"]
+                end_ass = format_ass_timestamp(max(chunk[i]["end"], next_start))
+                display = []
+                for j in range(len(chunk)):
+                    if j < i:
+                        # Kata yang sudah lewat (putih agak pudar / cyan selesai)
+                        display.append(f"{{\\c&H00E0E0E0&}}{chunk[j]['word']}{{\\c&H00FFFFFF&}}")
+                    elif j == i:
+                        # Kata aktif: Highlight Cyan Keemasan yang mencolok
+                        display.append(f"{{\\c&H0000FFFF&}}{{\\fs90}}{chunk[j]['word']}{{\\fs82}}{{\\c&H00FFFFFF&}}")
+                    else:
+                        # Kata mendatang: Tetap terlihat tapi agak redup
+                        display.append(f"{{\\c&H00888888&}}{chunk[j]['word']}{{\\c&H00FFFFFF&}}")
+                f.write(f"Dialogue: 0,{start_ass},{end_ass},KaraokeStyle,,0,0,0,,{' '.join(display)}\n")
+
+
+def _generate_minimalist_style(words, out_ass_path, clip_start, clip_end):
+    """✨ Minimalist: Teks putih bersih statis, elegan dan tidak mengganggu konten podcast."""
+    ass_header = """[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 1
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: MinimalStyle,Plus Jakarta Sans,74,&H00FFFFFF,&H000000FF,&H00151515,&HAA000000,-1,0,0,0,100,100,0,0,1,5,3,2,100,100,560,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    # 3-4 words per line for clean readability
+    chunks = _chunk_words(words, max_words=4, max_chars=22, uppercase=False)
+    
+    with open(out_ass_path, "w", encoding="utf-8") as f:
+        f.write(ass_header)
+        for chunk in chunks:
+            start_ass = format_ass_timestamp(chunk[0]["start"])
+            end_ass = format_ass_timestamp(chunk[-1]["end"])
+            text_line = " ".join([w["word"] for w in chunk])
+            f.write(f"Dialogue: 0,{start_ass},{end_ass},MinimalStyle,,0,0,0,,{text_line}\n")
+
+
+def _generate_word_pop_style(words, out_ass_path, clip_start, clip_end):
+    """⚡ Word Pop (Reels): Menampilkan 1 kata besar per saat di posisi tengah."""
+    ass_header = """[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 1
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: WordPopStyle,Impact,108,&H00FFFFFF,&H000000FF,&H00000000,&HAA000000,-1,0,0,0,100,100,0,0,1,12,6,5,60,60,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    with open(out_ass_path, "w", encoding="utf-8") as f:
+        f.write(ass_header)
+        for i, w in enumerate(words):
+            start_ass = format_ass_timestamp(w["start"])
+            next_start = words[i+1]["start"] if i + 1 < len(words) else w["end"]
+            end_ass = format_ass_timestamp(max(w["end"], next_start))
+            text = w["word"].upper()
+            # Dynamic punchy scale effect on entry
+            f.write(f"Dialogue: 0,{start_ass},{end_ass},WordPopStyle,,0,0,0,,{{\\t(0,60,\\fscx110\\fscy110)}}{{\\t(60,120,\\fscx100\\fscy100)}}{text}\n")
 
 def detect_speaker_anchors(video_path, start_time, end_time, width, height, target_width):
     """
@@ -574,36 +676,8 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
 
     log("Cinema Clipper selesai 100% dengan mulus.", job_id=job_id)
     return output_path
-    
-    ffmpeg_cmd = [
-        ffmpeg_bin, "-y",
-        "-i", temp_video_path,
-        "-ss", str(start_time),
-        "-t", str(clip_dur),
-        "-i", video_path,
-        "-c:v", "libx264",
-        "-preset", "fast",
-        "-crf", "18",
-        "-pix_fmt", "yuv420p",
-        "-c:a", "aac",
-        "-b:a", "192k",
-        "-map", "0:v:0",
-        "-map", "1:a:0?",
-        "-avoid_negative_ts", "make_zero",
-        output_path
-    ]
-    run_command(ffmpeg_cmd, "Muxing final smart crop audio...", job_id=job_id, duration=clip_dur)
 
-    if os.path.exists(temp_video_path):
-        try:
-            os.remove(temp_video_path)
-        except Exception:
-            pass
-
-    log("Smart Face Tracker selesai dengan mulus.", job_id=job_id)
-    return output_path
-
-def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job_id=None, sub_style="tiktok_viral"):
+def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job_id=None, sub_style="tiktok_viral", framing_mode="smart_crop"):
     start = max(0.0, float(clip_info.get("start", 0.0)) - 0.2)
     end = float(clip_info.get("end", 0.0)) + 1.2
     duration = end - start
@@ -650,7 +724,12 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
         ]
 
     try:
-        apply_smart_crop(video_path, start, end, temp_crop_file, job_id=job_id)
+        if framing_mode == "fit_blur":
+            log(f"Applying 16:9 Fit Blur Background for Clip {index} (Podcast/Live stream mode)...", job_id=job_id)
+            apply_fit_blur(video_path, start, end, temp_crop_file, job_id=job_id)
+        else:
+            log(f"Applying AI Smart Face Tracking 9:16 for Clip {index}...", job_id=job_id)
+            apply_smart_crop(video_path, start, end, temp_crop_file, job_id=job_id)
             
         log(f"Rendering Subtitles, Audio Enhancer, and Color Grading for Clip {index}: {title}", job_id=job_id)
         vf_filter_base = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,eq=contrast=1.1:brightness=0.02:saturation=1.2,unsharp=5:5:0.4:5:5:0.0"
