@@ -43,6 +43,15 @@ DEFAULT_API_KEY = os.environ.get("ROUTER_API_KEY", "")
 DEFAULT_LLM_MODEL = os.environ.get("ROUTER_LLM_MODEL", "ag/gemini-3.5-flash-low")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 
+def get_groq_api_keys():
+    """Mengambil daftar seluruh GROQ API Key yang tersedia (mendukung single key atau comma-separated multi-keys)."""
+    raw_keys = os.environ.get("GROQ_API_KEY", "") or GROQ_API_KEY
+    if not raw_keys:
+        return []
+    # Split by comma or whitespace/newlines
+    keys = [k.strip() for k in raw_keys.replace("\n", ",").replace(";", ",").split(",") if k.strip() and not k.strip().startswith("gsk_xxxx")]
+    return keys
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMP_DIR = os.path.join(PROJECT_ROOT, "temp")
 os.makedirs(TEMP_DIR, exist_ok=True)

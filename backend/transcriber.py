@@ -2,9 +2,41 @@ import os
 import tempfile
 import time
 import re
+import math
+import subprocess
 from backend.utils import log, run_command, format_timestamp, TEMP_DIR
 
 _whisper_model = None
+
+def get_media_duration(file_path):
+    """Mendapatkan total durasi media (dalam detik) secara akurat."""
+    # Cara 1: OpenCV VideoCapture
+    try:
+        import cv2
+        cap = cv2.VideoCapture(file_path)
+        if cap.isOpened():
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+            cap.release()
+            if fps and fps > 0 and frame_count and frame_count > 0:
+                return float(frame_count / fps)
+    except Exception:
+        pass
+
+    # Cara 2: FFmpeg stderr parse
+    try:
+        from backend.utils import get_ffmpeg_binary
+        ffmpeg_bin = get_ffmpeg_binary()
+        proc = subprocess.Popen([ffmpeg_bin, "-i", file_path], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        out, _ = proc.communicate()
+        match = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.?\d*)", out)
+        if match:
+            h, m, s = match.groups()
+            return int(h) * 3600 + int(m) * 60 + float(s)
+    except Exception:
+        pass
+
+    return 0.0
 
 def split_segment_into_words(text, start, end):
     """
@@ -141,88 +173,205 @@ def fetch_ytdlp_subs(url, job_id=None):
         log(f"Gagal mengambil subtitle via yt-dlp: {e}", job_id=job_id)
         return None
 
+_active_groq_key_idx = 0
+
 def transcribe_with_groq(audio_path, job_id=None):
-    from backend.utils import GROQ_API_KEY, log
+    global _active_groq_key_idx
+    from backend.utils import get_groq_api_keys, log
     import requests
 
-    groq_key = (GROQ_API_KEY or os.environ.get("GROQ_API_KEY", "")).strip()
-    if not groq_key or groq_key.startswith("gsk_xxxx"):
+    keys = get_groq_api_keys()
+    if not keys:
         raise ValueError("GROQ_API_KEY belum diatur di file .env! Dapatkan API Key gratis di https://console.groq.com lalu masukkan ke file .env.")
 
-    log(f"Mengirim audio ke Groq Cloud Whisper API (whisper-large-v3-turbo)...", job_id=job_id)
     url = "https://api.groq.com/openai/v1/audio/transcriptions"
-    headers = {
-        "Authorization": f"Bearer {groq_key}"
-    }
-
-    with open(audio_path, "rb") as f:
-        files = [
-            ("file", (os.path.basename(audio_path), f, "audio/mp3")),
-            ("model", (None, "whisper-large-v3-turbo")),
-            ("response_format", (None, "verbose_json")),
-            ("language", (None, "id")),
-            ("temperature", (None, "0.0")),
-            ("timestamp_granularities[]", (None, "word")),
-            ("timestamp_granularities[]", (None, "segment")),
-        ]
-        log("Menunggu respon dari Groq Cloud AI (estimasi: 2-8 detik)...", job_id=job_id)
-        resp = requests.post(url, headers=headers, files=files, timeout=120)
-
-    if resp.status_code != 200:
-        raise RuntimeError(f"Groq API Error ({resp.status_code}): {resp.text}")
-
-    result = resp.json()
-    raw_segments = result.get("segments", [])
-    raw_words = result.get("words", [])
     
-    # Map words to segments accurately based on timestamp overlap
-    segments = []
-    word_idx = 0
-    total_words = len(raw_words)
+    # Coba request menggunakan key yang aktif, jika terkena 429 atau 401 otomatis rotate ke key berikutnya
+    total_keys = len(keys)
+    last_error = None
 
-    for seg in raw_segments:
-        text = seg.get("text", "").strip()
-        start = float(seg.get("start", 0.0))
-        end = float(seg.get("end", 0.0))
-        
-        words = []
-        # Ambil word timestamps langsung dari list kata asli Groq jika tersedia
-        if raw_words:
-            while word_idx < total_words:
-                w_item = raw_words[word_idx]
-                w_start = float(w_item.get("start", 0.0))
-                w_end = float(w_item.get("end", 0.0))
-                w_text = w_item.get("word", "").strip()
+    for attempt in range(total_keys):
+        current_key = keys[_active_groq_key_idx % total_keys]
+        key_masked = f"{current_key[:6]}...{current_key[-4:]}"
+        key_num = (_active_groq_key_idx % total_keys) + 1
+
+        headers = {
+            "Authorization": f"Bearer {current_key}"
+        }
+
+        log(f"Mengirim audio ke Groq Cloud Whisper API (whisper-large-v3-turbo) [Key #{key_num}: {key_masked}]...", job_id=job_id)
+
+        try:
+            with open(audio_path, "rb") as f:
+                files = [
+                    ("file", (os.path.basename(audio_path), f, "audio/mp3")),
+                    ("model", (None, "whisper-large-v3-turbo")),
+                    ("response_format", (None, "verbose_json")),
+                    ("language", (None, "id")),
+                    ("temperature", (None, "0.0")),
+                    ("timestamp_granularities[]", (None, "word")),
+                    ("timestamp_granularities[]", (None, "segment")),
+                ]
+                resp = requests.post(url, headers=headers, files=files, timeout=120)
+
+            if resp.status_code == 200:
+                result = resp.json()
+                raw_segments = result.get("segments", [])
+                raw_words = result.get("words", [])
                 
-                # Masukkan kata ke dalam segmen ini jika berada dalam rentang waktu segmen
-                if w_start <= end + 0.15:
-                    words.append({
-                        "word": w_text,
-                        "start": w_start,
-                        "end": w_end
+                # Map words to segments accurately based on timestamp overlap
+                segments = []
+                word_idx = 0
+                total_words = len(raw_words)
+
+                for seg in raw_segments:
+                    text = seg.get("text", "").strip()
+                    start = float(seg.get("start", 0.0))
+                    end = float(seg.get("end", 0.0))
+                    
+                    words = []
+                    # Ambil word timestamps langsung dari list kata asli Groq jika tersedia
+                    if raw_words:
+                        while word_idx < total_words:
+                            w_item = raw_words[word_idx]
+                            w_start = float(w_item.get("start", 0.0))
+                            w_end = float(w_item.get("end", 0.0))
+                            w_text = w_item.get("word", "").strip()
+                            
+                            # Masukkan kata ke dalam segmen ini jika berada dalam rentang waktu segmen
+                            if w_start <= end + 0.15:
+                                words.append({
+                                    "word": w_text,
+                                    "start": w_start,
+                                    "end": w_end
+                                })
+                                word_idx += 1
+                            else:
+                                break
+                    elif "words" in seg and seg["words"]:
+                        for w in seg["words"]:
+                            words.append({
+                                "word": w.get("word", "").strip(),
+                                "start": float(w.get("start", 0.0)),
+                                "end": float(w.get("end", 0.0))
+                            })
+                    else:
+                        words = split_segment_into_words(text, start, end)
+
+                    segments.append({
+                        "start": start,
+                        "end": end,
+                        "text": text,
+                        "words": words
                     })
-                    word_idx += 1
+
+                log(f"[SUCCESS] Transkripsi Groq selesai kilat! (Key #{key_num}) Ditemukan {len(segments)} segmen audio.", job_id=job_id)
+                return segments
+
+            # Jika terkena Rate Limit (429) atau Unauthorized (401)
+            if resp.status_code in [429, 401]:
+                err_msg = resp.text
+                if total_keys > 1:
+                    _active_groq_key_idx = (_active_groq_key_idx + 1) % total_keys
+                    next_key_num = (_active_groq_key_idx % total_keys) + 1
+                    log(f"⚠️ Groq Key #{key_num} mencapai batas kuota/rate limit ({resp.status_code}). Otomatis beralih ke API Key #{next_key_num}...", job_id=job_id)
+                    time.sleep(1.0)
+                    continue
                 else:
-                    break
-        elif "words" in seg and seg["words"]:
-            for w in seg["words"]:
-                words.append({
-                    "word": w.get("word", "").strip(),
-                    "start": float(w.get("start", 0.0)),
-                    "end": float(w.get("end", 0.0))
-                })
-        else:
-            words = split_segment_into_words(text, start, end)
+                    raise RuntimeError(f"Groq API Error ({resp.status_code}): {err_msg}")
+            else:
+                raise RuntimeError(f"Groq API Error ({resp.status_code}): {resp.text}")
 
-        segments.append({
-            "start": start,
-            "end": end,
-            "text": text,
-            "words": words
-        })
+        except Exception as e:
+            last_error = e
+            if total_keys > 1 and ("429" in str(e) or "rate_limit" in str(e).lower() or "401" in str(e)):
+                _active_groq_key_idx = (_active_groq_key_idx + 1) % total_keys
+                next_key_num = (_active_groq_key_idx % total_keys) + 1
+                log(f"⚠️ Error pada Groq Key #{key_num}: {e}. Mencoba beralih ke Key #{next_key_num}...", job_id=job_id)
+                time.sleep(1.0)
+                continue
+            raise e
 
-    log(f"[SUCCESS] Transkripsi Groq selesai kilat! Ditemukan {len(segments)} segmen audio.", job_id=job_id)
-    return segments
+    raise last_error or RuntimeError("Semua Groq API Keys yang disediakan telah mencapai batas kuota/rate limit!")
+
+def transcribe_long_audio_with_groq(video_path, total_duration, chunk_duration=900, job_id=None):
+    """
+    Membagi audio video panjang (1-3+ jam) menjadi potongan 15 menit (900 detik, ~4 MB),
+    lalu mentranskripsikannya ke Groq Cloud API secara sekuensial dan menggabungkan timestamp-nya.
+    """
+    from backend.utils import get_ffmpeg_binary
+    ffmpeg_bin = get_ffmpeg_binary()
+
+    num_chunks = int(math.ceil(total_duration / chunk_duration))
+    log(f"Video berdurasi panjang ({total_duration/60:.1f} menit). Mengaktifkan Groq Auto-Chunking ({num_chunks} part @ 15 menit)...", job_id=job_id)
+
+    all_segments = []
+
+    for i in range(num_chunks):
+        start_sec = i * chunk_duration
+        curr_dur = min(chunk_duration, total_duration - start_sec)
+        
+        start_min_str = f"{int(start_sec // 60):02d}:{int(start_sec % 60):02d}"
+        end_min_sec = start_sec + curr_dur
+        end_min_str = f"{int(end_min_sec // 60):02d}:{int(end_min_sec % 60):02d}"
+
+        log(f"[Groq AI] Mengekstrak & Mentranskripsikan Part {i+1}/{num_chunks} (Menit {start_min_str} - {end_min_str})...", job_id=job_id)
+
+        chunk_audio_path = tempfile.mktemp(suffix=f"_groq_part{i+1}.mp3", dir=TEMP_DIR)
+        extract_chunk_cmd = [
+            ffmpeg_bin, "-y",
+            "-ss", str(start_sec),
+            "-t", str(curr_dur),
+            "-i", video_path,
+            "-vn", "-acodec", "libmp3lame", "-b:a", "48k", "-ar", "16000", "-ac", "1",
+            chunk_audio_path
+        ]
+
+        try:
+            run_command(extract_chunk_cmd, f"Extracting chunk {i+1}/{num_chunks}", job_id=job_id)
+            
+            # Retry loop per chunk
+            max_retries = 3
+            chunk_segments = None
+            for attempt in range(max_retries):
+                try:
+                    chunk_segments = transcribe_with_groq(chunk_audio_path, job_id=job_id)
+                    if chunk_segments:
+                        break
+                except Exception as e:
+                    log(f"Groq Part {i+1} attempt {attempt + 1}/{max_retries} failed: {e}", job_id=job_id)
+                    if attempt < max_retries - 1:
+                        wait_sec = (attempt + 1) * 3
+                        log(f"Mencoba kembali part {i+1} dalam {wait_sec} detik...", job_id=job_id)
+                        time.sleep(wait_sec)
+                    else:
+                        raise e
+
+            # Terapkan offset waktu ke timestamp
+            if chunk_segments:
+                for seg in chunk_segments:
+                    seg["start"] += start_sec
+                    seg["end"] += start_sec
+                    for w in seg.get("words", []):
+                        w["start"] += start_sec
+                        w["end"] += start_sec
+                    all_segments.append(seg)
+
+            log(f"[Groq AI] Part {i+1}/{num_chunks} selesai transkripsi. Total segmen terakumulasi: {len(all_segments)}.", job_id=job_id)
+
+            # Jeda singkat 0.5s antar request untuk menghormati rate limit Groq
+            if i < num_chunks - 1:
+                time.sleep(0.5)
+
+        finally:
+            if os.path.exists(chunk_audio_path):
+                try:
+                    os.remove(chunk_audio_path)
+                except Exception:
+                    pass
+
+    log(f"[SUCCESS] Groq Multi-Part Transcription selesai 100%! Berhasil mengumpulkan total {len(all_segments)} segmen audio.", job_id=job_id)
+    return all_segments
 
 def transcribe_video(video_path, source_url=None, model_size="groq", job_id=None):
     is_youtube_url = source_url and ("youtube.com" in source_url or "youtu.be" in source_url)
@@ -311,15 +460,45 @@ def transcribe_video(video_path, source_url=None, model_size="groq", job_id=None
         except Exception as e:
             log(f"Gagal memuat cache transkrip: {e}, melakukan transkripsi ulang...", job_id=job_id)
 
+    # Deteksi total durasi video untuk penanganan otomatis file panjang
+    total_dur = get_media_duration(video_path)
+    
+    # Jika video > 20 menit (1200 detik), gunakan Auto-Chunking (potongan per 15 menit)
+    if total_dur > 1200:
+        segments = transcribe_long_audio_with_groq(video_path, total_dur, chunk_duration=900, job_id=job_id)
+        if segments:
+            try:
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    json.dump(segments, f, indent=2, ensure_ascii=False)
+                log(f"Transkrip disimpan ke cache lokal: {cache_path}", job_id=job_id)
+            except Exception:
+                pass
+        return segments
+
     log("Mengekstrak audio terkompresi mono MP3 untuk Groq Whisper...", job_id=job_id)
+    from backend.utils import get_ffmpeg_binary
+    ffmpeg_bin = get_ffmpeg_binary()
     temp_audio_path = tempfile.mktemp(suffix=".mp3", dir=TEMP_DIR)
     extract_cmd = [
-        "ffmpeg", "-y", "-i", video_path,
+        ffmpeg_bin, "-y", "-i", video_path,
         "-vn", "-acodec", "libmp3lame", "-b:a", "48k", "-ar", "16000", "-ac", "1",
         temp_audio_path
     ]
     try:
         run_command(extract_cmd, "Extracting lightweight audio for Groq", job_id=job_id)
+
+        # Cek jika ukuran file audio yang diekstrak melebihi batas 24 MB
+        file_size_mb = os.path.getsize(temp_audio_path) / (1024 * 1024) if os.path.exists(temp_audio_path) else 0
+        if file_size_mb >= 24.0 and total_dur > 0:
+            log(f"Ukuran audio ({file_size_mb:.1f} MB) mendekati limit 25 MB Groq. Beralih ke Auto-Chunking...", job_id=job_id)
+            segments = transcribe_long_audio_with_groq(video_path, total_dur, chunk_duration=900, job_id=job_id)
+            if segments:
+                try:
+                    with open(cache_path, "w", encoding="utf-8") as f:
+                        json.dump(segments, f, indent=2, ensure_ascii=False)
+                except Exception:
+                    pass
+            return segments
         
         # Retry loop dengan exponential backoff jika terjadi kendala jaringan/DNS sesaat
         max_retries = 3
