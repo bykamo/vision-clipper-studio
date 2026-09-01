@@ -194,35 +194,36 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
         </div>
       </div>
 
-      {/* ── CENTER WORKSPACE: REALISTIC iPHONE 16 PRO MOCKUP ── */}
+      {/* ── CENTER WORKSPACE: REALISTIC iPHONE MOCKUP ── */}
       <div className="relative flex-1 flex items-center justify-center min-h-[380px] py-2 select-none">
 
-        {/* Outer Titanium Chassis & Hardware Buttons */}
+        {/* Outer Phone Frame */}
         <div className="relative flex items-center justify-center">
 
-          {/* Left Action Button & Volume Buttons */}
-          <div className="absolute -left-[7px] top-[68px] w-[3px] h-[18px] bg-[#3a4454] rounded-l-xs shadow-inner" />
-          <div className="absolute -left-[7px] top-[100px] w-[3px] h-[34px] bg-[#3a4454] rounded-l-xs shadow-inner" />
-          <div className="absolute -left-[7px] top-[142px] w-[3px] h-[34px] bg-[#3a4454] rounded-l-xs shadow-inner" />
+          {/* Phone Bezel Frame */}
+          <div className="relative w-[256px] h-[458px] xl:w-[282px] xl:h-[508px] rounded-[48px] bg-gradient-to-tr from-[#1b222d] via-[#2d3848] to-[#161c26] p-[4px] shadow-[0_25px_60px_rgba(0,0,0,0.8),0_0_0_1px_rgba(255,255,255,0.08),inset_0_1px_2px_rgba(255,255,255,0.2)]">
 
-          {/* Right Power Button */}
-          <div className="absolute -right-[7px] top-[108px] w-[3px] h-[48px] bg-[#3a4454] rounded-r-xs shadow-inner" />
+            {/* Inner Black OLED Screen Container */}
+            <div className="relative w-full h-full rounded-[44px] bg-black overflow-hidden border-[2px] border-black flex flex-col justify-between">
 
-          {/* iPhone 16 Pro Titanium Bezel Frame */}
-          <div className="relative w-[252px] h-[445px] xl:w-[278px] xl:h-[492px] rounded-[48px] bg-gradient-to-tr from-[#1b222d] via-[#2d3848] to-[#161c26] p-[3.5px] shadow-[0_25px_60px_rgba(0,0,0,0.8),0_0_0_1px_rgba(255,255,255,0.08),inset_0_1px_2px_rgba(255,255,255,0.2)]">
-
-            {/* Inner Black OLED Border & Screen Container */}
-            <div className="relative w-full h-full rounded-[44px] bg-black overflow-hidden border-[3px] border-black flex flex-col justify-between">
-
-              {/* iPhone Dynamic Island Only */}
+              {/* Dynamic Island Only */}
               <div className="absolute top-2.5 inset-x-0 z-40 flex justify-center pointer-events-none">
-                <div className="h-[20px] w-[78px] rounded-full bg-black border border-neutral-900 flex items-center justify-between px-2.5 shadow-sm">
-                  {/* Camera lens reflection */}
-                  <div className="h-2.5 w-2.5 rounded-full bg-[#080d14] border border-[#1a2332] flex items-center justify-center">
-                    <div className="h-1 w-1 rounded-full bg-blue-900/60" />
+                <div className="h-[22px] w-[88px] rounded-full bg-black border border-neutral-900/80 flex items-center justify-between px-2.5 shadow-md">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-3 w-3 rounded-full bg-[#080d14] border border-[#1a2332] flex items-center justify-center">
+                      <div className="h-1 w-1 rounded-full bg-blue-900/80" />
+                    </div>
+                    <div className="h-1.5 w-1.5 rounded-full bg-[#0d131f]" />
                   </div>
-                  {/* Audio / FaceID sensor dot */}
-                  <div className="h-1.5 w-1.5 rounded-full bg-emerald-500/70 animate-pulse" />
+                  {isPlaying ? (
+                    <div className="flex items-center gap-0.5 h-2.5">
+                      <span className="w-0.5 h-2 bg-emerald-400 animate-pulse rounded-full" />
+                      <span className="w-0.5 h-3 bg-emerald-300 animate-pulse rounded-full delay-75" />
+                      <span className="w-0.5 h-1.5 bg-emerald-400 animate-pulse rounded-full delay-150" />
+                    </div>
+                  ) : (
+                    <div className="h-1.5 w-1.5 rounded-full bg-emerald-500/70 animate-pulse" />
+                  )}
                 </div>
               </div>
 
@@ -377,11 +378,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                   </div>
                 )}
 
-              </div>
-
-              {/* Bottom iOS Home Indicator Bar */}
-              <div className="absolute bottom-1.5 inset-x-0 z-40 flex justify-center pointer-events-none">
-                <div className="h-1 w-28 rounded-full bg-white/70 backdrop-blur-xs shadow-xs" />
               </div>
 
             </div>

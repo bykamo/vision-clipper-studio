@@ -32,7 +32,6 @@ import {
 import confetti from 'canvas-confetti';
 import { SubtitleStyleConfig } from '../types';
 import { SUBTITLE_PRESETS } from '../data/subtitlePresets';
-import { FileExplorerModal } from './FileExplorerModal';
 import { PhonePreview } from './PhonePreview';
 
 interface GeneratedClipItem {
@@ -66,7 +65,35 @@ export const SimpleClipperDashboard: React.FC = () => {
 
   // Video Source State
   const [videoPathInput, setVideoPathInput] = useState<string>('');
-  const [showExplorerModal, setShowExplorerModal] = useState<boolean>(false);
+  const [isPickingFile, setIsPickingFile] = useState<boolean>(false);
+  const browserFileInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePickNativeFile = async () => {
+    setIsPickingFile(true);
+    try {
+      const res = await fetch('/api/pick-file');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.path) {
+          setVideoPathInput(data.path);
+          return;
+        }
+      }
+    } catch {
+      // Fallback to browser file input
+      browserFileInputRef.current?.click();
+    } finally {
+      setIsPickingFile(false);
+    }
+  };
+
+  const handleBrowserFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // If browser provides full path (in Electron/local) or file name
+      setVideoPathInput((file as any).path || file.name);
+    }
+  };
 
   // Workflow Phase State
   const [phase, setPhase] = useState<WorkflowPhase>('config');
@@ -617,13 +644,21 @@ export const SimpleClipperDashboard: React.FC = () => {
                 placeholder="/path/to/video.mp4 atau URL..."
                 className={`flex-1 rounded-xl border px-3 py-2 text-xs font-mono transition-all shadow-inner truncate ${themeClasses.input}`}
               />
+              <input
+                ref={browserFileInputRef}
+                type="file"
+                accept="video/*,.mp4,.mkv,.mov,.webm,.avi"
+                onChange={handleBrowserFileChange}
+                className="hidden"
+              />
               <button
                 type="button"
-                onClick={() => setShowExplorerModal(true)}
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-900/90 text-slate-400 hover:text-white hover:border-slate-700 transition-colors shadow-sm flex-shrink-0"
-                title="Pilih File Video dari Komputer (File Explorer)"
+                onClick={handlePickNativeFile}
+                disabled={isPickingFile}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-900/90 text-slate-400 hover:text-white hover:border-slate-700 transition-colors shadow-sm flex-shrink-0 disabled:opacity-50"
+                title="Pilih File Video dari Komputer (Native File Explorer)"
               >
-                <FolderOpenIcon className="h-4 w-4 stroke-[2]" />
+                <FolderOpenIcon className={`h-4 w-4 stroke-[2] ${isPickingFile ? 'animate-pulse text-emerald-400' : ''}`} />
               </button>
             </div>
           </div>
@@ -1345,14 +1380,6 @@ export const SimpleClipperDashboard: React.FC = () => {
           Shut Down Server
         </button>
       </footer>
-
-      {/* File Explorer Modal */}
-      <FileExplorerModal
-        isOpen={showExplorerModal}
-        onClose={() => setShowExplorerModal(false)}
-        onSelect={(path) => setVideoPathInput(path)}
-        initialPath={videoPathInput}
-      />
 
       {/* Generated Clips Detail Modal */}
       {showFolderModal && (

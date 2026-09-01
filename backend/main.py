@@ -179,6 +179,40 @@ async def open_folder(request: Request):
             return JSONResponse(status_code=500, content={"error": str(e)})
     return JSONResponse(status_code=404, content={"error": f"Folder tidak ditemukan: {path}"})
 
+
+@app.get("/api/pick-file")
+async def pick_file():
+    """Trigger native OS file chooser dialog (Windows / macOS / Linux) and return chosen file path."""
+    selected_path = ""
+    try:
+        if sys.platform == 'darwin':
+            # AppleScript native file picker
+            script = 'POSIX path of (choose file with prompt "Pilih File Video" of type {"public.movie", "mp4", "mkv", "mov", "webm", "avi", "m4v"})'
+            res = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+            if res.returncode == 0:
+                selected_path = res.stdout.strip()
+        elif os.name == 'nt':
+            # PowerShell OpenFileDialog
+            ps_script = (
+                'Add-Type -AssemblyName System.Windows.Forms;'
+                '$f = New-Object System.Windows.Forms.OpenFileDialog;'
+                '$f.Filter = "Video Files (*.mp4;*.mkv;*.mov;*.webm;*.avi)|*.mp4;*.mkv;*.mov;*.webm;*.avi|All Files (*.*)|*.*";'
+                '$f.Title = "Pilih File Video";'
+                'if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.FileName }'
+            )
+            res = subprocess.run(['powershell', '-NoProfile', '-Command', ps_script], capture_output=True, text=True)
+            if res.returncode == 0:
+                selected_path = res.stdout.strip()
+        else:
+            # Linux zenity fallback
+            res = subprocess.run(['zenity', '--file-selection', '--title=Pilih File Video', '--file-filter=Video Files | *.mp4 *.mkv *.mov *.webm *.avi'], capture_output=True, text=True)
+            if res.returncode == 0:
+                selected_path = res.stdout.strip()
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+    return {"path": selected_path}
+
 @app.post("/cancel")
 async def cancel():
     global current_process
