@@ -894,12 +894,11 @@ export const SimpleClipperDashboard: React.FC = () => {
           </div>
 
           {/* STICKY BOTTOM GENERATE BUTTON */}
-          <div className="mt-auto pt-2 flex flex-col gap-1.5 sticky bottom-0 bg-[#0e1218] border-t border-slate-800/80 pb-1">
-            <div className="flex items-center gap-2">
+          <div className="mt-auto pt-3 flex items-center gap-2 sticky bottom-0 bg-[#0e1218] border-t border-slate-800/80 pb-2">
               <button
                 onClick={handleStartProcessing}
                 disabled={isProcessing}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold transition-all ${themeClasses.actionBtn} ${
+                className={`flex flex-1 h-11 items-center justify-center gap-2 rounded-xl text-xs font-bold transition-all ${themeClasses.actionBtn} ${
                   isProcessing ? 'opacity-70 cursor-wait' : 'active:scale-[0.98]'
                 }`}
               >
@@ -922,12 +921,6 @@ export const SimpleClipperDashboard: React.FC = () => {
                   <StopIconSolid className="h-4 w-4" />
                 </button>
               )}
-            </div>
-            <div className="text-center">
-              <span className="text-[10px] text-slate-500 font-mono">
-                Estimated time: ~20-35 detik
-              </span>
-            </div>
           </div>
 
         </aside>

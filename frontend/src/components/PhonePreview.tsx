@@ -29,7 +29,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   const [duration, setDuration] = useState(0);
   const [showSafeArea, setShowSafeArea] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1.0);
-  const [aspectRatioMode, setAspectRatioMode] = useState<'9:16' | '16:9'>('9:16');
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
@@ -173,40 +172,12 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
         <div className="flex items-center gap-2">
           <ViewfinderCircleIcon className="h-4 w-4 text-emerald-400" />
           <div className="flex flex-col">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-200 font-['Outfit']">
-              VIDEO PREVIEW <span className="text-slate-500 font-normal text-[11px]">{videoStreamUrl ? '(Source)' : '(Mockup)'}</span>
-            </h2>
-            <p className="text-[10px] text-slate-500">Preview sebelum render</p>
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-200 font-['Outfit']">VIDEO PREVIEW</h2>
           </div>
         </div>
 
-        {/* Aspect Ratio & Safe Area Buttons */}
-        <div className="flex items-center gap-1.5">
-          <div className="flex items-center rounded-lg bg-slate-950/80 p-0.5 border border-slate-800 text-[11px] font-semibold font-['Outfit']">
-            <button
-              type="button"
-              onClick={() => setAspectRatioMode('9:16')}
-              className={`px-2 py-0.5 rounded-md transition-all ${
-                aspectRatioMode === '9:16'
-                  ? 'bg-emerald-500 text-slate-950 font-bold shadow-xs'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              9:16
-            </button>
-            <button
-              type="button"
-              onClick={() => setAspectRatioMode('16:9')}
-              className={`px-2 py-0.5 rounded-md transition-all ${
-                aspectRatioMode === '16:9'
-                  ? 'bg-emerald-500 text-slate-950 font-bold shadow-xs'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              16:9
-            </button>
-          </div>
-
+        {/* Safe Area button. Layout follows setting in left panel. */}
+        <div className="flex items-center">
           <button
             type="button"
             onClick={() => setShowSafeArea(!showSafeArea)}
@@ -262,7 +233,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                 {videoStreamUrl ? (
                   <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
                     {/* Background Blurred Stream for Fit/16:9 mode */}
-                    {(framingMode === 'fit_blur' || aspectRatioMode === '16:9') && (
+                    {framingMode === 'fit_blur' && (
                       <video
                         src={videoStreamUrl}
                         className="absolute inset-0 w-full h-full object-cover filter blur-xl scale-125 opacity-50 pointer-events-none"
@@ -282,7 +253,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       onEnded={() => setIsPlaying(false)}
                       muted={isMuted}
                       className={`relative z-10 transition-all duration-300 ${
-                        (framingMode === 'fit_blur' || aspectRatioMode === '16:9')
+                        framingMode === 'fit_blur'
                           ? 'w-full h-auto max-h-[220px] object-contain shadow-2xl border-y border-white/10'
                           : 'w-full h-full object-cover'
                       }`}
@@ -296,7 +267,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                   </div>
                 ) : (
                   // ── EMPTY STATE GRAPHICS (NO SOURCE VIDEO SELECTED) ──
-                  (framingMode === 'fit_blur' || aspectRatioMode === '16:9') ? (
+                  framingMode === 'fit_blur' ? (
                     // 16:9 Fit with Blur Backdrop inside 9:16 iPhone screen
                     <div className="relative w-full h-full flex flex-col items-center justify-center overflow-hidden">
                       {/* Dynamic Studio Gradient Blur Backdrop */}
@@ -471,11 +442,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
           >
             {playbackRate}x
           </button>
-        </div>
-
-        {/* Mockup helper text */}
-        <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-500 font-mono">
-          <span>ℹ {videoStreamUrl ? 'Preview sumber video. Hasil render akan mengikuti AI tracking & subtitle pilihan.' : 'Pilih video untuk preview sumber sebelum render.'}</span>
         </div>
       </div>
 
