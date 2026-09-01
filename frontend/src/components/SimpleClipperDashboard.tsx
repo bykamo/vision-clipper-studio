@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
+import {
   ScissorsIcon,
   ShoppingBagIcon,
   FolderIcon,
@@ -18,9 +18,14 @@ import {
   ChatBubbleBottomCenterTextIcon,
   EyeSlashIcon,
   VideoCameraIcon,
-  SparklesIcon
+  SparklesIcon,
+  ArrowLeftIcon,
+  ArrowPathIcon,
+  PlayIcon,
+  CheckCircleIcon,
+  XCircleIcon
 } from '@heroicons/react/24/outline';
-import { 
+import {
   StopIcon as StopIconSolid,
   FilmIcon as FilmIconSolid
 } from '@heroicons/react/24/solid';
@@ -37,6 +42,24 @@ interface GeneratedClipItem {
   duration?: string;
 }
 
+type WorkflowPhase = 'config' | 'analyzing' | 'preview' | 'rendering' | 'complete';
+
+interface ClipCandidate {
+  index: number;
+  start: number;
+  end: number;
+  duration: number;
+  title_options: string[];
+  title_hook: string;
+  reason: string;
+  viral_score: number;
+  sales_score?: number;
+  caption: string;
+  hashtags: string[];
+  decision: 'pending' | 'approved' | 'skipped';
+  previewed: boolean;
+}
+
 export const SimpleClipperDashboard: React.FC = () => {
   // Navigation Tabs (Modes)
   const [activeTab, setActiveTab] = useState<'hook' | 'affiliate'>('hook');
@@ -44,6 +67,13 @@ export const SimpleClipperDashboard: React.FC = () => {
   // Video Source State
   const [videoPathInput, setVideoPathInput] = useState<string>('');
   const [showExplorerModal, setShowExplorerModal] = useState<boolean>(false);
+
+  // Workflow Phase State
+  const [phase, setPhase] = useState<WorkflowPhase>('config');
+  const [clipCandidates, setClipCandidates] = useState<ClipCandidate[]>([]);
+  const [analysisId, setAnalysisId] = useState<string>('');
+  const [resolvedVideoPath, setResolvedVideoPath] = useState<string>('');
+  const [previewClipRange, setPreviewClipRange] = useState<{ start: number; end: number } | null>(null);
 
   // Settings State
   const [clipCount, setClipCount] = useState<number>(4);
@@ -72,6 +102,9 @@ export const SimpleClipperDashboard: React.FC = () => {
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const renderAbortControllerRef = useRef<AbortController | null>(null);
+  const analysisReceivedRef = useRef(false);
+  const confirmedClipCount = clipCandidates.filter(c => c.decision === 'approved').length;
 
   // Auto Scroll Terminal
   useEffect(() => {
@@ -86,6 +119,7 @@ export const SimpleClipperDashboard: React.FC = () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
       }
+      renderAbortControllerRef.current?.abort();
     };
   }, []);
 
@@ -94,7 +128,14 @@ export const SimpleClipperDashboard: React.FC = () => {
     setSelectedPresetId(preset.presetId);
   };
 
-  // Start Real Processing via SSE
+  const previewCandidate = (clip: ClipCandidate) => {
+    setPreviewClipRange({ start: clip.start, end: clip.end });
+    setClipCandidates(prev => prev.map(candidate =>
+      candidate.index === clip.index ? { ...candidate, previewed: true } : candidate
+    ));
+  };
+
+  // Start Real Processing via SSE — Phase 1: Analyze Only
   const handleStartProcessing = () => {
     const source = videoPathInput.trim();
     if (!source) {
@@ -108,38 +149,53 @@ export const SimpleClipperDashboard: React.FC = () => {
 
     setIsProcessing(true);
     setStatus('processing');
+    setPhase('analyzing');
     setProgress(0);
     setGeneratedClips([]);
     setOutputDir('');
+    setClipCandidates([]);
+    setAnalysisId('');
+    setResolvedVideoPath('');
+    setPreviewClipRange(null);
+    analysisReceivedRef.current = false;
 
     const startTimestamp = new Date().toTimeString().split(' ')[0];
     setLogs([
       `[${startTimestamp}] [SYSTEM] Inisialisasi ${activeTab.toUpperCase()} CLIPPER ENGINE...`,
       `[${startTimestamp}] [SYSTEM] Model AI: ${transcriptionModel} | Subtitle Style: ${selectedPresetId}`,
       `[${startTimestamp}] [SYSTEM] Sumber video: ${source}`,
-      `[${startTimestamp}] [SYSTEM] Memulai proses ekstraksi & analisis hook viral...`
+      `[${startTimestamp}] [SYSTEM] Memulai proses transkripsi & analisis AI (tanpa render)...`
     ]);
 
-    const streamUrl = `/stream?mode=${encodeURIComponent(activeTab)}&source_type=file&source=${encodeURIComponent(source)}&num_clips=${encodeURIComponent(clipCount)}&sub_style=${encodeURIComponent(selectedPresetId)}&whisper_model=${encodeURIComponent(transcriptionModel)}&framing_mode=${encodeURIComponent(framingMode)}`;
+    const streamUrl = `/api/analyze?mode=${encodeURIComponent(activeTab)}&source=${encodeURIComponent(source)}&num_clips=${encodeURIComponent(clipCount)}&whisper_model=${encodeURIComponent(transcriptionModel)}`;
     const es = new EventSource(streamUrl);
     eventSourceRef.current = es;
+    let analysisComplete = false;
 
     es.onmessage = (event) => {
       const data = event.data;
 
       if (data === '[PROCESS_COMPLETE]') {
         const doneTimestamp = new Date().toTimeString().split(' ')[0];
-        setLogs(prev => [...prev, `[${doneTimestamp}] [SYSTEM] ✅ Semua klip berhasil diproses dan disimpan!`]);
+        const finishedWithCandidates = analysisReceivedRef.current;
+        setLogs(prev => [...prev, finishedWithCandidates
+          ? `[${doneTimestamp}] [SYSTEM] ✅ Analisis selesai! Silakan review dan pilih klip.`
+          : `[${doneTimestamp}] [SYSTEM] ❌ Analisis tidak menghasilkan kandidat klip.`
+        ]);
         setProgress(100);
-        setStatus('complete');
+        setStatus(finishedWithCandidates ? 'ready' : 'error');
+        if (!finishedWithCandidates) setPhase('config');
         setIsProcessing(false);
+        analysisComplete = true;
+        // Transition to preview phase happens via [ANALYSIS_RESULT] handler
         if (eventSourceRef.current) {
           eventSourceRef.current.close();
           eventSourceRef.current = null;
         }
       } else if (data === '[PROCESS_FAILED]') {
         const failTimestamp = new Date().toTimeString().split(' ')[0];
-        setLogs(prev => [...prev, `[${failTimestamp}] [SYSTEM] ❌ Pemrosesan gagal. Silakan periksa log.`]);
+        setLogs(prev => [...prev, `[${failTimestamp}] [SYSTEM] ❌ Analisis gagal. Silakan periksa log.`]);
+        setPhase('config');
         setStatus('error');
         setIsProcessing(false);
         if (eventSourceRef.current) {
@@ -148,28 +204,39 @@ export const SimpleClipperDashboard: React.FC = () => {
         }
       } else if (data === '[HEARTBEAT]') {
         // Keep-alive heartbeat
+      } else if (data.startsWith('[ANALYSIS_RESULT]')) {
+        // Parse analysis JSON from backend
+        try {
+          const jsonStr = data.substring('[ANALYSIS_RESULT]'.length);
+          const result = JSON.parse(jsonStr);
+          const candidates: ClipCandidate[] = (result.clips || []).map((c: any, i: number) => ({
+            index: c.index || i + 1,
+            start: c.start,
+            end: c.end,
+            duration: c.duration || Math.round((c.end - c.start) * 100) / 100,
+            title_options: c.title_options || [c.title || 'Untitled'],
+            title_hook: c.title_hook || '',
+            reason: c.reason || '',
+            viral_score: c.viral_score || 0,
+            sales_score: c.sales_score,
+            caption: c.caption || '',
+            hashtags: c.hashtags || [],
+            decision: 'pending',
+            previewed: false
+          }));
+          setClipCandidates(candidates);
+          setAnalysisId(result.analysis_id || '');
+          setResolvedVideoPath(result.video_path || source);
+          setOutputDir(result.output_dir || '');
+          analysisReceivedRef.current = true;
+          setPhase('preview');
+          const ts = new Date().toTimeString().split(' ')[0];
+          setLogs(prev => [...prev, `[${ts}] [SYSTEM] 🎯 Ditemukan ${candidates.length} kandidat klip viral. Silakan review di panel kanan.`]);
+        } catch (e: any) {
+          const ts = new Date().toTimeString().split(' ')[0];
+          setLogs(prev => [...prev, `[${ts}] [SYSTEM] ⚠️ Gagal parse hasil analisis: ${e.message}`]);
+        }
       } else {
-        // Parse output directory
-        if (data.includes('Outputs will be saved to:')) {
-          const match = data.match(/Outputs will be saved to:\s*(.*)/);
-          if (match && match[1]) {
-            setOutputDir(match[1].trim());
-          }
-        }
-
-        // Parse rendered clip title
-        if (data.includes('Rendering Subtitles, Audio Enhancer, and Color Grading for Clip')) {
-          const clipMatch = data.match(/for Clip (\d+):\s*(.*)/);
-          if (clipMatch) {
-            const index = clipMatch[1];
-            const title = clipMatch[2];
-            setGeneratedClips(prev => {
-              if (prev.some(c => c.id === index)) return prev;
-              return [...prev, { id: index, title: title }];
-            });
-          }
-        }
-
         // Parse Progress percentage
         const progressMatch = data.match(/([\d.]+)%/);
         if (progressMatch) {
@@ -193,9 +260,11 @@ export const SimpleClipperDashboard: React.FC = () => {
     };
 
     es.onerror = (err) => {
+      if (analysisComplete || es.readyState === EventSource.CLOSED) return;
       console.error("SSE Error:", err);
       const errTimestamp = new Date().toTimeString().split(' ')[0];
       setLogs(prev => [...prev, `[${errTimestamp}] [SYSTEM] ⚠️ Koneksi ke background worker terputus.`]);
+      setPhase('config');
       setStatus('error');
       setIsProcessing(false);
       if (eventSourceRef.current) {
@@ -205,12 +274,148 @@ export const SimpleClipperDashboard: React.FC = () => {
     };
   };
 
+  // Phase 2: Render only approved clips
+  const handleRenderSelected = () => {
+    const approved = clipCandidates.filter(c => c.decision === 'approved');
+    if (!analysisId || approved.length === 0) {
+      alert('Preview lalu confirm minimal 1 klip untuk di-render!');
+      return;
+    }
+
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+
+    setIsProcessing(true);
+    setStatus('processing');
+    setPhase('rendering');
+    setProgress(0);
+    setGeneratedClips([]);
+    setPreviewClipRange(null);
+
+    const startTimestamp = new Date().toTimeString().split(' ')[0];
+    setLogs(prev => [
+      ...prev,
+      `[${startTimestamp}] [SYSTEM] 🚀 Memulai rendering ${approved.length} klip yang dipilih...`
+    ]);
+
+    const body = {
+      analysis_id: analysisId,
+      clip_indices: approved.map(c => c.index),
+      sub_style: selectedPresetId,
+      framing_mode: framingMode
+    };
+
+    const controller = new AbortController();
+    renderAbortControllerRef.current = controller;
+
+    void (async () => {
+      try {
+        const response = await fetch('/api/render-selected', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: controller.signal
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error.error || `Request gagal (${response.status})`);
+        }
+        if (!response.body) throw new Error('Response stream tidak tersedia');
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let finished = false;
+
+        while (!finished) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const data = line.substring(6);
+
+            if (data === '[PROCESS_COMPLETE]') {
+              const ts = new Date().toTimeString().split(' ')[0];
+              setLogs(prev => [...prev, `[${ts}] [SYSTEM] ✅ Semua klip berhasil dirender!`]);
+              setProgress(100);
+              setPhase('complete');
+              setStatus('complete');
+              setIsProcessing(false);
+              confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+              finished = true;
+              break;
+            }
+            if (data === '[PROCESS_FAILED]') {
+              const ts = new Date().toTimeString().split(' ')[0];
+              setLogs(prev => [...prev, `[${ts}] [SYSTEM] ❌ Rendering gagal. Review pilihan lalu coba lagi.`]);
+              setPhase('preview');
+              setStatus('error');
+              setIsProcessing(false);
+              finished = true;
+              break;
+            }
+            if (data === '[HEARTBEAT]') continue;
+
+            if (data.includes('Outputs will be saved to:')) {
+              const match = data.match(/Outputs will be saved to:\s*(.*)/);
+              if (match?.[1]) setOutputDir(match[1].trim());
+            }
+
+            if (data.includes('Rendering Subtitles, Audio Enhancer, and Color Grading for Clip')) {
+              const clipMatch = data.match(/for Clip (\d+):\s*(.*)/);
+              if (clipMatch) {
+                const index = clipMatch[1];
+                const title = clipMatch[2];
+                setGeneratedClips(prev => prev.some(c => c.id === index) ? prev : [...prev, { id: index, title }]);
+              }
+            }
+
+            const progressMatch = data.match(/([\d.]+)%/);
+            if (progressMatch) {
+              const value = parseFloat(progressMatch[1]);
+              if (!isNaN(value)) setProgress(Math.min(100, Math.max(0, Math.round(value))));
+            }
+
+            setLogs(prev => {
+              if (data.includes('Progress') || data.includes('%|')) {
+                const lastLog = prev[prev.length - 1];
+                if (lastLog && (lastLog.includes('Progress') || lastLog.includes('%|'))) return [...prev.slice(0, -1), data];
+              }
+              return [...prev, data];
+            });
+          }
+        }
+
+        if (!finished) {
+          throw new Error('Render stream berhenti sebelum selesai');
+        }
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+        const ts = new Date().toTimeString().split(' ')[0];
+        setLogs(prev => [...prev, `[${ts}] [SYSTEM] ❌ Error: ${err.message}`]);
+        setPhase('preview');
+        setStatus('error');
+        setIsProcessing(false);
+      } finally {
+        if (renderAbortControllerRef.current === controller) renderAbortControllerRef.current = null;
+      }
+    })();
+  };
+
   // Stop / Cancel Processing
   const handleStopProcessing = async () => {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
+    renderAbortControllerRef.current?.abort();
+    renderAbortControllerRef.current = null;
+    const returnPhase = phase === 'rendering' ? 'preview' : 'config';
     const stopTime = new Date().toTimeString().split(' ')[0];
     setLogs(prev => [...prev, `[${stopTime}] [SYSTEM] ⛔ Mengirim sinyal pembatalan ke backend...`]);
 
@@ -221,6 +426,7 @@ export const SimpleClipperDashboard: React.FC = () => {
       setLogs(prev => [...prev, `[${stopTime}] [SYSTEM] Error cancel: ${e.message}`]);
     } finally {
       setIsProcessing(false);
+      setPhase(returnPhase);
       setStatus('ready');
     }
   };
@@ -307,12 +513,12 @@ export const SimpleClipperDashboard: React.FC = () => {
 
   return (
     <div className={`flex h-screen w-screen flex-col overflow-hidden ${themeClasses.bg} font-['Instrument_Sans',_'Plus_Jakarta_Sans',_sans-serif] antialiased`}>
-      
+
       {/* ─────────────────────────────────────────────────────────────
           1. TOP APP HEADER
          ───────────────────────────────────────────────────────────── */}
       <header className={`flex h-14 items-center justify-between border-b ${themeClasses.header} px-5 shadow-md z-20`}>
-        
+
         {/* Left: Brand Logo & Title */}
         <div className="flex items-center gap-3">
           <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${themeClasses.accentBg} text-white shadow-sm`}>
@@ -341,7 +547,7 @@ export const SimpleClipperDashboard: React.FC = () => {
             <ScissorsIcon className="h-3.5 w-3.5 stroke-[2]" />
             <span>Hook Cutter</span>
           </button>
-          
+
           <button
             onClick={() => setActiveTab('affiliate')}
             className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold transition-all ${
@@ -389,10 +595,10 @@ export const SimpleClipperDashboard: React.FC = () => {
           2. MAIN CONTENT: 3-COLUMN WORKSPACE
          ───────────────────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-[310px_minmax(340px,1fr)_minmax(420px,1.25fr)] xl:grid-cols-[320px_minmax(360px,0.95fr)_minmax(500px,1.3fr)]">
-        
+
         {/* ── COLUMN 1: LEFT SIDEBAR (SETTINGS & CONTROLS) ── */}
         <aside className={`flex flex-col border-r ${themeClasses.sidebar} p-4 overflow-y-auto scrollbar-thin`}>
-          
+
           {/* 1. VIDEO SOURCE SECTION */}
           <div className="mb-4">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
@@ -442,7 +648,7 @@ export const SimpleClipperDashboard: React.FC = () => {
             {/* Smooth Custom Minimalist Slider */}
             <div className="relative flex items-center h-8 rounded-xl border border-slate-800/80 bg-slate-950/60 px-3 shadow-inner group select-none">
               <div className="relative w-full h-1.5 rounded-full bg-slate-800/90 overflow-hidden">
-                <div 
+                <div
                   className="h-full transition-all duration-150 ease-out rounded-full bg-emerald-500"
                   style={{ width: `${((clipCount - 1) / 9) * 100}%` }}
                 />
@@ -703,7 +909,7 @@ export const SimpleClipperDashboard: React.FC = () => {
                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                   </>
                 ) : (
-                  <span>✦ Generate {clipCount} Clips</span>
+                  <span>✦ Analyze {clipCount} Clips</span>
                 )}
               </button>
 
@@ -731,19 +937,21 @@ export const SimpleClipperDashboard: React.FC = () => {
           <PhonePreview
             framingMode={framingMode}
             selectedPresetId={selectedPresetId}
-            videoSource={videoPathInput}
+            videoSource={resolvedVideoPath || videoPathInput}
+            previewClip={previewClipRange}
           />
         </section>
 
-        {/* ── COLUMN 3: RIGHT WORKSPACE (LOGS & OUTPUT CLIPS) ── */}
+        {/* ── COLUMN 3: RIGHT WORKSPACE (PHASE-AWARE) ── */}
         <main className="flex flex-col overflow-y-auto p-4 gap-3.5 bg-[#0b0f15]">
-          
-          {/* 1. PROCESSING LOG TERMINAL (TOP PANEL) */}
+
+          {/* ── TERMINAL LOG PANEL (shown during analyzing/rendering) ── */}
+          {(phase === 'analyzing' || phase === 'rendering') && (
           <div className="rounded-2xl border border-slate-800/90 bg-[#0d1117] overflow-hidden shadow-xl flex flex-col h-[280px] xl:h-[310px] flex-shrink-0">
-            
+
             {/* Terminal Window Header */}
             <div className="flex h-8 items-center justify-between px-3.5 border-b border-slate-800/80 bg-[#161b22]">
-              
+
               {/* Left: macOS Window Circles & Title */}
               <div className="flex items-center gap-2.5">
                 <div className="flex items-center gap-1.5">
@@ -752,14 +960,14 @@ export const SimpleClipperDashboard: React.FC = () => {
                   <span className="h-2.5 w-2.5 rounded-full bg-[#27c93f]" />
                 </div>
                 <span className="font-mono text-[11px] font-bold text-slate-400 tracking-wider">
-                  PROCESSING LOG
+                  {phase === 'analyzing' ? 'ANALYZING' : 'RENDERING'}
                 </span>
               </div>
 
               {/* Right: Progress Bar & Percentage */}
               <div className="flex items-center gap-2.5">
                 <div className="w-24 sm:w-32 h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                  <div 
+                  <div
                     className="h-full bg-emerald-500 transition-all duration-300 rounded-full"
                     style={{ width: `${progress}%` }}
                   />
@@ -788,7 +996,7 @@ export const SimpleClipperDashboard: React.FC = () => {
             </div>
 
             {/* Terminal Monospace Logs Output */}
-            <div 
+            <div
               ref={terminalRef}
               className="flex-1 p-3 font-mono text-[10.5px] leading-relaxed text-[#f59e0b] overflow-y-auto space-y-1 scrollbar-thin select-text bg-[#0d1117]"
             >
@@ -820,10 +1028,211 @@ export const SimpleClipperDashboard: React.FC = () => {
             </div>
 
           </div>
+          )}
 
-          {/* 2. OUTPUT CLIPS SECTION (BOTTOM PANEL) */}
+          {/* ── PREVIEW PHASE: Clip Approval Cards ── */}
+          {phase === 'preview' && (
+          <div className="flex flex-col gap-3 flex-1">
+            {/* Header with back + re-analyze */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setPhase('config'); setPreviewClipRange(null); }}
+                  disabled={isProcessing}
+                  className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-white transition-colors"
+                >
+                  <ArrowLeftIcon className="h-3.5 w-3.5 stroke-[2]" />
+                  <span>Kembali</span>
+                </button>
+                <span className="text-slate-700">|</span>
+                <button
+                  onClick={handleStartProcessing}
+                  className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-white transition-colors"
+                >
+                  <ArrowPathIcon className="h-3.5 w-3.5 stroke-[2]" />
+                  <span>Re-analyze</span>
+                </button>
+              </div>
+              <span className="text-[11px] font-bold text-emerald-400">
+                {confirmedClipCount}/{clipCandidates.length} dikonfirmasi
+              </span>
+            </div>
+
+            {/* Clip Cards */}
+            <div className="space-y-2.5 overflow-y-auto flex-1 scrollbar-thin">
+              {clipCandidates.map((clip) => {
+                const title = clip.title_options?.[0] || 'Untitled';
+                const mins = Math.floor(clip.duration / 60);
+                const secs = Math.floor(clip.duration % 60);
+                const durStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+                const startMin = Math.floor(clip.start / 60);
+                const startSec = Math.floor(clip.start % 60);
+                const endMin = Math.floor(clip.end / 60);
+                const endSec = Math.floor(clip.end % 60);
+                const rangeStr = `${startMin}:${startSec.toString().padStart(2, '0')} → ${endMin}:${endSec.toString().padStart(2, '0')}`;
+
+                return (
+                  <div
+                    key={clip.index}
+                    className={`rounded-xl border p-3 transition-all cursor-pointer ${
+                      clip.decision === 'approved'
+                        ? 'border-emerald-500/50 bg-emerald-950/20'
+                        : clip.decision === 'skipped'
+                          ? 'border-slate-800/60 bg-slate-900/40 opacity-60'
+                          : 'border-amber-500/30 bg-amber-950/10'
+                    }`}
+                    onClick={() => previewCandidate(clip)}
+                  >
+                    {/* Top: Index + Title + Score */}
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <div className={`flex h-6 w-6 items-center justify-center rounded-lg text-[9px] font-mono font-bold flex-shrink-0 ${
+                          clip.decision === 'approved'
+                            ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30'
+                            : clip.decision === 'skipped'
+                              ? 'bg-slate-800 text-slate-500 border border-slate-700'
+                              : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                        }`}>
+                          {String(clip.index).padStart(2, '0')}
+                        </div>
+                        <div className="truncate flex-1 min-w-0">
+                          <h4 className="text-[11px] font-bold text-slate-200 truncate">{title}</h4>
+                          <div className="flex items-center gap-2 text-[9px] text-slate-500 font-mono mt-0.5">
+                            <span>{durStr}</span>
+                            <span className="text-slate-700">•</span>
+                            <span>{rangeStr}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Viral Score Badge */}
+                      <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0 ml-2 ${
+                        clip.viral_score >= 85
+                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                          : clip.viral_score >= 70
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            : 'bg-slate-800 text-slate-400 border border-slate-700'
+                      }`}>
+                        <FireIcon className="h-3 w-3 stroke-[2]" />
+                        <span>{clip.viral_score}</span>
+                      </div>
+                    </div>
+
+                    {/* Reason */}
+                    <p className="text-[10px] text-slate-400 line-clamp-2 mb-2 leading-relaxed">{clip.reason}</p>
+
+                    {/* Title Hook + Preview Button */}
+                    {clip.title_hook && (
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-[9px] font-bold text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 px-1.5 py-0.5 rounded">
+                          HOOK: {clip.title_hook}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Caption Preview */}
+                    <p className="text-[9px] text-slate-500 italic line-clamp-1 mb-2.5">{clip.caption}</p>
+
+                    {/* Hashtags */}
+                    <div className="flex flex-wrap gap-1 mb-2.5">
+                      {clip.hashtags.slice(0, 5).map((tag, i) => (
+                        <span key={i} className="text-[8px] text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.5 rounded-full">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          previewCandidate(clip);
+                        }}
+                        className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-emerald-400 transition-colors"
+                      >
+                        <PlayIcon className="h-3 w-3 stroke-[2]" />
+                        <span>Preview</span>
+                      </button>
+
+                      <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setClipCandidates(prev => prev.map(c =>
+                            c.index === clip.index
+                              ? { ...c, decision: c.decision === 'approved' ? 'pending' : 'approved' }
+                              : c
+                          ));
+                        }}
+                        disabled={!clip.previewed}
+                        title={clip.previewed ? 'Confirm klip untuk dirender' : 'Preview klip dahulu'}
+                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                          clip.decision === 'approved'
+                            ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/40 hover:bg-slate-800 hover:text-slate-300 hover:border-slate-700'
+                            : clip.previewed
+                              ? 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-emerald-600/20 hover:text-emerald-400 hover:border-emerald-500/40'
+                              : 'bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed'
+                        }`}
+                      >
+                        {clip.decision === 'approved' ? (
+                          <>
+                            <CheckCircleIcon className="h-3.5 w-3.5 stroke-[2]" />
+                            <span>Confirmed</span>
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircleIcon className="h-3.5 w-3.5 stroke-[2]" />
+                            <span>Confirm</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setClipCandidates(prev => prev.map(c =>
+                            c.index === clip.index
+                              ? { ...c, decision: c.decision === 'skipped' ? 'pending' : 'skipped' }
+                              : c
+                          ));
+                        }}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                          clip.decision === 'skipped'
+                            ? 'bg-rose-600/20 text-rose-400 border border-rose-500/40'
+                            : 'bg-slate-800 text-slate-400 border border-slate-700 hover:bg-rose-600/20 hover:text-rose-400 hover:border-rose-500/40'
+                        }`}
+                      >
+                        <XCircleIcon className="h-3.5 w-3.5 stroke-[2]" />
+                        <span>Cancel</span>
+                      </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Bottom: Render Selected Button */}
+            <div className="sticky bottom-0 pt-2 border-t border-slate-800/80 bg-[#0b0f15]">
+              <button
+                onClick={handleRenderSelected}
+                disabled={isProcessing || confirmedClipCount === 0}
+                className={`flex w-full items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold transition-all ${themeClasses.actionBtn} ${
+                  isProcessing || confirmedClipCount === 0
+                    ? 'opacity-40 cursor-not-allowed'
+                    : 'active:scale-[0.98]'
+                }`}
+              >
+                <span>{isProcessing ? 'Menunggu analisis selesai...' : `🚀 Render ${confirmedClipCount} Confirmed Clips`}</span>
+              </button>
+            </div>
+          </div>
+          )}
+
+          {/* ── COMPLETE PHASE: Output Folder & Clips ── */}
+          {phase === 'complete' && (
           <div className={`rounded-2xl border ${themeClasses.card} p-4 shadow-xl flex flex-col flex-1 min-h-[220px]`}>
-            
+
             {/* Header */}
             <div className="flex items-center justify-between mb-3 border-b border-slate-800/80 pb-2.5">
               <div className="flex items-center gap-2">
@@ -832,84 +1241,96 @@ export const SimpleClipperDashboard: React.FC = () => {
                   OUTPUT CLIPS
                 </h2>
               </div>
-              <span className="text-[11px] text-slate-400 font-medium">
-                {generatedClips.length > 0 ? `${generatedClips.length} Klip Dihasilkan` : (outputDir ? 'Folder Siap' : 'Belum Ada Klip')}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-400 font-medium">
+                  {generatedClips.length > 0 ? `${generatedClips.length} Klip Dihasilkan` : 'Folder Siap'}
+                </span>
+                <button
+                  onClick={() => { setPhase('config'); setClipCandidates([]); setPreviewClipRange(null); setGeneratedClips([]); setOutputDir(''); }}
+                  className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-white transition-colors"
+                >
+                  <ArrowPathIcon className="h-3 w-3 stroke-[2]" />
+                  <span>Baru</span>
+                </button>
+              </div>
             </div>
 
-            {/* Body */}
-            {isProcessing ? (
-              <div className="flex flex-1 flex-col items-center justify-center py-6 text-center">
-                <div className="h-7 w-7 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent mb-2" />
-                <p className="text-[11px] italic text-slate-400">
-                  Memproses video... Klip sedang dipotong & dirender.
-                </p>
-              </div>
-            ) : outputDir ? (
-              <div className="space-y-2.5">
-                {/* Folder Output Siap Banner */}
-                <div className={`flex items-center justify-between rounded-xl border ${themeClasses.outputBanner} p-3 shadow-lg bg-[#161d26]`}>
-                  <div className="flex items-center gap-3 truncate">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-slate-300 border border-slate-800 flex-shrink-0">
-                      <FolderOpenIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
-                    </div>
-                    <div className="truncate">
-                      <h3 className="text-xs font-bold text-slate-100">Folder Output Siap</h3>
-                      <p className="text-[10px] font-mono text-slate-400 truncate max-w-[200px] sm:max-w-xs">
-                        {outputDir}
-                      </p>
-                    </div>
+            {/* Output Dir Banner */}
+            {outputDir && (
+              <div className={`flex items-center justify-between rounded-xl border ${themeClasses.outputBanner} p-3 shadow-lg bg-[#161d26] mb-2.5`}>
+                <div className="flex items-center gap-3 truncate">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-slate-300 border border-slate-800 flex-shrink-0">
+                    <FolderOpenIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={handleOpenFolder}
-                      className={`flex items-center gap-1.5 rounded-xl ${themeClasses.accentBg} px-3 py-1.5 text-xs font-bold transition-colors flex-shrink-0 shadow-md active:scale-95`}
-                    >
-                      <FolderOpenIcon className="h-3.5 w-3.5 stroke-[2]" />
-                      <span>Buka Folder</span>
-                    </button>
-                    {generatedClips.length > 0 && (
-                      <button
-                        onClick={() => setShowFolderModal(true)}
-                        className="rounded-xl border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-colors"
-                      >
-                        Detail
-                      </button>
-                    )}
+                  <div className="truncate">
+                    <h3 className="text-xs font-bold text-slate-100">Folder Output Siap</h3>
+                    <p className="text-[10px] font-mono text-slate-400 truncate max-w-[200px] sm:max-w-xs">
+                      {outputDir}
+                    </p>
                   </div>
                 </div>
-
-                {/* Clips list preview */}
-                {generatedClips.length > 0 && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-                    {generatedClips.map((clip, i) => (
-                      <div key={clip.id} className="flex items-center gap-2.5 rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5 text-xs">
-                        <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 flex-shrink-0 font-mono font-bold text-[9px]">
-                          0{i + 1}
-                        </div>
-                        <div className="truncate flex-1">
-                          <h4 className="font-semibold text-slate-200 truncate text-[11px]">{clip.title}</h4>
-                          <span className="text-[9px] font-mono text-slate-500">MP4 Clip • 9:16 Vertical</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="flex flex-1 flex-col items-center justify-center py-6 text-center text-slate-500">
-                <FolderArrowDownIcon className="h-8 w-8 stroke-[1.5] mb-2 opacity-30" />
-                <p className="text-[11px] text-slate-400">
-                  Belum ada klip
-                </p>
-                <p className="text-[10px] text-slate-500 max-w-xs mt-0.5">
-                  Hasil klip video dan folder output akan muncul di sini setelah proses selesai.
-                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleOpenFolder}
+                    className={`flex items-center gap-1.5 rounded-xl ${themeClasses.accentBg} px-3 py-1.5 text-xs font-bold transition-colors flex-shrink-0 shadow-md active:scale-95`}
+                  >
+                    <FolderOpenIcon className="h-3.5 w-3.5 stroke-[2]" />
+                    <span>Buka Folder</span>
+                  </button>
+                  {generatedClips.length > 0 && (
+                    <button
+                      onClick={() => setShowFolderModal(true)}
+                      className="rounded-xl border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-colors"
+                    >
+                      Detail
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
+            {/* Clips list */}
+            {generatedClips.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                {generatedClips.map((clip, i) => (
+                  <div key={clip.id} className="flex items-center gap-2.5 rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5 text-xs">
+                    <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 flex-shrink-0 font-mono font-bold text-[9px]">
+                      0{i + 1}
+                    </div>
+                    <div className="truncate flex-1">
+                      <h4 className="font-semibold text-slate-200 truncate text-[11px]">{clip.title}</h4>
+                      <span className="text-[9px] font-mono text-slate-500">MP4 Clip • 9:16 Vertical</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
+          )}
+
+          {/* ── CONFIG PHASE: Empty state ── */}
+          {phase === 'config' && (
+          <div className={`rounded-2xl border ${themeClasses.card} p-4 shadow-xl flex flex-col flex-1 min-h-[220px]`}>
+            <div className="flex items-center justify-between mb-3 border-b border-slate-800/80 pb-2.5">
+              <div className="flex items-center gap-2">
+                <FolderArrowDownIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
+                <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
+                  CLIP PREVIEW
+                </h2>
+              </div>
+              <span className="text-[11px] text-slate-400 font-medium">Belum Ada Klip</span>
+            </div>
+            <div className="flex flex-1 flex-col items-center justify-center py-6 text-center text-slate-500">
+              <FolderArrowDownIcon className="h-8 w-8 stroke-[1.5] mb-2 opacity-30" />
+              <p className="text-[11px] text-slate-400">
+                Belum ada klip
+              </p>
+              <p className="text-[10px] text-slate-500 max-w-xs mt-0.5">
+                Klik "Analyze" untuk memulai. AI akan menemukan momen viral, lalu Anda bisa preview & pilih klip sebelum render.
+              </p>
+            </div>
+          </div>
+          )}
 
         </main>
 
@@ -956,7 +1377,7 @@ export const SimpleClipperDashboard: React.FC = () => {
                 <XMarkIcon className="h-4 w-4 stroke-[2]" />
               </button>
             </div>
-            
+
             <p className="text-xs text-slate-300 mb-2">
               Klip tersimpan di direktori:
             </p>

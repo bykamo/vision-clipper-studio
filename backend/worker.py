@@ -1,11 +1,40 @@
 import argparse
+import json
 import os
 import sys
 from backend.downloader import get_video_file
 from backend.transcriber import transcribe_video, build_transcript_text
 from backend.analyzer import build_viral_prompt, call_llm_api, extract_json_block
 from backend.renderer import extract_and_format_clip
-from backend.utils import log, DEFAULT_LLM_MODEL, DEFAULT_ENDPOINT, DEFAULT_API_KEY, DEFAULT_OUT_DIR
+from backend.utils import log, DEFAULT_LLM_MODEL, DEFAULT_ENDPOINT, DEFAULT_API_KEY, DEFAULT_OUT_DIR, TEMP_DIR
+
+
+def _serialize_segments(segments):
+    """Convert segment objects to JSON-safe dicts."""
+    out = []
+    for seg in segments:
+        s = {"start": seg["start"], "end": seg["end"], "text": seg["text"]}
+        if "words" in seg:
+            s["words"] = [{"word": w["word"], "start": w["start"], "end": w["end"]} for w in seg["words"]]
+        out.append(s)
+    return out
+
+
+def _parse_render_indices(raw_indices, clip_count):
+    """Parse and validate one-based clip indexes passed to render mode."""
+    try:
+        indices = [int(value.strip()) for value in raw_indices.split(",") if value.strip()]
+    except ValueError as e:
+        raise ValueError("Render indices must be comma-separated integers.") from e
+
+    if not indices:
+        raise ValueError("Select at least one clip to render.")
+    if len(set(indices)) != len(indices):
+        raise ValueError("Render indices must not contain duplicates.")
+    if any(index < 1 or index > clip_count for index in indices):
+        raise ValueError(f"Render indices must be between 1 and {clip_count}.")
+    return indices
+
 
 def main():
     parser = argparse.ArgumentParser(description="Vision Clipper Worker")
@@ -17,23 +46,80 @@ def main():
     parser.add_argument("--out-dir", type=str, default=DEFAULT_OUT_DIR, help="Output directory")
     parser.add_argument("--sub-style", type=str, default="tiktok_viral", choices=["tiktok_viral", "classic_karaoke", "minimalist", "word_pop", "no_subtitle", "none"], help="Subtitle style")
     parser.add_argument("--framing-mode", type=str, default="smart_crop", choices=["smart_crop", "fit_blur"], help="Video layout framing mode")
+    # Phase-split flags
+    parser.add_argument("--analyze-only", action="store_true", help="Only transcribe + LLM analyze, output JSON, no rendering")
+    parser.add_argument("--clips-json", type=str, default=None, help="Path to analysis JSON file (skip transcribe+LLM)")
+    parser.add_argument("--render-indices", type=str, default=None, help="Comma-separated clip indices to render (e.g. 1,3,4)")
 
     args, unknown = parser.parse_known_args()
+
+    if bool(args.clips_json) != bool(args.render_indices):
+        parser.error("--clips-json and --render-indices must be used together")
 
     job_id = args.job_id
     if job_id:
         from backend.database import update_job_status
         update_job_status(job_id, "running")
 
+    # ── RENDER-ONLY MODE: Load from saved analysis JSON ──
+    if args.clips_json and args.render_indices:
+        try:
+            with open(args.clips_json, "r", encoding="utf-8") as f:
+                analysis = json.load(f)
+
+            video_path = analysis["video_path"]
+            clips = analysis["clips"]
+            segments = analysis["segments"]
+            actual_out_dir = analysis["output_dir"]
+            if not isinstance(clips, list) or not isinstance(segments, list):
+                raise ValueError("Analysis file has invalid clip or transcript data.")
+            os.makedirs(actual_out_dir, exist_ok=True)
+
+            indices = _parse_render_indices(args.render_indices, len(clips))
+            log(f"Render mode: rendering {len(indices)} selected clips from analysis.", job_id=job_id)
+            log(f"Outputs will be saved to: {actual_out_dir}", job_id=job_id)
+
+            failed_indices = []
+            for idx in indices:
+                clip = clips[idx - 1]  # 1-based index
+                log(f"--- Rendering Clip {idx}/{len(clips)} ---", job_id=job_id)
+                titles = clip.get('title_options', [clip.get('title', 'Unknown Title')])
+                log(f"Title: {titles[0] if isinstance(titles, list) and titles else titles}", job_id=job_id)
+                try:
+                    extract_and_format_clip(
+                        video_path, clip, idx, segments, actual_out_dir,
+                        job_id=job_id,
+                        sub_style=args.sub_style,
+                        framing_mode=args.framing_mode
+                    )
+                except Exception as e:
+                    log(f"Failed to render clip {idx}: {e}", job_id=job_id)
+                    failed_indices.append(idx)
+
+            if failed_indices:
+                raise RuntimeError(f"Failed to render selected clips: {failed_indices}")
+            log("All done! Check your output directory.", job_id=job_id)
+            if job_id:
+                update_job_status(job_id, "completed")
+            os._exit(0)
+        except Exception as e:
+            import traceback
+            log(f"Error in render mode: {e}", job_id=job_id)
+            log(traceback.format_exc(), job_id=job_id)
+            if job_id:
+                update_job_status(job_id, "failed")
+            sys.exit(1)
+
+    # ── NORMAL / ANALYZE-ONLY MODE ──
     try:
         log(f"Memulai analisis video: {args.file}", job_id=job_id)
         video_path = get_video_file(args.file, job_id=job_id)
-        
+
         segments = transcribe_video(video_path, source_url=args.file, model_size=args.model, job_id=job_id)
         transcript_text = build_transcript_text(segments)
-        
+
         prompt = build_viral_prompt(transcript_text, args.num_clips, mode=args.mode)
-        
+
         max_retries = 3
         clips = []
         for attempt in range(max_retries):
@@ -49,36 +135,57 @@ def main():
                 if attempt == max_retries - 1:
                     log("Warning: Failed to get valid clips from LLM after 3 attempts!", job_id=job_id)
                     sys.exit(1)
-        
+
+                if not clips:
+                    raise RuntimeError("LLM did not return any clip candidates.")
+
         video_basename = os.path.splitext(os.path.basename(video_path))[0]
         safe_folder_name = "".join([c if c.isalnum() or c in [' ', '-', '_'] else '_' for c in video_basename]).strip()
         actual_out_dir = os.path.join(args.out_dir, safe_folder_name)
+
+        # ── ANALYZE-ONLY: emit JSON result and exit ──
+        if args.analyze_only:
+            # Add index to each clip for frontend reference
+            for i, clip in enumerate(clips, 1):
+                clip["index"] = i
+                clip["duration"] = round(float(clip.get("end", 0)) - float(clip.get("start", 0)), 2)
+
+            result = {
+                "status": "analyzed",
+                "video_path": video_path,
+                "clips": clips,
+                "segments": _serialize_segments(segments),
+                "output_dir": actual_out_dir
+            }
+            # Print with marker so SSE parser can detect it
+            print(f"[ANALYSIS_RESULT]{json.dumps(result)}", flush=True)
+            os._exit(0)
+
         os.makedirs(actual_out_dir, exist_ok=True)
-        
         log(f"Extracting clips from {video_path}...", job_id=job_id)
         log(f"Outputs will be saved to: {actual_out_dir}", job_id=job_id)
-        
+
         for i, clip in enumerate(clips, 1):
             log(f"--- Processing Clip {i}/{len(clips)} ---", job_id=job_id)
             titles = clip.get('title_options', [clip.get('title', 'Unknown Title')])
             log(f"Title: {titles[0] if isinstance(titles, list) and titles else titles}", job_id=job_id)
             log(f"Viral Reason: {clip.get('reason', clip.get('viral_reason'))}", job_id=job_id)
             log(f"Score: {clip.get('viral_score')}", job_id=job_id)
-            
+
             try:
                 extract_and_format_clip(
-                    video_path, clip, i, segments, actual_out_dir, 
-                    job_id=job_id, 
-                    sub_style=args.sub_style, 
+                    video_path, clip, i, segments, actual_out_dir,
+                    job_id=job_id,
+                    sub_style=args.sub_style,
                     framing_mode=args.framing_mode
                 )
             except Exception as e:
                 log(f"Failed to render clip {i}: {e}", job_id=job_id)
-                
+
         log("All done! Check your output directory.", job_id=job_id)
         if job_id:
             update_job_status(job_id, "completed")
-            
+
         # Force hard exit to prevent CTranslate2 destructor segfault during interpreter shutdown
         os._exit(0)
 
