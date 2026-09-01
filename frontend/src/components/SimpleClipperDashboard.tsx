@@ -296,7 +296,7 @@ export const SimpleClipperDashboard: React.FC = () => {
     const startTimestamp = new Date().toTimeString().split(' ')[0];
     setLogs(prev => [
       ...prev,
-      `[${startTimestamp}] [SYSTEM] 🚀 Memulai rendering ${approved.length} klip yang dipilih...`
+      `[${startTimestamp}] [SYSTEM] ✨ Memulai rendering ${approved.length} klip yang dipilih...`
     ]);
 
     const body = {
@@ -852,30 +852,30 @@ export const SimpleClipperDashboard: React.FC = () => {
 
                     {preset.presetId === 'tiktok_viral' && (
                       <div className="relative font-['Montserrat'] font-black uppercase text-[9px] tracking-tight leading-none text-center">
-                        <span className="text-white drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">CARA </span>
+                        <span className="text-white drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">CONTOH </span>
                         <span className="text-yellow-400 bg-black/80 px-1 py-0.5 rounded font-black scale-105 inline-block drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] border border-yellow-400/30">
                           VIRAL
                         </span>
-                        <span className="text-white drop-shadow-[0_1px_2px_rgba(0,0,0,1)]"> 🔥</span>
+                        <span className="text-white drop-shadow-[0_1px_2px_rgba(0,0,0,1)]"> ✨</span>
                       </div>
                     )}
 
                     {preset.presetId === 'classic_karaoke' && (
                       <div className="relative font-['Montserrat'] font-bold text-[9px] tracking-tight leading-none text-center">
-                        <span className="text-cyan-300 font-extrabold drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">Bikin </span>
-                        <span className="text-white drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">Konten</span>
+                        <span className="text-cyan-300 font-extrabold drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">Contoh </span>
+                        <span className="text-white drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">Subtitle</span>
                       </div>
                     )}
 
                     {preset.presetId === 'minimalist' && (
                       <div className="relative font-sans font-medium text-[9px] text-white tracking-wide leading-none text-center drop-shadow-sm">
-                        <span>Ide bisnis kreatif</span>
+                        <span>Contoh teks subtitle</span>
                       </div>
                     )}
 
                     {preset.presetId === 'word_pop' && (
                       <div className="relative font-['Impact'] font-black uppercase text-[10px] text-yellow-300 tracking-wider leading-none text-center drop-shadow-[0_2px_4px_rgba(0,0,0,1)] scale-110">
-                        <span>FOKUS!</span>
+                        <span>SUBTITLE!</span>
                       </div>
                     )}
 

@@ -122,23 +122,23 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
         return (
           <div className="flex items-center justify-center text-center font-['Montserrat',_sans-serif] font-bold text-base tracking-tight select-none">
             <span className="text-cyan-300 font-extrabold drop-shadow-[0_2px_4px_rgba(0,0,0,1)] text-lg">
-              Bikin&nbsp;
+              Contoh&nbsp;
             </span>
             <span className="text-white drop-shadow-[0_2px_4px_rgba(0,0,0,1)] text-lg">
-              Konten
+              Subtitle
             </span>
           </div>
         );
       case 'minimalist':
         return (
           <div className="font-sans font-medium text-sm text-white tracking-wide text-center drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] select-none">
-            <span>Ide bisnis kreatif</span>
+            <span>Contoh teks subtitle</span>
           </div>
         );
       case 'word_pop':
         return (
-          <div className="font-['Impact',_sans-serif] font-black uppercase text-3xl text-yellow-300 tracking-wider text-center drop-shadow-[0_4px_8px_rgba(0,0,0,1)] scale-110 select-none animate-pulse">
-            <span>FOKUS!</span>
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[120%] font-['Impact',_sans-serif] font-black uppercase text-[40px] text-yellow-300 tracking-widest text-center drop-shadow-[0_5px_10px_rgba(0,0,0,1)] scale-110 select-none animate-pulse">
+            <span>SUBTITLE!</span>
           </div>
         );
       case 'no_subtitle':
@@ -148,11 +148,11 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
       default:
         return (
           <div className="flex items-center justify-center font-['Montserrat',_sans-serif] font-black uppercase text-base tracking-tight leading-none text-center select-none">
-            <span className="text-white drop-shadow-[0_2px_4px_rgba(0,0,0,1)] text-base">CARA&nbsp;</span>
+            <span className="text-white drop-shadow-[0_2px_4px_rgba(0,0,0,1)] text-base">CONTOH&nbsp;</span>
             <span className="text-yellow-400 bg-black/90 px-2 py-0.5 rounded font-black scale-105 inline-block drop-shadow-[0_3px_6px_rgba(0,0,0,0.9)] border border-yellow-400/40 text-base">
-              VIRAL
+              SUBTITLE
             </span>
-            <span className="text-white drop-shadow-[0_2px_4px_rgba(0,0,0,1)] text-base">&nbsp;🔥</span>
+            <span className="text-white drop-shadow-[0_2px_4px_rgba(0,0,0,1)] text-base">&nbsp;✨</span>
           </div>
         );
     }
@@ -261,7 +261,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                     />
 
                     {/* Subtitle floating in safe area */}
-                    <div className="absolute bottom-16 z-20 w-full px-3 flex justify-center pointer-events-none">
+                    <div className="absolute top-[60%] z-20 w-full px-3 flex justify-center pointer-events-none">
                       {getSubtitleSample()}
                     </div>
                   </div>
@@ -269,7 +269,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                   // ── EMPTY STATE GRAPHICS (NO SOURCE VIDEO SELECTED) ──
                   framingMode === 'fit_blur' ? (
                     // 16:9 Fit with Blur Backdrop inside 9:16 iPhone screen
-                    <div className="relative w-full h-full flex flex-col items-center justify-center overflow-hidden">
+                    <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
                       {/* Dynamic Studio Gradient Blur Backdrop */}
                       <div
                         className="absolute inset-0 bg-cover bg-center filter blur-2xl scale-150 opacity-50"
@@ -279,7 +279,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       />
 
                       {/* 16:9 Center Video Frame (Podcast Studio Graphic) */}
-                      <div className="relative z-10 w-full h-[152px] bg-[#0c131f] border-y border-cyan-500/30 flex flex-col items-center justify-center shadow-[0_0_30px_rgba(6,182,212,0.15)] overflow-hidden">
+                      <div className="relative z-10 w-full h-[152px] -mt-[10%] bg-[#0c131f] border-y border-cyan-500/30 flex flex-col items-center justify-center shadow-[0_0_30px_rgba(6,182,212,0.15)] overflow-hidden">
                         <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:10px_10px]" />
 
                         {/* Dual Speaker / Podcast Graphic Representation */}
@@ -318,7 +318,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       </div>
 
                       {/* Subtitle floating below 16:9 frame */}
-                      <div className="absolute bottom-16 z-20 w-full px-3 flex justify-center">
+                      <div className="absolute top-[60%] z-20 w-full px-3 flex justify-center">
                         {getSubtitleSample()}
                       </div>
                     </div>
@@ -357,7 +357,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       </div>
 
                       {/* Subtitle Floating Center-Bottom */}
-                      <div className="absolute bottom-16 z-20 w-full px-3 flex justify-center">
+                      <div className="absolute top-[60%] z-20 w-full px-3 flex justify-center">
                         {getSubtitleSample()}
                       </div>
                     </div>
