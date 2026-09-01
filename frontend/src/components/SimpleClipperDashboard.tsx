@@ -28,6 +28,7 @@ import confetti from 'canvas-confetti';
 import { SubtitleStyleConfig } from '../types';
 import { SUBTITLE_PRESETS } from '../data/subtitlePresets';
 import { FileExplorerModal } from './FileExplorerModal';
+import { PhonePreview } from './PhonePreview';
 
 interface GeneratedClipItem {
   id: string;
@@ -136,9 +137,6 @@ export const SimpleClipperDashboard: React.FC = () => {
           eventSourceRef.current.close();
           eventSourceRef.current = null;
         }
-        try {
-          confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
-        } catch (e) {}
       } else if (data === '[PROCESS_FAILED]') {
         const failTimestamp = new Date().toTimeString().split(' ')[0];
         setLogs(prev => [...prev, `[${failTimestamp}] [SYSTEM] ❌ Pemrosesan gagal. Silakan periksa log.`]);
@@ -388,21 +386,21 @@ export const SimpleClipperDashboard: React.FC = () => {
       </header>
 
       {/* ─────────────────────────────────────────────────────────────
-          2. MAIN CONTENT: SIDEBAR + RIGHT WORKSPACE
+          2. MAIN CONTENT: 3-COLUMN WORKSPACE
          ───────────────────────────────────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-[310px_minmax(340px,1fr)_minmax(420px,1.25fr)] xl:grid-cols-[320px_minmax(360px,0.95fr)_minmax(500px,1.3fr)]">
         
-        {/* LEFT SIDEBAR (SETTINGS) */}
-        <aside className={`flex w-80 flex-col border-r ${themeClasses.sidebar} p-5 overflow-y-auto scrollbar-thin`}>
+        {/* ── COLUMN 1: LEFT SIDEBAR (SETTINGS & CONTROLS) ── */}
+        <aside className={`flex flex-col border-r ${themeClasses.sidebar} p-4 overflow-y-auto scrollbar-thin`}>
           
           {/* 1. VIDEO SOURCE SECTION */}
-          <div className="mb-5">
+          <div className="mb-4">
             <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
               <FolderIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
               <span>VIDEO SOURCE</span>
             </div>
 
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">
+            <label className="block text-[11px] font-medium text-slate-400 mb-1">
               File Path or YouTube URL
             </label>
             <div className="flex items-center gap-1.5">
@@ -425,29 +423,45 @@ export const SimpleClipperDashboard: React.FC = () => {
           </div>
 
           {/* 2. SETTINGS SECTION */}
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider mb-3">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider mb-2.5">
             <AdjustmentsHorizontalIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
             <span>SETTINGS</span>
           </div>
 
           {/* Setting 1: Number of Clips SLIDER (1 to 10) */}
-          <div className="mb-5">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-slate-300">
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[11px] font-medium text-slate-300">
                 Number of Clips
               </label>
-              <span className={`font-['Outfit'] font-extrabold text-xs px-2.5 py-0.5 rounded-lg border transition-all duration-200 ${themeClasses.pillActive}`}>
+              <span className={`font-['Outfit'] font-extrabold text-[11px] px-2 py-0.5 rounded-md border transition-all duration-200 ${themeClasses.pillActive}`}>
                 {clipCount} Klip
               </span>
             </div>
 
             {/* Smooth Custom Minimalist Slider */}
-            <div className="relative flex items-center h-9 rounded-xl border border-slate-800/80 bg-slate-950/60 px-3.5 shadow-inner group select-none">
+            <div className="relative flex items-center h-8 rounded-xl border border-slate-800/80 bg-slate-950/60 px-3 shadow-inner group select-none">
               <div className="relative w-full h-1.5 rounded-full bg-slate-800/90 overflow-hidden">
                 <div 
                   className="h-full transition-all duration-150 ease-out rounded-full bg-emerald-500"
                   style={{ width: `${((clipCount - 1) / 9) * 100}%` }}
                 />
+              </div>
+
+              {/* 10 Step Dots */}
+              <div className="absolute inset-x-3 pointer-events-none flex justify-between items-center z-5">
+                {Array.from({ length: 10 }).map((_, idx) => {
+                  const val = idx + 1;
+                  const isPassed = val <= clipCount;
+                  return (
+                    <span
+                      key={val}
+                      className={`h-1.5 w-1.5 rounded-full transition-colors ${
+                        isPassed ? 'bg-emerald-300' : 'bg-slate-700'
+                      }`}
+                    />
+                  );
+                })}
               </div>
 
               <input
@@ -457,40 +471,40 @@ export const SimpleClipperDashboard: React.FC = () => {
                 step={1}
                 value={clipCount}
                 onChange={(e) => setClipCount(parseInt(e.target.value, 10))}
-                className="absolute inset-x-3.5 w-[calc(100%-28px)] h-6 opacity-0 cursor-pointer z-10"
+                className="absolute inset-x-3 w-[calc(100%-24px)] h-6 opacity-0 cursor-pointer z-10"
               />
 
               <div
-                className="absolute pointer-events-none top-1/2 -translate-y-1/2 -translate-x-1/2 h-4 w-4 rounded-full border-2 border-white bg-slate-900 shadow-sm ring-2 ring-emerald-500/40 transition-all duration-150 ease-out group-hover:scale-110"
-                style={{ left: `calc(14px + (${((clipCount - 1) / 9)} * (100% - 28px)))` }}
+                className="absolute pointer-events-none top-1/2 -translate-y-1/2 -translate-x-1/2 h-3.5 w-3.5 rounded-full border-2 border-white bg-slate-900 shadow-sm ring-2 ring-emerald-500/40 transition-all duration-150 ease-out group-hover:scale-110 z-20"
+                style={{ left: `calc(12px + (${((clipCount - 1) / 9)} * (100% - 24px)))` }}
               />
             </div>
           </div>
 
           {/* Setting 2: AI Transcription Model */}
-          <div className="mb-5 relative">
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">
+          <div className="mb-4 relative">
+            <label className="block text-[11px] font-medium text-slate-400 mb-1">
               AI Transcription Model
             </label>
             <button
               type="button"
               onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
-              className="flex w-full items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2.5 text-left text-xs font-medium text-slate-200 hover:border-slate-700 transition-all shadow-inner"
+              className="flex w-full items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-left text-xs font-medium text-slate-200 hover:border-slate-700 transition-all shadow-inner"
             >
               <div className="flex items-center gap-2 truncate">
-                <BoltIcon className="h-4 w-4 stroke-[2] text-amber-400 flex-shrink-0" />
-                <span className="truncate">
+                <BoltIcon className="h-3.5 w-3.5 stroke-[2] text-amber-400 flex-shrink-0" />
+                <span className="truncate text-[11px]">
                   {transcriptionModel === 'groq' && 'Groq Whisper Cloud (~3 detik)'}
                   {transcriptionModel === 'youtube' && 'YouTube Transcript (Instant 0s)'}
                 </span>
               </div>
-              <ChevronDownIcon className={`h-4 w-4 stroke-[2] text-slate-400 transition-transform ${modelDropdownOpen ? 'rotate-180' : ''}`} />
+              <ChevronDownIcon className={`h-3.5 w-3.5 stroke-[2] text-slate-400 transition-transform ${modelDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {modelDropdownOpen && (
               <div className="absolute top-full left-0 right-0 mt-1 z-30 rounded-xl border border-slate-800 bg-slate-900 p-1 shadow-2xl backdrop-blur-md">
                 {[
-                  { id: 'groq', label: 'Groq Whisper Cloud (Super Cepat ~3 detik, Gratis)', desc: 'Rekomendasi Utama' },
+                  { id: 'groq', label: 'Groq Whisper Cloud (~3 detik)', desc: 'Rekomendasi Utama' },
                   { id: 'youtube', label: 'YouTube Transcript (Instant 0 Detik)', desc: 'Khusus video YouTube' }
                 ].map((item) => (
                   <button
@@ -499,14 +513,14 @@ export const SimpleClipperDashboard: React.FC = () => {
                       setTranscriptionModel(item.id);
                       setModelDropdownOpen(false);
                     }}
-                    className={`flex w-full flex-col rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
+                    className={`flex w-full flex-col rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
                       transcriptionModel === item.id
                         ? `${themeClasses.pillActive} font-semibold`
                         : 'text-slate-300 hover:bg-slate-800'
                     }`}
                   >
-                    <span className="font-semibold">{item.label}</span>
-                    <span className="text-[10px] text-slate-400">{item.desc}</span>
+                    <span className="font-semibold text-[11px]">{item.label}</span>
+                    <span className="text-[9px] text-slate-400">{item.desc}</span>
                   </button>
                 ))}
               </div>
@@ -514,7 +528,7 @@ export const SimpleClipperDashboard: React.FC = () => {
           </div>
 
           {/* 3. VIDEO LAYOUT SECTION */}
-          <div className="mb-5">
+          <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider">
                 <VideoCameraIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
@@ -537,7 +551,7 @@ export const SimpleClipperDashboard: React.FC = () => {
                 }`}
               >
                 <div className="flex items-center justify-between w-full mb-1 px-0.5">
-                  <span className={`text-[11px] font-bold truncate ${framingMode === 'smart_crop' ? themeClasses.accentText : 'text-slate-200'}`}>
+                  <span className={`text-[10px] font-bold truncate ${framingMode === 'smart_crop' ? themeClasses.accentText : 'text-slate-200'}`}>
                     9:16 Smart Follow
                   </span>
                   {framingMode === 'smart_crop' && (
@@ -546,14 +560,14 @@ export const SimpleClipperDashboard: React.FC = () => {
                 </div>
 
                 {/* Visual Preview Box */}
-                <div className="w-full h-12 rounded-lg bg-neutral-950 border border-neutral-800 flex items-center justify-center overflow-hidden px-1 shadow-inner relative select-none">
-                  <div className="w-6 h-9 rounded border border-emerald-500/60 bg-emerald-500/10 flex flex-col items-center justify-center gap-1 shadow-sm">
-                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                    <span className="h-2 w-3 rounded-t-sm bg-emerald-500/60" />
+                <div className="w-full h-10 rounded-lg bg-neutral-950 border border-neutral-800 flex items-center justify-center overflow-hidden px-1 shadow-inner relative select-none">
+                  <div className="w-5 h-7 rounded border border-emerald-500/60 bg-emerald-500/10 flex flex-col items-center justify-center gap-0.5 shadow-sm">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                    <span className="h-1.5 w-2 rounded-t-sm bg-emerald-500/60" />
                   </div>
                 </div>
-                <span className="mt-1 text-[9px] text-slate-400 px-0.5 leading-tight">
-                  AI Face Tracking (Solo / Talk)
+                <span className="mt-1 text-[8.5px] text-slate-400 px-0.5 leading-tight">
+                  AI Face Tracking
                 </span>
               </button>
 
@@ -568,7 +582,7 @@ export const SimpleClipperDashboard: React.FC = () => {
                 }`}
               >
                 <div className="flex items-center justify-between w-full mb-1 px-0.5">
-                  <span className={`text-[11px] font-bold truncate ${framingMode === 'fit_blur' ? themeClasses.accentText : 'text-slate-200'}`}>
+                  <span className={`text-[10px] font-bold truncate ${framingMode === 'fit_blur' ? themeClasses.accentText : 'text-slate-200'}`}>
                     16:9 Fit (Blur)
                   </span>
                   {framingMode === 'fit_blur' && (
@@ -577,30 +591,28 @@ export const SimpleClipperDashboard: React.FC = () => {
                 </div>
 
                 {/* Visual Preview Box */}
-                <div className="w-full h-12 rounded-lg bg-neutral-950 border border-neutral-800 flex flex-col items-center justify-center overflow-hidden p-1 shadow-inner relative select-none">
-                  {/* Blurred BG Mock */}
+                <div className="w-full h-10 rounded-lg bg-neutral-950 border border-neutral-800 flex flex-col items-center justify-center overflow-hidden p-1 shadow-inner relative select-none">
                   <div className="absolute inset-0 bg-slate-700/30 backdrop-blur-sm" />
-                  {/* Centered 16:9 box */}
-                  <div className="relative w-full h-5 rounded border border-cyan-400/80 bg-slate-900 flex items-center justify-center gap-1 shadow-md">
-                    <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
-                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                  <div className="relative w-full h-4 rounded border border-cyan-400/80 bg-slate-900 flex items-center justify-center gap-1 shadow-md">
+                    <span className="h-1 w-1 rounded-full bg-cyan-400" />
+                    <span className="h-1 w-1 rounded-full bg-amber-400" />
                   </div>
                 </div>
-                <span className="mt-1 text-[9px] text-slate-400 px-0.5 leading-tight">
-                  Podcast / Livestream 16:9
+                <span className="mt-1 text-[8.5px] text-slate-400 px-0.5 leading-tight">
+                  Podcast 16:9 Fit
                 </span>
               </button>
             </div>
           </div>
 
           {/* 4. SUBTITLE STYLE SECTION */}
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider mb-2.5">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
             <PaintBrushIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
             <span>SUBTITLE STYLE</span>
           </div>
 
           {/* Subtitle Style Cards Grid */}
-          <div className="grid grid-cols-2 gap-2 mb-5">
+          <div className="grid grid-cols-2 gap-2 mb-4">
             {SUBTITLE_PRESETS.map((preset) => {
               const isSelected = selectedPresetId === preset.presetId;
               return (
@@ -614,12 +626,12 @@ export const SimpleClipperDashboard: React.FC = () => {
                   }`}
                 >
                   {/* Card Title */}
-                  <div className="flex items-center justify-between w-full mb-1.5 px-0.5">
+                  <div className="flex items-center justify-between w-full mb-1 px-0.5">
                     <div className="flex items-center gap-1.5 truncate">
-                      <div className="flex h-5 w-5 items-center justify-center rounded-md bg-slate-900/90 border border-slate-800 flex-shrink-0 shadow-2xs">
+                      <div className="flex h-4 w-4 items-center justify-center rounded bg-slate-900/90 border border-slate-800 flex-shrink-0">
                         {getPresetNotionIcon(preset.presetId)}
                       </div>
-                      <span className={`text-[11px] font-bold truncate ${isSelected ? themeClasses.accentText : 'text-slate-200'}`}>
+                      <span className={`text-[10px] font-bold truncate ${isSelected ? themeClasses.accentText : 'text-slate-200'}`}>
                         {preset.name}
                       </span>
                     </div>
@@ -629,11 +641,11 @@ export const SimpleClipperDashboard: React.FC = () => {
                   </div>
 
                   {/* Visual Preview Box */}
-                  <div className="w-full h-11 rounded-lg bg-neutral-950 border border-neutral-800 flex items-center justify-center overflow-hidden px-1 shadow-inner relative select-none">
+                  <div className="w-full h-9 rounded-lg bg-neutral-950 border border-neutral-800 flex items-center justify-center overflow-hidden px-1 shadow-inner relative select-none">
                     <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:8px_8px]" />
 
                     {preset.presetId === 'tiktok_viral' && (
-                      <div className="relative font-['Montserrat'] font-black uppercase text-[10px] tracking-tight leading-none text-center">
+                      <div className="relative font-['Montserrat'] font-black uppercase text-[9px] tracking-tight leading-none text-center">
                         <span className="text-white drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">CARA </span>
                         <span className="text-yellow-400 bg-black/80 px-1 py-0.5 rounded font-black scale-105 inline-block drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] border border-yellow-400/30">
                           VIRAL
@@ -643,27 +655,27 @@ export const SimpleClipperDashboard: React.FC = () => {
                     )}
 
                     {preset.presetId === 'classic_karaoke' && (
-                      <div className="relative font-['Montserrat'] font-bold text-[10px] tracking-tight leading-none text-center">
+                      <div className="relative font-['Montserrat'] font-bold text-[9px] tracking-tight leading-none text-center">
                         <span className="text-cyan-300 font-extrabold drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">Bikin </span>
                         <span className="text-white drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">Konten</span>
                       </div>
                     )}
 
                     {preset.presetId === 'minimalist' && (
-                      <div className="relative font-sans font-medium text-[10px] text-white tracking-wide leading-none text-center drop-shadow-sm">
+                      <div className="relative font-sans font-medium text-[9px] text-white tracking-wide leading-none text-center drop-shadow-sm">
                         <span>Ide bisnis kreatif</span>
                       </div>
                     )}
 
                     {preset.presetId === 'word_pop' && (
-                      <div className="relative font-['Impact'] font-black uppercase text-[12px] text-yellow-300 tracking-wider leading-none text-center drop-shadow-[0_2px_4px_rgba(0,0,0,1)] scale-110">
+                      <div className="relative font-['Impact'] font-black uppercase text-[10px] text-yellow-300 tracking-wider leading-none text-center drop-shadow-[0_2px_4px_rgba(0,0,0,1)] scale-110">
                         <span>FOKUS!</span>
                       </div>
                     )}
 
                     {preset.presetId === 'no_subtitle' && (
-                      <div className="relative flex items-center gap-1 text-[9px] font-medium text-slate-500">
-                        <span className="rounded bg-rose-950/80 text-rose-400 border border-rose-800/40 px-1 font-mono text-[8px] font-bold">
+                      <div className="relative flex items-center gap-1 text-[8.5px] font-medium text-slate-500">
+                        <span className="rounded bg-rose-950/80 text-rose-400 border border-rose-800/40 px-1 font-mono text-[7px] font-bold">
                           OFF
                         </span>
                         <span>Tanpa Subtitle</span>
@@ -675,75 +687,89 @@ export const SimpleClipperDashboard: React.FC = () => {
             })}
           </div>
 
-          {/* BOTTOM ACTION BUTTONS: Process + Stop Button */}
-          <div className="mt-auto flex items-center gap-2 pt-2">
-            <button
-              onClick={handleStartProcessing}
-              disabled={isProcessing}
-              className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold transition-all ${themeClasses.actionBtn} ${
-                isProcessing ? 'opacity-70 cursor-wait' : 'active:scale-[0.98]'
-              }`}
-            >
-              {isProcessing ? (
-                <>
-                  <span>Processing...</span>
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                </>
-              ) : (
-                <span>Generate {clipCount} Clips</span>
-              )}
-            </button>
-
-            {isProcessing && (
+          {/* STICKY BOTTOM GENERATE BUTTON */}
+          <div className="mt-auto pt-2 flex flex-col gap-1.5 sticky bottom-0 bg-[#0e1218] border-t border-slate-800/80 pb-1">
+            <div className="flex items-center gap-2">
               <button
-                onClick={handleStopProcessing}
-                className="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-950/80 border border-rose-600/40 text-rose-400 hover:bg-rose-900 transition-all shadow-xs active:scale-95 flex-shrink-0"
-                title="Hentikan Proses (Cancel)"
+                onClick={handleStartProcessing}
+                disabled={isProcessing}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold transition-all ${themeClasses.actionBtn} ${
+                  isProcessing ? 'opacity-70 cursor-wait' : 'active:scale-[0.98]'
+                }`}
               >
-                <StopIconSolid className="h-4 w-4" />
+                {isProcessing ? (
+                  <>
+                    <span>Processing...</span>
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  </>
+                ) : (
+                  <span>✦ Generate {clipCount} Clips</span>
+                )}
               </button>
-            )}
+
+              {isProcessing && (
+                <button
+                  onClick={handleStopProcessing}
+                  className="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-950/80 border border-rose-600/40 text-rose-400 hover:bg-rose-900 transition-all shadow-xs active:scale-95 flex-shrink-0"
+                  title="Hentikan Proses (Cancel)"
+                >
+                  <StopIconSolid className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            <div className="text-center">
+              <span className="text-[10px] text-slate-500 font-mono">
+                Estimated time: ~20-35 detik
+              </span>
+            </div>
           </div>
 
         </aside>
 
-        {/* RIGHT MAIN AREA (PROCESSING LOG & OUTPUT CLIPS) */}
-        <main className="flex flex-1 flex-col overflow-y-auto p-5 gap-4">
+        {/* ── COLUMN 2: CENTER WORKSPACE (iPHONE PREVIEW MOCKUP) ── */}
+        <section className="flex flex-col p-4 bg-[#090d13] overflow-hidden border-r border-slate-800/80">
+          <PhonePreview
+            framingMode={framingMode}
+            selectedPresetId={selectedPresetId}
+            videoSource={videoPathInput}
+          />
+        </section>
+
+        {/* ── COLUMN 3: RIGHT WORKSPACE (LOGS & OUTPUT CLIPS) ── */}
+        <main className="flex flex-col overflow-y-auto p-4 gap-3.5 bg-[#0b0f15]">
           
-          {/* ─────────────────────────────────────────────────────────────
-              1. PROCESSING LOG TERMINAL
-             ───────────────────────────────────────────────────────────── */}
-          <div className="rounded-2xl border border-slate-800/90 bg-[#0d1117] overflow-hidden shadow-xl flex flex-col min-h-[300px] sm:min-h-[340px]">
+          {/* 1. PROCESSING LOG TERMINAL (TOP PANEL) */}
+          <div className="rounded-2xl border border-slate-800/90 bg-[#0d1117] overflow-hidden shadow-xl flex flex-col h-[280px] xl:h-[310px] flex-shrink-0">
             
             {/* Terminal Window Header */}
-            <div className="flex h-9 items-center justify-between px-4 border-b border-slate-800/80 bg-[#161b22]">
+            <div className="flex h-8 items-center justify-between px-3.5 border-b border-slate-800/80 bg-[#161b22]">
               
               {/* Left: macOS Window Circles & Title */}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5">
                 <div className="flex items-center gap-1.5">
-                  <span className="h-3 w-3 rounded-full bg-[#ff5f56]" />
-                  <span className="h-3 w-3 rounded-full bg-[#ffbd2e]" />
-                  <span className="h-3 w-3 rounded-full bg-[#27c93f]" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f56]" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#27c93f]" />
                 </div>
-                <span className="font-mono text-xs font-bold text-slate-400 tracking-wider">
+                <span className="font-mono text-[11px] font-bold text-slate-400 tracking-wider">
                   PROCESSING LOG
                 </span>
               </div>
 
               {/* Right: Progress Bar & Percentage */}
-              <div className="flex items-center gap-3">
-                <div className="w-28 sm:w-44 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+              <div className="flex items-center gap-2.5">
+                <div className="w-24 sm:w-32 h-1.5 rounded-full bg-slate-800 overflow-hidden">
                   <div 
                     className="h-full bg-emerald-500 transition-all duration-300 rounded-full"
                     style={{ width: `${progress}%` }}
                   />
                 </div>
-                <span className="font-mono text-xs font-semibold text-emerald-400">
+                <span className="font-mono text-[11px] font-semibold text-emerald-400">
                   {progress}%
                 </span>
                 <button
                   onClick={handleCopyLogs}
-                  className="flex items-center gap-1 text-[10px] font-mono text-slate-400 hover:text-white ml-1 bg-slate-800/60 px-2 py-0.5 rounded border border-slate-700 transition-colors"
+                  className="flex items-center gap-1 text-[10px] font-mono text-slate-400 hover:text-white bg-slate-800/60 px-1.5 py-0.5 rounded border border-slate-700 transition-colors"
                 >
                   {copiedLogs ? (
                     <>
@@ -764,7 +790,7 @@ export const SimpleClipperDashboard: React.FC = () => {
             {/* Terminal Monospace Logs Output */}
             <div 
               ref={terminalRef}
-              className="flex-1 p-4 font-mono text-[11px] leading-relaxed text-[#f59e0b] overflow-y-auto space-y-1 scrollbar-thin select-text bg-[#0d1117]"
+              className="flex-1 p-3 font-mono text-[10.5px] leading-relaxed text-[#f59e0b] overflow-y-auto space-y-1 scrollbar-thin select-text bg-[#0d1117]"
             >
               {logs.map((line, idx) => {
                 let colorClass = "text-[#f59e0b]";
@@ -795,43 +821,41 @@ export const SimpleClipperDashboard: React.FC = () => {
 
           </div>
 
-          {/* ─────────────────────────────────────────────────────────────
-              2. OUTPUT CLIPS SECTION
-             ───────────────────────────────────────────────────────────── */}
-          <div className={`rounded-2xl border ${themeClasses.card} p-5 shadow-xl flex flex-col flex-1`}>
+          {/* 2. OUTPUT CLIPS SECTION (BOTTOM PANEL) */}
+          <div className={`rounded-2xl border ${themeClasses.card} p-4 shadow-xl flex flex-col flex-1 min-h-[220px]`}>
             
             {/* Header */}
-            <div className="flex items-center justify-between mb-4 border-b border-slate-800/80 pb-3">
+            <div className="flex items-center justify-between mb-3 border-b border-slate-800/80 pb-2.5">
               <div className="flex items-center gap-2">
                 <FolderArrowDownIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
                 <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
                   OUTPUT CLIPS
                 </h2>
               </div>
-              <span className="text-xs text-slate-400 font-medium">
+              <span className="text-[11px] text-slate-400 font-medium">
                 {generatedClips.length > 0 ? `${generatedClips.length} Klip Dihasilkan` : (outputDir ? 'Folder Siap' : 'Belum Ada Klip')}
               </span>
             </div>
 
             {/* Body */}
             {isProcessing ? (
-              <div className="flex flex-1 flex-col items-center justify-center py-10 text-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-3 border-emerald-500 border-t-transparent mb-3" />
-                <p className="text-xs italic text-slate-400">
+              <div className="flex flex-1 flex-col items-center justify-center py-6 text-center">
+                <div className="h-7 w-7 animate-spin rounded-full border-2 border-emerald-500 border-t-transparent mb-2" />
+                <p className="text-[11px] italic text-slate-400">
                   Memproses video... Klip sedang dipotong & dirender.
                 </p>
               </div>
             ) : outputDir ? (
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 {/* Folder Output Siap Banner */}
-                <div className={`flex items-center justify-between rounded-xl border ${themeClasses.outputBanner} p-4 shadow-lg bg-[#161d26]`}>
-                  <div className="flex items-center gap-3.5 truncate">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-slate-300 border border-slate-800 flex-shrink-0">
-                      <FolderOpenIcon className={`h-5 w-5 stroke-[2] ${themeClasses.accentText}`} />
+                <div className={`flex items-center justify-between rounded-xl border ${themeClasses.outputBanner} p-3 shadow-lg bg-[#161d26]`}>
+                  <div className="flex items-center gap-3 truncate">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-slate-300 border border-slate-800 flex-shrink-0">
+                      <FolderOpenIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
                     </div>
                     <div className="truncate">
                       <h3 className="text-xs font-bold text-slate-100">Folder Output Siap</h3>
-                      <p className="text-[11px] font-mono text-slate-400 truncate max-w-sm sm:max-w-md">
+                      <p className="text-[10px] font-mono text-slate-400 truncate max-w-[200px] sm:max-w-xs">
                         {outputDir}
                       </p>
                     </div>
@@ -840,17 +864,17 @@ export const SimpleClipperDashboard: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleOpenFolder}
-                      className={`flex items-center gap-1.5 rounded-xl ${themeClasses.accentBg} px-4 py-2 text-xs font-bold transition-colors flex-shrink-0 shadow-md active:scale-95`}
+                      className={`flex items-center gap-1.5 rounded-xl ${themeClasses.accentBg} px-3 py-1.5 text-xs font-bold transition-colors flex-shrink-0 shadow-md active:scale-95`}
                     >
-                      <FolderOpenIcon className="h-4 w-4 stroke-[2]" />
+                      <FolderOpenIcon className="h-3.5 w-3.5 stroke-[2]" />
                       <span>Buka Folder</span>
                     </button>
                     {generatedClips.length > 0 && (
                       <button
                         onClick={() => setShowFolderModal(true)}
-                        className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-colors"
+                        className="rounded-xl border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-colors"
                       >
-                        Detail Klip
+                        Detail
                       </button>
                     )}
                   </div>
@@ -858,15 +882,15 @@ export const SimpleClipperDashboard: React.FC = () => {
 
                 {/* Clips list preview */}
                 {generatedClips.length > 0 && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
                     {generatedClips.map((clip, i) => (
-                      <div key={clip.id} className="flex items-center gap-2.5 rounded-xl border border-slate-800/80 bg-slate-900/60 p-3 text-xs">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 flex-shrink-0 font-mono font-bold text-[10px]">
+                      <div key={clip.id} className="flex items-center gap-2.5 rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5 text-xs">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 flex-shrink-0 font-mono font-bold text-[9px]">
                           0{i + 1}
                         </div>
                         <div className="truncate flex-1">
-                          <h4 className="font-semibold text-slate-200 truncate">{clip.title}</h4>
-                          <span className="text-[10px] font-mono text-slate-500">MP4 Clip • 9:16 Vertical</span>
+                          <h4 className="font-semibold text-slate-200 truncate text-[11px]">{clip.title}</h4>
+                          <span className="text-[9px] font-mono text-slate-500">MP4 Clip • 9:16 Vertical</span>
                         </div>
                       </div>
                     ))}
@@ -874,9 +898,12 @@ export const SimpleClipperDashboard: React.FC = () => {
                 )}
               </div>
             ) : (
-              <div className="flex flex-1 flex-col items-center justify-center py-10 text-center text-slate-500">
-                <FolderArrowDownIcon className="h-10 w-10 stroke-[1.5] mb-2 opacity-30" />
-                <p className="text-xs">
+              <div className="flex flex-1 flex-col items-center justify-center py-6 text-center text-slate-500">
+                <FolderArrowDownIcon className="h-8 w-8 stroke-[1.5] mb-2 opacity-30" />
+                <p className="text-[11px] text-slate-400">
+                  Belum ada klip
+                </p>
+                <p className="text-[10px] text-slate-500 max-w-xs mt-0.5">
                   Hasil klip video dan folder output akan muncul di sini setelah proses selesai.
                 </p>
               </div>

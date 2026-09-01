@@ -24,9 +24,13 @@ def download_video_profesional(url: str, job_id=None) -> str:
                     percent = (downloaded / total) * 100
                     speed_mb = (speed / 1024 / 1024) if speed else 0
                     if eta is not None:
-                        m, s = divmod(eta, 60)
-                        h, m = divmod(m, 60)
-                        eta_str = f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
+                        try:
+                            eta_int = int(eta)
+                            m, s = divmod(eta_int, 60)
+                            h, m = divmod(m, 60)
+                            eta_str = f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
+                        except (ValueError, TypeError):
+                            eta_str = "--:--"
                     else:
                         eta_str = "--:--"
                     log(f"Progress Download: {percent:.1f}% | Kecepatan: {speed_mb:.2f} MB/s | Sisa Waktu (ETA): {eta_str}", job_id=job_id)
@@ -58,19 +62,25 @@ def download_video_profesional(url: str, job_id=None) -> str:
             log(f"[AUTH] Menggunakan file cookies: {c_path}", job_id=job_id)
             break
 
-    # Kunci Resolusi Tinggi 1080p Full HD (1920x1080)
+    # Kunci Resolusi Tinggi 1080p Full HD (1920x1080) dengan optimasi kecepatan
     download_strategies = [
         {
+            "name": "High-Definition 1080p Stream (iOS / Bypass Throttle)",
+            "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+            "extractor_args": {"youtube": {"player_client": ["ios", "mweb", "android"]}},
+            "use_cookie": True
+        },
+        {
             "name": "High-Definition 1080p Stream (Web Embedded)",
-            "format": "bestvideo[height=1080]+bestaudio/bestvideo[height<=1080][height>=720]+bestaudio/bestvideo+bestaudio",
+            "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
             "extractor_args": {"youtube": {"player_client": ["web_embedded"]}},
-            "use_cookie": False
+            "use_cookie": True
         },
         {
             "name": "High-Definition 1080p Stream (Android VR)",
-            "format": "bestvideo[height=1080]+bestaudio/bestvideo[height<=1080][height>=720]+bestaudio/bestvideo+bestaudio",
+            "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
             "extractor_args": {"youtube": {"player_client": ["android_vr"]}},
-            "use_cookie": False
+            "use_cookie": True
         }
     ]
 
@@ -85,6 +95,9 @@ def download_video_profesional(url: str, job_id=None) -> str:
                 'restrictfilenames': True,
                 'noplaylist': True,
                 'writethumbnail': False,
+                'concurrent_fragment_downloads': 8,
+                'buffersize': 1024 * 1024 * 16,
+                'http_chunk_size': 10485760,
                 'extractor_args': strategy['extractor_args'],
                 'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
                 'http_headers': {
