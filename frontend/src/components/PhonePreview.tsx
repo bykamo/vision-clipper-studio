@@ -91,6 +91,12 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     setIsPlaying(false);
   };
 
+  const handlePreviewKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    void togglePlay();
+  };
+
   const handleSeek = (time: number) => {
     const nextTime = previewClip
       ? Math.min(previewClip.end, Math.max(previewClip.start, time))
@@ -228,7 +234,17 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
               </div>
 
               {/* OLED Screen Content */}
-              <div className="relative w-full h-full bg-slate-950 overflow-hidden flex items-center justify-center">
+              <div
+                className={`relative w-full h-full bg-slate-950 overflow-hidden flex items-center justify-center ${
+                  videoStreamUrl ? 'cursor-pointer' : ''
+                }`}
+                onClick={videoStreamUrl ? () => void togglePlay() : undefined}
+                onKeyDown={videoStreamUrl ? handlePreviewKeyDown : undefined}
+                role={videoStreamUrl ? 'button' : undefined}
+                tabIndex={videoStreamUrl ? 0 : undefined}
+                aria-label={videoStreamUrl ? (isPlaying ? 'Pause video preview' : 'Putar video preview') : undefined}
+                title={videoStreamUrl ? (isPlaying ? 'Klik untuk pause' : 'Klik untuk putar') : undefined}
+              >
 
                 {/* ── REAL VIDEO STREAM PLAYBACK IF AVAILABLE ── */}
                 {videoStreamUrl ? (
