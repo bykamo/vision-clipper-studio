@@ -42,6 +42,8 @@ venv.bak/
 cookies.txt
 *.cookie
 *.cookies
+*.token.json
+.*token*.json
 
 # OS Generated Files
 .DS_Store

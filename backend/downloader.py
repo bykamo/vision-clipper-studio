@@ -62,6 +62,24 @@ def _final_download_path(ydl, info):
             return os.path.abspath(file_path)
     return os.path.abspath(candidates[-1])
 
+def _ensure_browser_compatible_audio(video_path: str, job_id=None):
+    """Ensure MP4 audio stream is encoded in AAC with faststart for browser playback."""
+    try:
+        import subprocess
+        probe_cmd = ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name", "-of", "csv=p=0", video_path]
+        res = subprocess.run(probe_cmd, capture_output=True, text=True)
+        codec = res.stdout.strip().lower()
+        if codec and codec != "aac":
+            log(f"Mengonversi audio ({codec} -> AAC) agar suara jernih di browser preview...", job_id=job_id)
+            tmp_path = video_path + ".aac_fix.mp4"
+            remux_cmd = ["ffmpeg", "-y", "-i", video_path, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", tmp_path]
+            r2 = subprocess.run(remux_cmd, capture_output=True)
+            if r2.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
+                os.replace(tmp_path, video_path)
+                log("Audio remux AAC selesai dengan sukses.", job_id=job_id)
+    except Exception as e:
+        log(f"Info verifikasi audio: {e}", job_id=job_id)
+
 def download_video_profesional(url: str, job_id=None) -> str:
     log(f"Memulai Download URL (Mode Profesional): {url}", job_id=job_id)
     
@@ -203,6 +221,7 @@ def download_video_profesional(url: str, job_id=None) -> str:
                     f"File tersimpan sebagai: {final_filename}",
                     job_id=job_id
                 )
+                _ensure_browser_compatible_audio(final_filename, job_id=job_id)
                 return final_filename
         except Exception as e:
             last_error = e

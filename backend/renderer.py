@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import json
 import cv2
 import numpy as np
 from backend.utils import log, format_ass_timestamp, format_timestamp, run_command, get_ffmpeg_binary, TEMP_DIR
@@ -781,5 +782,15 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
                 os.remove(tmp)
         except Exception as e:
             log(f"Warning: Could not remove temp file {tmp}: {e}", job_id=job_id)
-        
+
+    # Emit structured output marker for frontend / social integration
+    clip_output_data = {
+        "index": index,
+        "title": title,
+        "out_file": os.path.abspath(out_file),
+        "caption": caption_text,
+        "hashtags": hashtags if isinstance(hashtags, list) else [hashtags]
+    }
+    print(f"[CLIP_RENDERED]{json.dumps(clip_output_data)}", flush=True)
+
     return out_file

@@ -11,15 +11,17 @@ import queue
 import threading
 import time as _time
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from backend import youtube_uploader
 
 app = FastAPI()
 
 # Global to keep track of running process for cancellation
 current_process = None
 
-FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FRONTEND_DIR = os.path.join(PROJECT_ROOT, "frontend")
 DIST_DIR = os.path.join(FRONTEND_DIR, "dist")
 SERVE_DIR = DIST_DIR if os.path.exists(DIST_DIR) else FRONTEND_DIR
 
@@ -46,7 +48,15 @@ async def video_stream(path: str = ""):
     if not path:
         return JSONResponse(status_code=400, content={"error": "Path parameter is empty"})
 
-    path = os.path.normpath(path)
+    if not os.path.isabs(path):
+        candidate = os.path.join(PROJECT_ROOT, path)
+        if os.path.exists(candidate):
+            path = candidate
+        else:
+            path = os.path.abspath(path)
+    else:
+        path = os.path.normpath(path)
+
     if not os.path.exists(path) or not os.path.isfile(path):
         return JSONResponse(status_code=404, content={"error": f"Video file not found: {path}"})
 
@@ -454,6 +464,77 @@ async def stream(mode: str = "", source_type: str = "", source: str = "", num_cl
     ]
 
     return StreamingResponse(_sse_from_process(cmd), media_type="text/event-stream")
+
+
+# ── YouTube Social Media Endpoints ──
+@app.get("/api/social/youtube/auth-url")
+async def youtube_auth_url():
+    """Generate Google OAuth URL for YouTube uploading permissions."""
+    try:
+        url, _ = youtube_uploader.get_auth_url()
+        return {"url": url}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.get("/api/social/youtube/callback")
+async def youtube_callback(code: str = "", error: str = ""):
+    """Handle OAuth redirect callback from Google."""
+    if error or not code:
+        return RedirectResponse(url="/?youtube_auth=error")
+    try:
+        youtube_uploader.save_credentials_from_code(code)
+        return RedirectResponse(url="/?youtube_auth=success")
+    except Exception as e:
+        return RedirectResponse(url=f"/?youtube_auth=failed&msg={str(e)}")
+
+
+@app.get("/api/social/youtube/status")
+async def youtube_status():
+    """Get connected channel info if logged in."""
+    info = youtube_uploader.get_channel_info()
+    return {
+        "connected": info is not None,
+        "channel": info
+    }
+
+
+@app.post("/api/social/youtube/disconnect")
+async def youtube_disconnect():
+    """Disconnect and clear saved YouTube credentials."""
+    success = youtube_uploader.disconnect_youtube()
+    return {"status": "disconnected" if success else "failed"}
+
+
+@app.post("/api/social/youtube/upload")
+async def youtube_upload(request: Request):
+    """Upload rendered video clip to YouTube channel."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "Invalid JSON body"})
+
+    video_path = data.get("video_path", "")
+    title = data.get("title", "VisionClipper Clip")
+    description = data.get("description", "")
+    tags = data.get("tags", [])
+    privacy = data.get("privacy", "private")
+
+    if not video_path:
+        return JSONResponse(status_code=400, content={"error": "Parameter video_path is required"})
+
+    try:
+        result = youtube_uploader.upload_video_to_youtube(
+            video_path=video_path,
+            title=title,
+            description=description,
+            tags=tags,
+            privacy_status=privacy
+        )
+        return {"status": "success", **result}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 
 # Serve static files from frontend directory (production dist or root)
 app.mount("/", StaticFiles(directory=SERVE_DIR), name="static")

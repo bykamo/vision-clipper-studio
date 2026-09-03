@@ -29,16 +29,37 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   const [duration, setDuration] = useState(0);
   const [showSafeArea, setShowSafeArea] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1.0);
+  const [centerAnimation, setCenterAnimation] = useState<'play' | 'pause' | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const animTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const triggerAnimation = (type: 'play' | 'pause') => {
+    setCenterAnimation(type);
+    if (animTimerRef.current) clearTimeout(animTimerRef.current);
+    animTimerRef.current = setTimeout(() => {
+      setCenterAnimation(null);
+    }, 600);
+  };
 
   // Auto-seek and loop within clip range when previewClip is set
   useEffect(() => {
     if (previewClip && videoRef.current && videoStreamUrl) {
       videoRef.current.currentTime = previewClip.start;
+      videoRef.current.muted = isMuted;
+      videoRef.current.volume = 1;
       void videoRef.current.play()
         .then(() => setIsPlaying(true))
-        .catch(() => setIsPlaying(false));
+        .catch(() => {
+          // If unmuted autoplay blocked by browser policy, fallback to muted
+          if (videoRef.current) {
+            videoRef.current.muted = true;
+            setIsMuted(true);
+            void videoRef.current.play()
+              .then(() => setIsPlaying(true))
+              .catch(() => setIsPlaying(false));
+          }
+        });
     }
   }, [previewClip?.start, previewClip?.end]);
 
@@ -79,16 +100,29 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
     if (video.paused) {
       try {
+        video.muted = isMuted;
+        if (!isMuted) video.volume = 1.0;
         await video.play();
         setIsPlaying(true);
+        triggerAnimation('play');
       } catch {
-        setIsPlaying(false);
+        // Fallback to muted if browser blocks sound on play
+        try {
+          video.muted = true;
+          setIsMuted(true);
+          await video.play();
+          setIsPlaying(true);
+          triggerAnimation('play');
+        } catch {
+          setIsPlaying(false);
+        }
       }
       return;
     }
 
     video.pause();
     setIsPlaying(false);
+    triggerAnimation('pause');
   };
 
   const handlePreviewKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -108,9 +142,13 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   };
 
   const toggleMute = () => {
-    const muted = !videoRef.current?.muted;
-    if (videoRef.current) videoRef.current.muted = muted;
-    setIsMuted(muted);
+    if (!videoRef.current) return;
+    const nextMuted = !videoRef.current.muted;
+    videoRef.current.muted = nextMuted;
+    if (!nextMuted) {
+      videoRef.current.volume = 1.0;
+    }
+    setIsMuted(nextMuted);
   };
 
   const handleRateChange = () => {
@@ -276,6 +314,51 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       }`}
                       playsInline
                     />
+
+                    {/* Floating Audio Indicator in Top Right */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleMute();
+                      }}
+                      className="absolute top-8 right-2.5 z-30 flex items-center gap-1 rounded-full bg-black/60 backdrop-blur-md border border-white/20 px-2 py-0.5 text-[9px] font-semibold text-white hover:bg-black/80 transition-all shadow-md active:scale-95 cursor-pointer"
+                      title={isMuted ? 'Nyalakan suara preview' : 'Matikan suara preview'}
+                    >
+                      {isMuted ? (
+                        <>
+                          <SpeakerXMarkIcon className="h-3 w-3 text-rose-400" />
+                          <span className="text-[8.5px] text-rose-300 font-mono">Bisu</span>
+                        </>
+                      ) : (
+                        <>
+                          <SpeakerWaveIcon className="h-3 w-3 text-emerald-400" />
+                          <span className="text-[8.5px] text-emerald-300 font-mono">Suara</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/* Smooth Animated Center Play / Pause Pop Indicator */}
+                    {centerAnimation && (
+                      <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+                        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-black/70 backdrop-blur-md border border-white/30 text-white shadow-[0_0_30px_rgba(0,0,0,0.8)] animate-in zoom-in-75 fade-in duration-150 animate-out zoom-out-110 fade-out fill-mode-forwards duration-200">
+                          {centerAnimation === 'play' ? (
+                            <PlayIcon className="h-8 w-8 ml-1 text-emerald-400 drop-shadow-md" />
+                          ) : (
+                            <PauseIcon className="h-8 w-8 text-amber-400 drop-shadow-md" />
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Center Play Overlay Button when Paused */}
+                    {!isPlaying && !centerAnimation && (
+                      <div className="absolute inset-0 z-25 flex items-center justify-center pointer-events-none">
+                        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-black/55 backdrop-blur-md border border-white/25 text-white shadow-2xl transition-all duration-300 transform scale-100 hover:scale-110">
+                          <PlayIcon className="h-7 w-7 ml-0.5 text-white/90 drop-shadow-md" />
+                        </div>
+                      </div>
+                    )}
 
                     {/* Subtitle floating in safe area */}
                     <div className="absolute top-[60%] z-20 w-full px-3 flex justify-center pointer-events-none">
