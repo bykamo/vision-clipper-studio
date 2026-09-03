@@ -163,7 +163,7 @@ export const SimpleClipperDashboard: React.FC = () => {
     message: string;
     type: 'success' | 'info' | 'error';
   } | null>(null);
-  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = (title: string, message: string, type: 'success' | 'info' | 'error' = 'success') => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);

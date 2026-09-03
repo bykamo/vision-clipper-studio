@@ -32,7 +32,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   const [centerAnimation, setCenterAnimation] = useState<'play' | 'pause' | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const animTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const animTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const triggerAnimation = (type: 'play' | 'pause') => {
     setCenterAnimation(type);
