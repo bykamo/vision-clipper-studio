@@ -31,7 +31,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   const [isMuted, setIsMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [showSafeArea, setShowSafeArea] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1.0);
   const [centerAnimation, setCenterAnimation] = useState<'play' | 'pause' | null>(null);
 
@@ -256,29 +255,12 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
           </div>
         </div>
 
-        {/* Safe Area button or Rendered Clip Badge */}
-        <div className="flex items-center gap-1.5">
-          {isRenderedClip ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-[10px] font-mono font-bold text-amber-400">
-              <SparklesIcon className="h-3 w-3" />
-              <span>Final Render (9:16)</span>
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setShowSafeArea(!showSafeArea)}
-              className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] font-medium transition-all ${
-                showSafeArea
-                  ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
-                  : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:text-slate-200'
-              }`}
-              title="Tampilkan Safe Area Guide (Batas ikon TikTok/Reels)"
-            >
-              <SparklesIcon className="h-3 w-3" />
-              <span>Safe Area</span>
-            </button>
-          )}
-        </div>
+        {isRenderedClip && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-[10px] font-mono font-bold text-amber-400">
+            <SparklesIcon className="h-3 w-3" />
+            <span>Final Render (9:16)</span>
+          </span>
+        )}
       </div>
 
       {/* ── CENTER WORKSPACE: REALISTIC iPHONE MOCKUP ── */}
@@ -507,19 +489,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       </div>
                     </div>
                   )
-                )}
-
-                {/* Safe Area Guides Overlay */}
-                {showSafeArea && (
-                  <div className="absolute inset-0 pointer-events-none z-30 border-2 border-dashed border-emerald-400/40 m-3 rounded-2xl flex flex-col justify-between p-2">
-                    <div className="text-[8px] font-mono text-emerald-400/80 uppercase">Top Safe Zone</div>
-                    <div className="flex justify-between items-center text-[7px] font-mono text-emerald-400/60 uppercase px-1">
-                      <span>Right UI Icons</span>
-                    </div>
-                    <div className="text-[8px] font-mono text-emerald-400/80 uppercase text-center pb-1">
-                      Bottom Caption Safe Zone
-                    </div>
-                  </div>
                 )}
 
               </div>
