@@ -294,11 +294,13 @@ export const SimpleClipperDashboard: React.FC = () => {
     setTtModalOpen(true);
   };
 
-  // Action: Salin caption, buka folder video, dan buka TikTok Creator Center di tab baru
+  // Copy the caption and open TikTok Studio; file selection stays manual.
   const handleLaunchTikTokUpload = async () => {
     if (!selectedClipForTt) return;
 
-    // 1. Copy caption & hashtags to clipboard
+    // Open from the direct click event so the browser does not block the new tab.
+    window.open('https://www.tiktok.com/creator-center/upload', '_blank', 'noopener,noreferrer');
+
     try {
       await navigator.clipboard.writeText(ttFormTitle);
       setTtCopied(true);
@@ -306,25 +308,11 @@ export const SimpleClipperDashboard: React.FC = () => {
       console.warn("Clipboard copy failed:", e);
     }
 
-    // 2. Open output folder in Finder/Explorer
-    if (outputDir) {
-      try {
-        await fetch('/api/open-folder', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: outputDir })
-        });
-      } catch (e) {}
-    }
-
-    // 3. Open TikTok Creator Center Upload in new browser tab
-    window.open('https://www.tiktok.com/creator-center/upload', '_blank', 'noopener,noreferrer');
-
     const ts = new Date().toTimeString().split(' ')[0];
     setLogs(prev => [...prev, `[${ts}] [TIKTOK] 🚀 Membuka TikTok Creator Center! Caption & hashtag telah disalin ke clipboard.`]);
     showToast(
       'TikTok Upload Siap! 🚀',
-      'Caption disalin ke clipboard & folder video dibuka. Silakan drag-and-drop video ke TikTok.',
+      'Caption disalin. Pilih file video secara manual di halaman upload TikTok Studio.',
       'success'
     );
   };
@@ -2103,7 +2091,7 @@ export const SimpleClipperDashboard: React.FC = () => {
                     </span>
                   </h3>
                   <p className="text-[11px] text-slate-400">
-                    Posting video langsung ke publik tanpa ribet API atau batasan akun privat
+                    Salin caption, lalu pilih video secara manual di halaman upload TikTok
                   </p>
                 </div>
               </div>
@@ -2119,11 +2107,11 @@ export const SimpleClipperDashboard: React.FC = () => {
             <div className="rounded-xl bg-slate-950/80 border border-slate-800 p-3.5 mb-4 text-xs space-y-2">
               <div className="font-bold text-slate-200 flex items-center gap-2">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-cyan-500 text-black font-extrabold text-[10px]">1</span>
-                <span>Klik tombol di bawah untuk membuka TikTok Studio & Folder Video</span>
+                <span>Klik tombol di bawah untuk menyalin caption dan membuka TikTok Studio</span>
               </div>
               <div className="font-bold text-slate-200 flex items-center gap-2">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-cyan-500 text-black font-extrabold text-[10px]">2</span>
-                <span>Drag file video ke browser TikTok</span>
+                <span>Pilih file video secara manual dari halaman upload TikTok</span>
               </div>
               <div className="font-bold text-slate-200 flex items-center gap-2">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-cyan-500 text-black font-extrabold text-[10px]">3</span>
@@ -2170,16 +2158,7 @@ export const SimpleClipperDashboard: React.FC = () => {
             </div>
 
             {/* Modal Footer Actions */}
-            <div className="flex items-center justify-between pt-2 border-t border-slate-800 gap-2">
-              <button
-                type="button"
-                onClick={handleOpenFolder}
-                className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 font-medium"
-              >
-                <FolderOpenIcon className="h-4 w-4 stroke-[2]" />
-                <span>Buka Folder Klip</span>
-              </button>
-
+            <div className="flex items-center justify-end pt-2 border-t border-slate-800 gap-2">
               <div className="flex items-center gap-2">
                 <button
                   type="button"

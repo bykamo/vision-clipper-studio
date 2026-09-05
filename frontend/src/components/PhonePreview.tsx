@@ -340,29 +340,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       playsInline
                     />
 
-                    {/* Floating Audio Indicator in Top Right */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleMute();
-                      }}
-                      className="absolute top-8 right-2.5 z-30 flex items-center gap-1 rounded-full bg-black/60 backdrop-blur-md border border-white/20 px-2 py-0.5 text-[9px] font-semibold text-white hover:bg-black/80 transition-all shadow-md active:scale-95 cursor-pointer"
-                      title={isMuted ? 'Nyalakan suara preview' : 'Matikan suara preview'}
-                    >
-                      {isMuted ? (
-                        <>
-                          <SpeakerXMarkIcon className="h-3 w-3 text-rose-400" />
-                          <span className="text-[8.5px] text-rose-300 font-mono">Bisu</span>
-                        </>
-                      ) : (
-                        <>
-                          <SpeakerWaveIcon className="h-3 w-3 text-emerald-400" />
-                          <span className="text-[8.5px] text-emerald-300 font-mono">Suara</span>
-                        </>
-                      )}
-                    </button>
-
                     {/* Smooth Animated Center Play / Pause Pop Indicator */}
                     {centerAnimation && (
                       <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
