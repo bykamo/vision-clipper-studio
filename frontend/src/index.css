@@ -16,3 +16,76 @@
     font-family: 'JetBrains Mono', monospace;
   }
 }
+
+@layer components {
+  .ios-playback-controls {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  }
+
+  .ios-media-scrubber {
+    --ios-scrubber-progress: 0%;
+    height: 14px;
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .ios-media-scrubber::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 999px;
+    background: linear-gradient(
+      to right,
+      rgba(255, 255, 255, 0.96) 0 var(--ios-scrubber-progress),
+      rgba(255, 255, 255, 0.16) var(--ios-scrubber-progress) 100%
+    );
+  }
+
+  .ios-media-scrubber::-webkit-slider-thumb {
+    width: 12px;
+    height: 12px;
+    margin-top: -4px;
+    appearance: none;
+    -webkit-appearance: none;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    transform: scale(0.75);
+    transition: opacity 150ms ease, transform 150ms ease;
+  }
+
+  .ios-media-scrubber:hover::-webkit-slider-thumb,
+  .ios-media-scrubber:focus-visible::-webkit-slider-thumb,
+  .ios-media-scrubber:active::-webkit-slider-thumb {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  .ios-media-scrubber::-moz-range-track {
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.16);
+  }
+
+  .ios-media-scrubber::-moz-range-progress {
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.96);
+  }
+
+  .ios-media-scrubber::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: 0;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+  }
+
+  .ios-media-scrubber:focus-visible {
+    outline: 2px solid rgba(10, 132, 255, 0.8);
+    outline-offset: 2px;
+    border-radius: 999px;
+  }
+}

@@ -20,6 +20,7 @@ import {
   VideoCameraIcon,
   SparklesIcon,
   ArrowLeftIcon,
+  ArrowUpRightIcon,
   ArrowPathIcon,
   PlayIcon,
   CheckCircleIcon,
@@ -108,6 +109,7 @@ export const SimpleClipperDashboard: React.FC = () => {
   const [analysisId, setAnalysisId] = useState<string>('');
   const [resolvedVideoPath, setResolvedVideoPath] = useState<string>('');
   const [previewClipRange, setPreviewClipRange] = useState<{ start: number; end: number } | null>(null);
+  const [previewOutputClip, setPreviewOutputClip] = useState<{ path: string; title: string; id: string } | null>(null);
 
   // Settings State
   const [clipCount, setClipCount] = useState<number>(4);
@@ -225,6 +227,13 @@ export const SimpleClipperDashboard: React.FC = () => {
     }
   };
 
+  // Fetch TikTok connection status
+  // TikTok Quick Upload Assistant State (Solusi 1)
+  const [ttModalOpen, setTtModalOpen] = useState(false);
+  const [selectedClipForTt, setSelectedClipForTt] = useState<GeneratedClipItem | null>(null);
+  const [ttFormTitle, setTtFormTitle] = useState('');
+  const [ttCopied, setTtCopied] = useState(false);
+
   useEffect(() => {
     checkYouTubeStatus();
 
@@ -267,6 +276,57 @@ export const SimpleClipperDashboard: React.FC = () => {
       const ts = new Date().toTimeString().split(' ')[0];
       setLogs(prev => [...prev, `[${ts}] [YOUTUBE] 🔌 Koneksi YouTube diputuskan.`]);
     } catch (e: any) {}
+  };
+
+  // Open Quick Upload Modal for TikTok (Solusi 1)
+  const handleOpenTikTokModal = (clip: GeneratedClipItem) => {
+    const clipCandidate = clipCandidates.find(c => c.index === parseInt(clip.id));
+    const finalTitle = clip.title || (clipCandidate ? clipCandidate.title_options[0] : `Clip #${clip.id}`);
+    const caption = clip.caption || clipCandidate?.caption || finalTitle;
+    const rawHashtags = clip.hashtags || clipCandidate?.hashtags || ["fyp", "viral", "trending"];
+    const hashtags = rawHashtags.map(h => (h.startsWith('#') ? h : `#${h}`)).slice(0, 5).join(' ');
+
+    const fullCaption = `${caption} ${hashtags}`.trim();
+
+    setSelectedClipForTt(clip);
+    setTtFormTitle(fullCaption);
+    setTtCopied(false);
+    setTtModalOpen(true);
+  };
+
+  // Action: Salin caption, buka folder video, dan buka TikTok Creator Center di tab baru
+  const handleLaunchTikTokUpload = async () => {
+    if (!selectedClipForTt) return;
+
+    // 1. Copy caption & hashtags to clipboard
+    try {
+      await navigator.clipboard.writeText(ttFormTitle);
+      setTtCopied(true);
+    } catch (e) {
+      console.warn("Clipboard copy failed:", e);
+    }
+
+    // 2. Open output folder in Finder/Explorer
+    if (outputDir) {
+      try {
+        await fetch('/api/open-folder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: outputDir })
+        });
+      } catch (e) {}
+    }
+
+    // 3. Open TikTok Creator Center Upload in new browser tab
+    window.open('https://www.tiktok.com/creator-center/upload', '_blank', 'noopener,noreferrer');
+
+    const ts = new Date().toTimeString().split(' ')[0];
+    setLogs(prev => [...prev, `[${ts}] [TIKTOK] 🚀 Membuka TikTok Creator Center! Caption & hashtag telah disalin ke clipboard.`]);
+    showToast(
+      'TikTok Upload Siap! 🚀',
+      'Caption disalin ke clipboard & folder video dibuka. Silakan drag-and-drop video ke TikTok.',
+      'success'
+    );
   };
 
   // Open Confirmation Modal for Direct YouTube Posting
@@ -379,10 +439,27 @@ export const SimpleClipperDashboard: React.FC = () => {
   };
 
   const previewCandidate = (clip: ClipCandidate) => {
+    setPreviewOutputClip(null);
     setPreviewClipRange({ start: clip.start, end: clip.end });
     setClipCandidates(prev => prev.map(candidate =>
       candidate.index === clip.index ? { ...candidate, previewed: true } : candidate
     ));
+  };
+
+  const previewRenderedClip = (clip: GeneratedClipItem) => {
+    let filePath = clip.out_file || '';
+    if (!filePath && outputDir) {
+      const safeTitle = (clip.title || `Clip_${clip.id}`).replace(/[^a-zA-Z0-9]/g, "_").replace(/^_+|_+$/g, "");
+      filePath = `${outputDir}/${String(clip.id).padStart(2, '0')}_${safeTitle}.mp4`;
+    }
+    if (filePath) {
+      setPreviewClipRange(null);
+      setPreviewOutputClip({
+        path: filePath,
+        title: clip.title || `Clip #${clip.id}`,
+        id: clip.id
+      });
+    }
   };
 
   // Start Real Processing via SSE — Phase 1: Analyze Only
@@ -407,6 +484,7 @@ export const SimpleClipperDashboard: React.FC = () => {
     setAnalysisId('');
     setResolvedVideoPath('');
     setPreviewClipRange(null);
+    setPreviewOutputClip(null);
     analysisReceivedRef.current = false;
 
     const startTimestamp = new Date().toTimeString().split(' ')[0];
@@ -542,6 +620,7 @@ export const SimpleClipperDashboard: React.FC = () => {
     setProgress(0);
     setGeneratedClips([]);
     setPreviewClipRange(null);
+    setPreviewOutputClip(null);
 
     const startTimestamp = new Date().toTimeString().split(' ')[0];
     setLogs(prev => [
@@ -630,13 +709,20 @@ export const SimpleClipperDashboard: React.FC = () => {
                 const indexStr = String(clipObj.index);
                 setGeneratedClips(prev => {
                   const filtered = prev.filter(c => c.id !== indexStr);
-                  return [...filtered, {
+                  const updated = [...filtered, {
                     id: indexStr,
                     title: clipObj.title,
                     out_file: clipObj.out_file,
                     caption: clipObj.caption,
                     hashtags: clipObj.hashtags
                   }];
+                  return updated;
+                });
+                // Set as active preview if no output clip is currently being previewed
+                setPreviewOutputClip(curr => curr || {
+                  path: clipObj.out_file,
+                  title: clipObj.title,
+                  id: indexStr
                 });
               } catch (e) {}
             } else if (data.includes('Rendering Subtitles, Audio Enhancer, and Color Grading for Clip')) {
@@ -797,17 +883,11 @@ export const SimpleClipperDashboard: React.FC = () => {
 
         {/* Left: Brand Logo & Title */}
         <div className="flex items-center gap-3">
-          <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${themeClasses.accentBg} text-white shadow-sm`}>
-            <FilmIconSolid className="h-4 w-4" />
-          </div>
-          <div className="flex items-center gap-2">
-            <h1 className="font-['Outfit',_sans-serif] text-base font-extrabold tracking-tight text-white">
-              VisionClipper <span className={themeClasses.accentText}>Studio</span>
-            </h1>
-            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
-              v2.0
-            </span>
-          </div>
+          <img
+            src="/images/logo-banner-transparent.png"
+            alt="VisionClipper Studio"
+            className="h-9 w-auto object-contain select-none filter drop-shadow-sm"
+          />
         </div>
 
         {/* Center: Mode Switcher Pills */}
@@ -852,12 +932,13 @@ export const SimpleClipperDashboard: React.FC = () => {
                 {ytChannel.thumbnail ? (
                   <img src={ytChannel.thumbnail} alt="" className="h-4 w-4 rounded-full" />
                 ) : (
-                  <VideoCameraIcon className="h-3.5 w-3.5 text-red-400" />
+                  <svg className="h-3.5 w-3.5 text-red-500 fill-current" viewBox="0 0 24 24">
+                    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                  </svg>
                 )}
                 <span className="font-semibold text-slate-200 text-[11px] max-w-[110px] truncate group-hover:text-white">
                   {ytChannel.title}
                 </span>
-                <span className="text-[9px] text-emerald-400 font-mono hidden sm:inline">Online</span>
               </button>
               <button
                 type="button"
@@ -874,10 +955,27 @@ export const SimpleClipperDashboard: React.FC = () => {
               className="flex items-center gap-1.5 rounded-full border border-red-500/40 bg-red-600/20 hover:bg-red-600/30 px-3 py-1 text-xs font-semibold text-red-300 transition-colors shadow-sm active:scale-95"
               title="Hubungkan Channel YouTube untuk Direct Upload"
             >
-              <VideoCameraIcon className="h-3.5 w-3.5 text-red-400" />
+              <svg className="h-3.5 w-3.5 text-red-500 fill-current" viewBox="0 0 24 24">
+                <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+              </svg>
               <span>Connect YouTube</span>
             </button>
           )}
+
+          {/* Quick TikTok Creator Center Link */}
+          <a
+            href="https://www.tiktok.com/creator-center/upload"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 rounded-full border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/40 px-3 py-1 text-xs font-semibold text-cyan-300 transition-colors shadow-sm active:scale-95 group"
+            title="Buka TikTok Creator Center Upload Web"
+          >
+            <svg className="h-3.5 w-3.5 fill-current text-cyan-400 group-hover:text-white transition-colors" viewBox="0 0 24 24">
+              <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.89 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.35 0 .69.06 1 .17V9.45a6.34 6.34 0 0 0-1-.08 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.34-6.34V8.75a8.28 8.28 0 0 0 4.76 1.49V6.79a4.85 4.85 0 0 1-1-.1z"/>
+            </svg>
+            <span>TikTok Studio</span>
+            <ArrowUpRightIcon className="h-3 w-3 stroke-2 opacity-70 transition-all group-hover:-translate-y-px group-hover:translate-x-px group-hover:opacity-100" />
+          </a>
 
           {status === 'processing' ? (
             <div className="flex items-center gap-2 rounded-full bg-amber-950/60 border border-amber-500/40 px-3 py-1 text-xs font-bold text-amber-400 font-['Outfit',_sans-serif]">
@@ -1059,14 +1157,11 @@ export const SimpleClipperDashboard: React.FC = () => {
 
           {/* 3. VIDEO LAYOUT SECTION */}
           <div className="mb-4">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center mb-2">
               <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider">
                 <VideoCameraIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
                 <span>LAYOUT VIDEO</span>
               </div>
-              <span className="text-[9px] font-bold text-emerald-400 bg-emerald-950/80 border border-emerald-500/40 px-1.5 py-0.5 rounded-md">
-                NEW
-              </span>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
@@ -1084,9 +1179,6 @@ export const SimpleClipperDashboard: React.FC = () => {
                   <span className={`text-[10px] font-bold truncate ${framingMode === 'smart_crop' ? themeClasses.accentText : 'text-slate-200'}`}>
                     9:16 Smart Follow
                   </span>
-                  {framingMode === 'smart_crop' && (
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 flex-shrink-0 animate-pulse" />
-                  )}
                 </div>
 
                 {/* Visual Preview Box */}
@@ -1115,9 +1207,6 @@ export const SimpleClipperDashboard: React.FC = () => {
                   <span className={`text-[10px] font-bold truncate ${framingMode === 'fit_blur' ? themeClasses.accentText : 'text-slate-200'}`}>
                     16:9 Fit (Blur)
                   </span>
-                  {framingMode === 'fit_blur' && (
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 flex-shrink-0 animate-pulse" />
-                  )}
                 </div>
 
                 {/* Visual Preview Box */}
@@ -1165,9 +1254,6 @@ export const SimpleClipperDashboard: React.FC = () => {
                         {preset.name}
                       </span>
                     </div>
-                    {isSelected && (
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 flex-shrink-0 animate-pulse" />
-                    )}
                   </div>
 
                   {/* Visual Preview Box */}
@@ -1254,8 +1340,10 @@ export const SimpleClipperDashboard: React.FC = () => {
           <PhonePreview
             framingMode={framingMode}
             selectedPresetId={selectedPresetId}
-            videoSource={resolvedVideoPath || videoPathInput}
-            previewClip={previewClipRange}
+            videoSource={previewOutputClip ? previewOutputClip.path : (resolvedVideoPath || videoPathInput)}
+            previewClip={previewOutputClip ? null : previewClipRange}
+            clipTitle={previewOutputClip ? previewOutputClip.title : undefined}
+            isRenderedClip={Boolean(previewOutputClip)}
           />
         </section>
 
@@ -1562,7 +1650,7 @@ export const SimpleClipperDashboard: React.FC = () => {
                       {generatedClips.length > 0 ? `${generatedClips.length} Klip Dihasilkan` : 'Folder Siap'}
                     </span>
                     <button
-                      onClick={() => { setPhase('config'); setClipCandidates([]); setPreviewClipRange(null); setGeneratedClips([]); setOutputDir(''); }}
+                      onClick={() => { setPhase('config'); setClipCandidates([]); setPreviewClipRange(null); setPreviewOutputClip(null); setGeneratedClips([]); setOutputDir(''); }}
                       className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-white transition-colors"
                     >
                       <ArrowPathIcon className="h-3 w-3 stroke-[2]" />
@@ -1611,55 +1699,130 @@ export const SimpleClipperDashboard: React.FC = () => {
                     {generatedClips.map((clip, i) => {
                       const isUploading = isUploadingYt === clip.id;
                       const ytUrl = uploadedYtLinks[clip.id];
+                      const isCurrentPreview = previewOutputClip?.id === clip.id;
 
                       return (
-                        <div key={clip.id} className="flex flex-col justify-between rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5 text-xs gap-2">
+                        <div
+                          key={clip.id}
+                          onClick={() => previewRenderedClip(clip)}
+                          className={`flex flex-col justify-between rounded-xl border p-2.5 text-xs gap-2 transition-all cursor-pointer ${
+                            isCurrentPreview
+                              ? 'border-emerald-500/70 bg-emerald-950/20 shadow-lg shadow-emerald-500/5 ring-1 ring-emerald-500/40'
+                              : 'border-slate-800/80 bg-slate-900/60 hover:border-slate-700 hover:bg-slate-900/90'
+                          }`}
+                        >
                           <div className="flex items-center gap-2.5">
-                            <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 flex-shrink-0 font-mono font-bold text-[9px]">
-                              0{i + 1}
-                            </div>
-                            <div className="truncate flex-1">
-                              <h4 className="font-semibold text-slate-200 truncate text-[11px]">{clip.title}</h4>
-                              <span className="text-[9px] font-mono text-slate-500">MP4 • 1080x1920 (9:16)</span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                previewRenderedClip(clip);
+                              }}
+                              className={`flex h-7 w-7 items-center justify-center rounded-lg border flex-shrink-0 transition-all ${
+                                isCurrentPreview
+                                  ? 'bg-emerald-500 text-black border-emerald-400 font-bold scale-105'
+                                  : 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 hover:scale-105'
+                              }`}
+                              title="Putar video clip ini di preview smartphone"
+                            >
+                              <PlayIcon className="h-3.5 w-3.5 ml-0.5" />
+                            </button>
+                            <div className="truncate flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-[9px] font-bold text-emerald-400">0{i + 1}</span>
+                                <h4 className="font-semibold text-slate-200 truncate text-[11px]">{clip.title}</h4>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[9px] font-mono text-slate-500 mt-0.5">
+                                <span>MP4 • 1080x1920</span>
+                                {isCurrentPreview && (
+                                  <span className="text-emerald-400 font-bold">• Sedang Diputar</span>
+                                )}
+                              </div>
                             </div>
                           </div>
 
-                          {/* YouTube Upload Action */}
-                          <div className="flex items-center justify-end border-t border-slate-800/60 pt-1.5 gap-2">
-                            {ytUrl ? (
-                              <div className="flex items-center gap-2">
-                                <a
-                                  href={ytUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center gap-1 text-[10px] font-bold text-red-400 hover:text-red-300 underline"
-                                >
-                                  <VideoCameraIcon className="h-3.5 w-3.5" />
-                                  <span>Lihat di YouTube ↗</span>
-                                </a>
-                                <button
-                                  onClick={() => handleOpenUploadModal(clip)}
-                                  className="text-[9px] text-slate-400 hover:text-slate-200 transition-colors underline"
-                                  title="Posting ulang dengan judul atau setelan berbeda"
-                                >
-                                  Edit/Post Ulang
-                                </button>
-                              </div>
-                            ) : (
+                          {/* Action Bar: Preview & YouTube Upload */}
+                          <div className="flex items-center justify-between border-t border-slate-800/60 pt-1.5 gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                previewRenderedClip(clip);
+                              }}
+                              className={`flex items-center gap-1 text-[10px] font-semibold transition-colors ${
+                                isCurrentPreview
+                                  ? 'text-emerald-400'
+                                  : 'text-slate-400 hover:text-emerald-400'
+                              }`}
+                            >
+                              <PlayIcon className="h-3 w-3" />
+                              <span>{isCurrentPreview ? 'Diputar' : 'Preview'}</span>
+                            </button>
+
+                            {/* Social Upload Actions: YouTube & TikTok */}
+                            <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                              {/* TikTok Quick Upload Assistant */}
                               <button
-                                onClick={() => handleOpenUploadModal(clip)}
-                                disabled={isUploading}
-                                className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-bold transition-all shadow-sm ${
-                                  ytConnected
-                                    ? 'bg-gradient-to-r from-red-600/30 to-rose-600/30 hover:from-red-600/50 hover:to-rose-600/50 text-red-200 border border-red-500/40 active:scale-95'
-                                    : 'bg-slate-800/80 text-slate-400 border border-slate-700 hover:text-white'
-                                } ${isUploading ? 'opacity-50 cursor-wait' : ''}`}
-                                title={ytConnected ? 'Buka konfirmasi dan posting langsung ke YouTube channel' : 'Hubungkan YouTube terlebih dahulu'}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenTikTokModal(clip);
+                                }}
+                                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-bold transition-all shadow-xs bg-gradient-to-r from-cyan-600/30 to-pink-600/30 hover:from-cyan-600/50 hover:to-pink-600/50 text-cyan-200 border border-cyan-500/40 active:scale-95 group"
+                                title="Buka TikTok Assistant (Salin caption & buka TikTok Studio)"
                               >
-                                <VideoCameraIcon className={`h-3.5 w-3.5 ${isUploading ? 'animate-spin' : 'text-red-400'}`} />
-                                <span>{isUploading ? 'Mengunggah...' : ytConnected ? '🚀 Posting ke YouTube' : 'Connect YT First'}</span>
+                                <svg className="h-3 w-3 fill-current text-cyan-400 group-hover:text-white transition-colors" viewBox="0 0 24 24">
+                                  <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.89 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.35 0 .69.06 1 .17V9.45a6.34 6.34 0 0 0-1-.08 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.34-6.34V8.75a8.28 8.28 0 0 0 4.76 1.49V6.79a4.85 4.85 0 0 1-1-.1z"/>
+                                </svg>
+                                <span>TikTok</span>
                               </button>
-                            )}
+
+                              {/* YouTube Upload Action */}
+                              {ytUrl ? (
+                                <div className="flex items-center gap-1.5">
+                                  <a
+                                    href={ytUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="flex items-center gap-1 text-[10px] font-bold text-red-400 hover:text-red-300 underline"
+                                  >
+                                    <svg className="h-3 w-3 text-red-500 fill-current" viewBox="0 0 24 24">
+                                      <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                                    </svg>
+                                    <span>YT ↗</span>
+                                  </a>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenUploadModal(clip);
+                                    }}
+                                    className="text-[9px] text-slate-400 hover:text-slate-200 transition-colors underline"
+                                    title="Posting ulang dengan judul atau setelan berbeda"
+                                  >
+                                    Edit
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenUploadModal(clip);
+                                  }}
+                                  disabled={isUploading}
+                                  className={`flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-bold transition-all shadow-xs ${
+                                    ytConnected
+                                      ? 'bg-gradient-to-r from-red-600/30 to-rose-600/30 hover:from-red-600/50 hover:to-rose-600/50 text-red-200 border border-red-500/40 active:scale-95'
+                                      : 'bg-slate-800/80 text-slate-400 border border-slate-700 hover:text-white'
+                                  } ${isUploading ? 'opacity-50 cursor-wait' : ''}`}
+                                  title={ytConnected ? 'Buka konfirmasi dan posting langsung ke YouTube channel' : 'Hubungkan YouTube terlebih dahulu'}
+                                >
+                                  <svg className={`h-3 w-3 ${isUploading ? 'animate-spin' : 'text-red-500 fill-current'}`} viewBox="0 0 24 24">
+                                    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                                  </svg>
+                                  <span>{isUploading ? 'Mengunggah...' : ytConnected ? 'YouTube' : 'Connect YT'}</span>
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
@@ -1828,6 +1991,25 @@ export const SimpleClipperDashboard: React.FC = () => {
                     <span className="truncate text-slate-200 font-medium">0{i+1}_{c.title}</span>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => {
+                        setShowFolderModal(false);
+                        previewRenderedClip(c);
+                      }}
+                      className="text-[10px] bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 px-2 py-0.5 rounded border border-emerald-500/30 font-semibold transition-all active:scale-95 flex items-center gap-1"
+                      title="Putar video di preview smartphone"
+                    >
+                      <PlayIcon className="h-3 w-3 text-emerald-400" />
+                      <span>Preview</span>
+                    </button>
+                    <button
+                      onClick={() => { setShowFolderModal(false); handleOpenTikTokModal(c); }}
+                      className="text-[10px] bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 px-2 py-0.5 rounded border border-cyan-500/30 font-semibold transition-all active:scale-95 flex items-center gap-1"
+                      title="Posting klip ini ke TikTok"
+                    >
+                      <span>🎵</span>
+                      <span>TikTok</span>
+                    </button>
                     {uploadedYtLinks[c.id] ? (
                       <a
                         href={uploadedYtLinks[c.id]}
@@ -1900,6 +2082,127 @@ export const SimpleClipperDashboard: React.FC = () => {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
+          TIKTOK QUICK UPLOAD ASSISTANT MODAL (SOLUSI 1)
+         ───────────────────────────────────────────────────────────── */}
+      {ttModalOpen && selectedClipForTt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-lg rounded-2xl bg-slate-900 p-6 shadow-2xl border border-slate-800 text-slate-100 flex flex-col max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/20 to-pink-500/20 text-cyan-300 border border-cyan-500/30">
+                  <svg className="h-4.5 w-4.5 fill-current text-cyan-400" viewBox="0 0 24 24">
+                    <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.89 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.35 0 .69.06 1 .17V9.45a6.34 6.34 0 0 0-1-.08 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.34-6.34V8.75a8.28 8.28 0 0 0 4.76 1.49V6.79a4.85 4.85 0 0 1-1-.1z"/>
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    Quick Post ke TikTok
+                    <span className="rounded-full bg-cyan-600/30 px-2 py-0.5 text-[9px] font-bold text-cyan-300 border border-cyan-500/30">
+                      TikTok Creator Center
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Posting video langsung ke publik tanpa ribet API atau batasan akun privat
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setTtModalOpen(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+              >
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            </div>
+
+            {/* Step-by-Step Guide Banner */}
+            <div className="rounded-xl bg-slate-950/80 border border-slate-800 p-3.5 mb-4 text-xs space-y-2">
+              <div className="font-bold text-slate-200 flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-cyan-500 text-black font-extrabold text-[10px]">1</span>
+                <span>Klik tombol di bawah untuk membuka TikTok Studio & Folder Video</span>
+              </div>
+              <div className="font-bold text-slate-200 flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-cyan-500 text-black font-extrabold text-[10px]">2</span>
+                <span>Drag file video ke browser TikTok</span>
+              </div>
+              <div className="font-bold text-slate-200 flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-cyan-500 text-black font-extrabold text-[10px]">3</span>
+                <span>Tekan <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-cyan-300 font-mono text-[10px]">Ctrl+V</kbd> / <kbd className="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-cyan-300 font-mono text-[10px]">Cmd+V</kbd> (Caption & Hashtag otomatis ter-paste)</span>
+              </div>
+            </div>
+
+            {/* Caption & Hashtag Preview Area */}
+            <div className="space-y-3 mb-4">
+              <div className="flex justify-between items-center">
+                <label className="text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                  Caption & Hashtag TikTok (Otomatis Disalin)
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(ttFormTitle);
+                    setTtCopied(true);
+                    setTimeout(() => setTtCopied(false), 2500);
+                  }}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-cyan-400 hover:text-cyan-300 transition-colors"
+                >
+                  {ttCopied ? (
+                    <>
+                      <CheckIcon className="h-3.5 w-3.5 text-emerald-400" />
+                      <span className="text-emerald-400">Tersalin ke Clipboard!</span>
+                    </>
+                  ) : (
+                    <>
+                      <DocumentDuplicateIcon className="h-3.5 w-3.5" />
+                      <span>Salin Ulang</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <textarea
+                rows={4}
+                value={ttFormTitle}
+                onChange={(e) => setTtFormTitle(e.target.value)}
+                className="w-full rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 resize-none font-medium leading-relaxed"
+                placeholder="Tulis caption dan hashtags TikTok..."
+              />
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800 gap-2">
+              <button
+                type="button"
+                onClick={handleOpenFolder}
+                className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 font-medium"
+              >
+                <FolderOpenIcon className="h-4 w-4 stroke-[2]" />
+                <span>Buka Folder Klip</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTtModalOpen(false)}
+                  className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-700 transition-colors"
+                >
+                  Tutup
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleLaunchTikTokUpload}
+                  className="flex items-center gap-2 rounded-xl px-5 py-2 text-xs font-bold text-black bg-gradient-to-r from-cyan-400 to-emerald-400 hover:from-cyan-300 hover:to-emerald-300 shadow-lg shadow-cyan-950/40 transition-all active:scale-95"
+                >
+                  <span>🚀 Salin & Buka TikTok Studio ↗</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
           YOUTUBE POSTING CONFIRMATION MODAL
          ───────────────────────────────────────────────────────────── */}
       {ytModalOpen && selectedClipForYt && (
@@ -1909,7 +2212,9 @@ export const SimpleClipperDashboard: React.FC = () => {
             <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
               <div className="flex items-center gap-2.5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-600/20 text-red-500 border border-red-500/30">
-                  <VideoCameraIcon className="h-5 w-5" />
+                  <svg className="h-5 w-5 text-red-500 fill-current" viewBox="0 0 24 24">
+                    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                  </svg>
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
@@ -2206,7 +2511,9 @@ export const SimpleClipperDashboard: React.FC = () => {
           <div className="w-full max-w-md rounded-2xl bg-slate-900 p-5 shadow-2xl border border-slate-800 text-slate-100">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
               <div className="flex items-center gap-2">
-                <VideoCameraIcon className="h-5 w-5 text-red-500" />
+                <svg className="h-5 w-5 text-red-500 fill-current" viewBox="0 0 24 24">
+                  <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+                </svg>
                 <h3 className="text-sm font-bold text-white">Status Konektivitas YouTube API</h3>
               </div>
               <button

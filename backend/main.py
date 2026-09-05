@@ -42,7 +42,7 @@ def _stop_process(process):
 def _worker_is_active():
     return current_process is not None and current_process.poll() is None
 
-@app.get("/api/video-stream")
+@app.api_route("/api/video-stream", methods=["GET", "HEAD"])
 async def video_stream(path: str = ""):
     """Stream video file for HTML5 Video Preview."""
     if not path:

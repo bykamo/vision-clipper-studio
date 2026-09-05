@@ -15,13 +15,17 @@ interface PhonePreviewProps {
   selectedPresetId: string;
   videoSource?: string;
   previewClip?: { start: number; end: number } | null;
+  clipTitle?: string;
+  isRenderedClip?: boolean;
 }
 
 export const PhonePreview: React.FC<PhonePreviewProps> = ({
   framingMode,
   selectedPresetId,
   videoSource,
-  previewClip
+  previewClip,
+  clipTitle,
+  isRenderedClip = false
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -34,6 +38,10 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const animTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Check if source is a local playable video file path
+  const isLocalFile = Boolean(videoSource && !videoSource.startsWith('http://') && !videoSource.startsWith('https://'));
+  const videoStreamUrl = isLocalFile && videoSource ? `/api/video-stream?path=${encodeURIComponent(videoSource.trim())}` : '';
+
   const triggerAnimation = (type: 'play' | 'pause') => {
     setCenterAnimation(type);
     if (animTimerRef.current) clearTimeout(animTimerRef.current);
@@ -42,9 +50,26 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     }, 600);
   };
 
-  // Auto-seek and loop within clip range when previewClip is set
+  // Auto-seek and loop within clip range when previewClip is set or when switching to rendered clip
   useEffect(() => {
-    if (previewClip && videoRef.current && videoStreamUrl) {
+    if (!videoRef.current || !videoStreamUrl) return;
+
+    if (isRenderedClip) {
+      videoRef.current.currentTime = 0;
+      videoRef.current.muted = isMuted;
+      videoRef.current.volume = 1;
+      void videoRef.current.play()
+        .then(() => setIsPlaying(true))
+        .catch(() => {
+          if (videoRef.current) {
+            videoRef.current.muted = true;
+            setIsMuted(true);
+            void videoRef.current.play()
+              .then(() => setIsPlaying(true))
+              .catch(() => setIsPlaying(false));
+          }
+        });
+    } else if (previewClip) {
       videoRef.current.currentTime = previewClip.start;
       videoRef.current.muted = isMuted;
       videoRef.current.volume = 1;
@@ -61,11 +86,12 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
           }
         });
     }
-  }, [previewClip?.start, previewClip?.end]);
+  }, [previewClip?.start, previewClip?.end, videoStreamUrl, isRenderedClip]);
 
   // Enforce clip end boundary
   const handleTimeUpdateWithClip = () => {
     handleTimeUpdate();
+    if (isRenderedClip) return;
     if (previewClip && videoRef.current) {
       if (videoRef.current.currentTime >= previewClip.end) {
         videoRef.current.currentTime = previewClip.start;
@@ -73,16 +99,14 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     }
   };
 
-  // Check if source is a local playable video file path
-  const isLocalFile = videoSource && !videoSource.startsWith('http://') && !videoSource.startsWith('https://');
-  const videoStreamUrl = isLocalFile ? `/api/video-stream?path=${encodeURIComponent(videoSource.trim())}` : '';
-
   const handleLoadedMetadata = () => {
     if (videoRef.current) {
       setDuration(videoRef.current.duration || 0);
       videoRef.current.muted = isMuted;
       videoRef.current.volume = 1;
-      if (previewClip) {
+      if (isRenderedClip) {
+        videoRef.current.currentTime = 0;
+      } else if (previewClip) {
         videoRef.current.currentTime = previewClip.start;
       }
     }
@@ -208,33 +232,52 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  const playbackProgress = duration > 0
+    ? Math.min(100, Math.max(0, (currentTime / duration) * 100))
+    : 0;
+  const remainingTime = Math.max(0, duration - currentTime);
+
   return (
     <div className="flex flex-col h-full w-full rounded-2xl bg-[#10161f] border border-[#202b3a] p-4 shadow-xl overflow-hidden">
 
       {/* ── TOP HEADER OF PREVIEW ── */}
       <div className="flex items-center justify-between mb-3 px-1">
         <div className="flex items-center gap-2">
-          <ViewfinderCircleIcon className="h-4 w-4 text-emerald-400" />
+          <ViewfinderCircleIcon className={`h-4 w-4 ${isRenderedClip ? 'text-amber-400' : 'text-emerald-400'}`} />
           <div className="flex flex-col">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-200 font-['Outfit']">VIDEO PREVIEW</h2>
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-200 font-['Outfit']">
+              {isRenderedClip ? 'OUTPUT CLIP PREVIEW' : 'VIDEO PREVIEW'}
+            </h2>
+            {clipTitle && (
+              <span className="text-[10px] text-slate-400 truncate max-w-[160px] sm:max-w-[200px]" title={clipTitle}>
+                {clipTitle}
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Safe Area button. Layout follows setting in left panel. */}
-        <div className="flex items-center">
-          <button
-            type="button"
-            onClick={() => setShowSafeArea(!showSafeArea)}
-            className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] font-medium transition-all ${
-              showSafeArea
-                ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
-                : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:text-slate-200'
-            }`}
-            title="Tampilkan Safe Area Guide (Batas ikon TikTok/Reels)"
-          >
-            <SparklesIcon className="h-3 w-3" />
-            <span>Safe Area</span>
-          </button>
+        {/* Safe Area button or Rendered Clip Badge */}
+        <div className="flex items-center gap-1.5">
+          {isRenderedClip ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 text-[10px] font-mono font-bold text-amber-400">
+              <SparklesIcon className="h-3 w-3" />
+              <span>Final Render (9:16)</span>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowSafeArea(!showSafeArea)}
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] font-medium transition-all ${
+                showSafeArea
+                  ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400'
+                  : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:text-slate-200'
+              }`}
+              title="Tampilkan Safe Area Guide (Batas ikon TikTok/Reels)"
+            >
+              <SparklesIcon className="h-3 w-3" />
+              <span>Safe Area</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -308,7 +351,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       onEnded={() => setIsPlaying(false)}
                       muted={isMuted}
                       className={`relative z-10 transition-all duration-300 ${
-                        framingMode === 'fit_blur'
+                        !isRenderedClip && framingMode === 'fit_blur'
                           ? 'w-full h-auto max-h-[220px] object-contain shadow-2xl border-y border-white/10'
                           : 'w-full h-full object-cover'
                       }`}
@@ -360,10 +403,12 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       </div>
                     )}
 
-                    {/* Subtitle floating in safe area */}
-                    <div className="absolute top-[60%] z-20 w-full px-3 flex justify-center pointer-events-none">
-                      {getSubtitleSample()}
-                    </div>
+                    {/* Subtitle floating in safe area (only shown on raw video preview, not final rendered clip) */}
+                    {!isRenderedClip && (
+                      <div className="absolute top-[60%] z-20 w-full px-3 flex justify-center pointer-events-none">
+                        {getSubtitleSample()}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   // ── EMPTY STATE GRAPHICS (NO SOURCE VIDEO SELECTED) ──
@@ -487,37 +532,33 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
       </div>
 
-      {/* ── PREVIEW TOOLBAR (BOTTOM SCRUBBER & CONTROLS) ── */}
-      <div className="mt-5 rounded-xl bg-[#0d131c] border border-[#222c3a] p-3 flex flex-col gap-2.5 shadow-lg">
-        <div className="flex items-center gap-3">
+      {/* ── iOS-INSPIRED PREVIEW TRANSPORT ── */}
+      <div className="ios-playback-controls relative mt-5 overflow-hidden rounded-[24px] border border-white/[0.11] bg-[linear-gradient(145deg,rgba(49,56,67,0.9)_0%,rgba(23,28,36,0.94)_48%,rgba(12,15,20,0.97)_100%)] p-px shadow-[0_18px_40px_rgba(0,0,0,0.38),inset_0_1px_0_rgba(255,255,255,0.12)]">
+        <div className="pointer-events-none absolute inset-x-7 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+        <div className="relative flex items-center gap-2.5 rounded-[23px] bg-black/15 px-3 py-2.5 backdrop-blur-2xl">
 
-          {/* Play/Pause Button */}
+          {/* Primary Transport */}
           <button
             type="button"
             onClick={togglePlay}
-            className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500 text-slate-950 hover:bg-emerald-400 transition-colors shadow-sm flex-shrink-0"
+            disabled={!videoStreamUrl}
+            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[linear-gradient(180deg,#34d399_0%,#10b981_58%,#059669_100%)] text-[#07130f] shadow-[0_8px_20px_rgba(16,185,129,0.34),inset_0_1px_0_rgba(255,255,255,0.38)] transition duration-200 hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-35 disabled:shadow-none"
+            aria-label={isPlaying ? 'Jeda preview' : 'Putar preview'}
+            title={isPlaying ? 'Jeda preview' : 'Putar preview'}
           >
-            {isPlaying ? <PauseIcon className="h-3.5 w-3.5" /> : <PlayIcon className="h-3.5 w-3.5 ml-0.5" />}
+            {isPlaying ? (
+              <PauseIcon className="h-[18px] w-[18px]" />
+            ) : (
+              <PlayIcon className="ml-0.5 h-[18px] w-[18px]" />
+            )}
           </button>
 
-          {/* Mute Toggle */}
-          <button
-            type="button"
-            onClick={toggleMute}
-            className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition-colors flex-shrink-0"
-            aria-label={isMuted ? 'Nyalakan suara preview' : 'Matikan suara preview'}
-            title={isMuted ? 'Nyalakan suara' : 'Matikan suara'}
-          >
-            {isMuted ? <SpeakerXMarkIcon className="h-3.5 w-3.5" /> : <SpeakerWaveIcon className="h-3.5 w-3.5" />}
-          </button>
-
-          {/* Time Counter */}
-          <span className="text-[11px] font-mono text-slate-400 tracking-tight flex-shrink-0">
-            {duration > 0 ? `${formatTime(currentTime)} / ${formatTime(duration)}` : '--:-- / --:--'}
-          </span>
-
-          {/* Timeline Track */}
-          <div className="relative flex-1 flex items-center group cursor-pointer">
+          {/* Timeline and Time Readout */}
+          <div className="min-w-0 flex-1">
+            <div className="mb-0.5 flex items-center justify-between text-[10px] font-medium tracking-[-0.01em] text-white/85 [font-variant-numeric:tabular-nums]">
+              <span>{duration > 0 ? formatTime(currentTime) : '--:--'}</span>
+              <span className="text-white/40">{duration > 0 ? `-${formatTime(remainingTime)}` : '--:--'}</span>
+            </div>
             <input
               type="range"
               min="0"
@@ -525,18 +566,36 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
               disabled={duration === 0}
               value={duration > 0 ? currentTime : 0}
               onChange={(e) => handleSeek(Number(e.target.value))}
-              className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="ios-media-scrubber block w-full disabled:cursor-not-allowed disabled:opacity-35"
+              style={{ '--ios-scrubber-progress': `${playbackProgress}%` } as React.CSSProperties}
+              aria-label="Posisi video"
             />
           </div>
 
-          {/* Speed Toggle */}
-          <button
-            type="button"
-            onClick={handleRateChange}
-            className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-[10px] font-mono text-slate-300 hover:text-white"
-          >
-            {playbackRate}x
-          </button>
+          {/* Secondary Controls */}
+          <div className="flex flex-shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={toggleMute}
+              disabled={!videoStreamUrl}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.07] text-white/75 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition duration-200 hover:bg-white/[0.13] hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-35"
+              aria-label={isMuted ? 'Nyalakan suara preview' : 'Matikan suara preview'}
+              title={isMuted ? 'Nyalakan suara' : 'Matikan suara'}
+            >
+              {isMuted ? <SpeakerXMarkIcon className="h-4 w-4" /> : <SpeakerWaveIcon className="h-4 w-4" />}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleRateChange}
+              disabled={!videoStreamUrl}
+              className="h-8 min-w-9 rounded-full border border-white/[0.08] bg-white/[0.07] px-2 text-[11px] font-semibold tracking-[-0.02em] text-white/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition duration-200 hover:bg-white/[0.13] hover:text-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-35"
+              aria-label={`Kecepatan pemutaran ${playbackRate}x`}
+              title="Ubah kecepatan pemutaran"
+            >
+              {playbackRate}x
+            </button>
+          </div>
         </div>
       </div>
 
