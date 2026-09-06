@@ -21,7 +21,14 @@ if /i not "%CONFIRM%"=="y" (
 
 echo.
 echo [1/4] Mematikan server jika masih jalan...
-for /f "tokens=5" %%a in ('netstat -aon ^| find ":5050" ^| find "LISTENING"') do taskkill /F /PID %%a >nul 2>&1
+set "PID_FILE=%USERPROFILE%\.visionclipper.pid"
+if exist "%PID_FILE%" (
+    set /p VC_PID=<"%PID_FILE%"
+    if defined VC_PID (
+        taskkill /F /PID %VC_PID% >nul 2>&1
+    )
+    del /f /q "%PID_FILE%" >nul 2>&1
+)
 
 echo [2/4] Menghapus virtual environment (.venv)...
 if exist ".venv" rmdir /s /q ".venv"

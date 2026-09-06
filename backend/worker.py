@@ -122,6 +122,7 @@ def main():
 
         max_retries = 3
         clips = []
+        last_error = None
         for attempt in range(max_retries):
             try:
                 log(f"Mencari bagian video paling viral menggunakan AI (Percobaan ke-{attempt + 1}). Estimasi waktu: ~10-25 detik...", job_id=job_id)
@@ -130,14 +131,43 @@ def main():
                 clips = data.get("clips", [])
                 if clips:
                     break
+                else:
+                    last_error = "LLM returned empty 'clips' list in JSON."
+                    log(f"Percobaan ke-{attempt + 1}: LLM merespons tapi 'clips' kosong.", job_id=job_id)
             except Exception as e:
+                last_error = str(e)
                 log(f"LLM API or JSON parsing failed on attempt {attempt + 1}: {e}", job_id=job_id)
-                if attempt == max_retries - 1:
-                    log("Warning: Failed to get valid clips from LLM after 3 attempts!", job_id=job_id)
-                    sys.exit(1)
 
-                if not clips:
-                    raise RuntimeError("LLM did not return any clip candidates.")
+            if attempt < max_retries - 1:
+                backoff_time = 2 ** attempt
+                log(f"Menunggu {backoff_time} detik sebelum mencoba ulang...", job_id=job_id)
+                time.sleep(backoff_time)
+
+        if not clips:
+            err_msg = f"Failed to get valid clips from LLM after {max_retries} attempts: {last_error}"
+            log(err_msg, job_id=job_id)
+            raise RuntimeError(err_msg)
+
+        # ── VALIDASI & BOUNDARY CLAMPING KANDIDAT KLIP ──
+        valid_clips = []
+        for raw_clip in clips:
+            try:
+                c_start = max(0.0, float(raw_clip.get("start", 0.0)))
+                c_end = float(raw_clip.get("end", 0.0))
+                if c_end <= c_start:
+                    continue
+                # Minimal durasi 5 detik agar tidak menghasilkan glitch video
+                if (c_end - c_start) < 5.0:
+                    continue
+                raw_clip["start"] = round(c_start, 2)
+                raw_clip["end"] = round(c_end, 2)
+                valid_clips.append(raw_clip)
+            except (ValueError, TypeError):
+                continue
+
+        if not valid_clips:
+            raise RuntimeError("Semua kandidat klip yang dihasilkan LLM memiliki durasi tidak valid.")
+        clips = valid_clips
 
         video_basename = os.path.splitext(os.path.basename(video_path))[0]
         safe_folder_name = "".join([c if c.isalnum() or c in [' ', '-', '_'] else '_' for c in video_basename]).strip()
@@ -181,6 +211,7 @@ def main():
                 )
             except Exception as e:
                 log(f"Failed to render clip {i}: {e}", job_id=job_id)
+                raise RuntimeError(f"Fail-fast aborted: Failed to render clip {i} ({e})")
 
         log("All done! Check your output directory.", job_id=job_id)
         if job_id:

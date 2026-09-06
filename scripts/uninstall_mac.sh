@@ -28,17 +28,16 @@ echo ""
 echo "[1/5] Memastikan server VisionClipper dimatikan..."
 PID_FILE="$HOME/.visionclipper.pid"
 if [ -f "$PID_FILE" ]; then
-    PID=$(cat "$PID_FILE")
-    if kill -0 "$PID" 2>/dev/null; then
-        kill -9 "$PID" 2>/dev/null || true
+    PID=$(cat "$PID_FILE" 2>/dev/null || true)
+    if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+        CMD=$(ps -p "$PID" -o command= 2>/dev/null || true)
+        if echo "$CMD" | grep -Eq 'vision|backend\.bg_server|backend\.main|uvicorn'; then
+            kill "$PID" 2>/dev/null || true
+            sleep 0.5
+            kill -9 "$PID" 2>/dev/null || true
+        fi
     fi
     rm -f "$PID_FILE"
-fi
-
-# Pastikan port 5050 bersih
-PIDS=$(lsof -ti :5050 2>/dev/null || true)
-if [ -n "$PIDS" ]; then
-    kill -9 $PIDS 2>/dev/null || true
 fi
 
 # 2. Hapus Shortcut CLI di ~/.local/bin

@@ -1,6 +1,8 @@
 import os
 import json
 import logging
+import secrets
+import time
 import requests
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -15,19 +17,41 @@ os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 logger = logging.getLogger("youtube_uploader")
 
 HOME_TOKEN_FILE = os.path.join(os.path.expanduser("~"), ".visionclipper_youtube_token.json")
-LOCAL_TOKEN_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".visionclipper_youtube_token.json")
-TOKEN_FILE = LOCAL_TOKEN_FILE if os.path.exists(LOCAL_TOKEN_FILE) else HOME_TOKEN_FILE
+TOKEN_FILE = HOME_TOKEN_FILE
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly"
 ]
 
+# Pending OAuth states: state -> {"created_at": timestamp, "code_verifier": optional}
+_PENDING_OAUTH_STATES = {}
+OAUTH_STATE_TTL_SECONDS = 600  # 10 minutes
+
+def _cleanup_expired_states():
+    now = time.time()
+    expired = [s for s, data in _PENDING_OAUTH_STATES.items() if now - data.get("created_at", 0) > OAUTH_STATE_TTL_SECONDS]
+    for s in expired:
+        _PENDING_OAUTH_STATES.pop(s, None)
+
+def generate_oauth_state() -> str:
+    """Generate cryptographically secure state token with expiration tracking."""
+    _cleanup_expired_states()
+    state = secrets.token_urlsafe(32)
+    _PENDING_OAUTH_STATES[state] = {"created_at": time.time()}
+    return state
+
+def verify_and_consume_oauth_state(state: str) -> bool:
+    """Validate that state is present, matching, and not expired, then remove it (single use)."""
+    if not state:
+        return False
+    _cleanup_expired_states()
+    state_info = _PENDING_OAUTH_STATES.pop(state, None)
+    if not state_info:
+        return False
+    return (time.time() - state_info.get("created_at", 0)) <= OAUTH_STATE_TTL_SECONDS
+
 def _get_active_token_file():
-    if os.path.exists(LOCAL_TOKEN_FILE):
-        return LOCAL_TOKEN_FILE
-    if os.path.exists(HOME_TOKEN_FILE):
-        return HOME_TOKEN_FILE
-    return LOCAL_TOKEN_FILE
+    return HOME_TOKEN_FILE
 
 def _load_env_if_needed():
     """Ensure .env is loaded if values are not present in os.environ."""
@@ -58,42 +82,103 @@ def get_client_config():
 
 def get_auth_url():
     config = get_client_config()
-    params = {
-        "client_id": config["client_id"],
-        "redirect_uri": config["redirect_uri"],
-        "response_type": "code",
-        "scope": " ".join(SCOPES),
-        "access_type": "offline",
-        "prompt": "consent",
-        "include_granted_scopes": "true"
+    client_config = {
+        "web": {
+            "client_id": config["client_id"],
+            "client_secret": config["client_secret"],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token"
+        }
     }
-    req = requests.Request("GET", "https://accounts.google.com/o/oauth2/auth", params=params)
-    prepared = req.prepare()
-    return prepared.url, "state_visionclipper"
+    state = generate_oauth_state()
+    try:
+        flow = Flow.from_client_config(
+            client_config,
+            scopes=SCOPES,
+            redirect_uri=config["redirect_uri"]
+        )
+        auth_url, _ = flow.authorization_url(
+            access_type="offline",
+            prompt="consent",
+            include_granted_scopes="true",
+            state=state
+        )
+        # Store code_verifier for PKCE exchange if generated
+        if hasattr(flow, "code_verifier") and flow.code_verifier:
+            _PENDING_OAUTH_STATES[state]["code_verifier"] = flow.code_verifier
+        return auth_url, state
+    except Exception as e:
+        logger.warning(f"Google Flow authorization_url fallback: {e}")
+        params = {
+            "client_id": config["client_id"],
+            "redirect_uri": config["redirect_uri"],
+            "response_type": "code",
+            "scope": " ".join(SCOPES),
+            "access_type": "offline",
+            "prompt": "consent",
+            "include_granted_scopes": "true",
+            "state": state
+        }
+        req = requests.Request("GET", "https://accounts.google.com/o/oauth2/auth", params=params)
+        prepared = req.prepare()
+        return prepared.url, state
 
-def save_credentials_from_code(code: str):
+def save_credentials_from_code(code: str, state: str = None):
+    if state is not None:
+        if not verify_and_consume_oauth_state(state):
+            raise ValueError("State OAuth tidak valid atau telah kedaluwarsa.")
     config = get_client_config()
-    token_url = "https://oauth2.googleapis.com/token"
-    data = {
-        "code": code,
-        "client_id": config["client_id"],
-        "client_secret": config["client_secret"],
-        "redirect_uri": config["redirect_uri"],
-        "grant_type": "authorization_code"
+    client_config = {
+        "web": {
+            "client_id": config["client_id"],
+            "client_secret": config["client_secret"],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token"
+        }
     }
-    res = requests.post(token_url, data=data)
-    token_json = res.json()
-    if "error" in token_json:
-        raise RuntimeError(f"Token exchange failed: {token_json.get('error_description', token_json.get('error'))}")
 
-    token_data = {
-        "token": token_json.get("access_token"),
-        "refresh_token": token_json.get("refresh_token"),
-        "token_uri": token_url,
-        "client_id": config["client_id"],
-        "client_secret": config["client_secret"],
-        "scopes": SCOPES
-    }
+    token_data = None
+    # Coba gunakan Google Flow dengan state / code_verifier jika ada
+    try:
+        flow = Flow.from_client_config(
+            client_config,
+            scopes=SCOPES,
+            redirect_uri=config["redirect_uri"]
+        )
+        # Ambil verifier jika tersimpan
+        flow.fetch_token(code=code)
+        creds = flow.credentials
+        token_data = {
+            "token": creds.token,
+            "refresh_token": creds.refresh_token,
+            "token_uri": creds.token_uri,
+            "client_id": creds.client_id,
+            "client_secret": creds.client_secret,
+            "scopes": creds.scopes
+        }
+    except Exception as e:
+        logger.warning(f"Flow.fetch_token fallback ke HTTP requests: {e}")
+        token_url = "https://oauth2.googleapis.com/token"
+        data = {
+            "code": code,
+            "client_id": config["client_id"],
+            "client_secret": config["client_secret"],
+            "redirect_uri": config["redirect_uri"],
+            "grant_type": "authorization_code"
+        }
+        res = requests.post(token_url, data=data)
+        token_json = res.json()
+        if "error" in token_json:
+            raise RuntimeError(f"Token exchange failed: {token_json.get('error_description', token_json.get('error'))}")
+
+        token_data = {
+            "token": token_json.get("access_token"),
+            "refresh_token": token_json.get("refresh_token"),
+            "token_uri": token_url,
+            "client_id": config["client_id"],
+            "client_secret": config["client_secret"],
+            "scopes": SCOPES
+        }
 
     # Jika refresh_token tidak dikembalikan (karena sudah pernah di-consent), pertahankan yang lama
     active_token_file = _get_active_token_file()
@@ -105,22 +190,19 @@ def save_credentials_from_code(code: str):
         except Exception:
             pass
 
-    # Simpan ke LOCAL_TOKEN_FILE dan HOME_TOKEN_FILE untuk redundansi
-    for path in [LOCAL_TOKEN_FILE, HOME_TOKEN_FILE]:
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(token_data, f, indent=2)
-        except Exception as e:
-            logger.debug(f"Could not save token to {path}: {e}")
+    # Simpan token secara eksklusif ke HOME_TOKEN_FILE dengan permission 0600
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        mode = 0o600
+        fd = os.open(HOME_TOKEN_FILE, flags, mode)
+        with open(fd, "w", encoding="utf-8") as f:
+            json.dump(token_data, f, indent=2)
+    except Exception as e:
+        logger.debug(f"Could not save token to {HOME_TOKEN_FILE}: {e}")
     return True
 
 def get_saved_credentials():
-    token_file = None
-    for path in [LOCAL_TOKEN_FILE, HOME_TOKEN_FILE]:
-        if os.path.exists(path):
-            token_file = path
-            break
-
+    token_file = HOME_TOKEN_FILE if os.path.exists(HOME_TOKEN_FILE) else None
     if not token_file:
         return None
 
@@ -131,12 +213,16 @@ def get_saved_credentials():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
             token_data["token"] = creds.token
-            for path in [LOCAL_TOKEN_FILE, HOME_TOKEN_FILE]:
-                try:
-                    with open(path, "w", encoding="utf-8") as f:
-                        json.dump(token_data, f, indent=2)
-                except Exception:
-                    pass
+            if creds.expiry:
+                token_data["expiry"] = creds.expiry.strftime("%Y-%m-%dT%H:%M:%SZ")
+            try:
+                flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+                mode = 0o600
+                fd = os.open(HOME_TOKEN_FILE, flags, mode)
+                with open(fd, "w", encoding="utf-8") as f:
+                    json.dump(token_data, f, indent=2)
+            except Exception:
+                pass
         return creds
     except Exception as e:
         logger.warning(f"Error loading YouTube token: {e}")
@@ -169,7 +255,7 @@ def get_channel_info():
 
 def disconnect_youtube():
     removed = False
-    for path in [LOCAL_TOKEN_FILE, HOME_TOKEN_FILE]:
+    for path in [HOME_TOKEN_FILE, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".visionclipper_youtube_token.json")]:
         if os.path.exists(path):
             try:
                 os.remove(path)

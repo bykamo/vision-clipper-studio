@@ -66,13 +66,16 @@ def _ensure_browser_compatible_audio(video_path: str, job_id=None):
     """Ensure MP4 audio stream is encoded in AAC with faststart for browser playback."""
     try:
         import subprocess
-        probe_cmd = ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name", "-of", "csv=p=0", video_path]
+        from backend.utils import get_ffmpeg_binary, get_ffprobe_binary
+        ffprobe_bin = get_ffprobe_binary()
+        ffmpeg_bin = get_ffmpeg_binary()
+        probe_cmd = [ffprobe_bin, "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name", "-of", "csv=p=0", video_path]
         res = subprocess.run(probe_cmd, capture_output=True, text=True)
         codec = res.stdout.strip().lower()
         if codec and codec != "aac":
             log(f"Mengonversi audio ({codec} -> AAC) agar suara jernih di browser preview...", job_id=job_id)
             tmp_path = video_path + ".aac_fix.mp4"
-            remux_cmd = ["ffmpeg", "-y", "-i", video_path, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", tmp_path]
+            remux_cmd = [ffmpeg_bin, "-y", "-i", video_path, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", tmp_path]
             r2 = subprocess.run(remux_cmd, capture_output=True)
             if r2.returncode == 0 and os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
                 os.replace(tmp_path, video_path)
@@ -169,7 +172,7 @@ def download_video_profesional(url: str, job_id=None) -> str:
             ydl_opts = {
                 'format': strategy['format'],
                 'merge_output_format': 'mp4',
-                'outtmpl': os.path.join(download_dir, '%(title)s.%(ext)s'),
+                'outtmpl': os.path.join(download_dir, '%(title)s [%(id)s].%(ext)s'),
                 'restrictfilenames': True,
                 'noplaylist': True,
                 'writethumbnail': False,
@@ -207,7 +210,7 @@ def download_video_profesional(url: str, job_id=None) -> str:
                 final_filename = _final_download_path(ydl, info)
 
                 width, height = _probe_video_resolution(final_filename)
-                if height != TARGET_HEIGHT:
+                if height != TARGET_HEIGHT or (width is not None and width < 1080):
                     try:
                         os.remove(final_filename)
                     except OSError:

@@ -79,18 +79,30 @@ def fetch_youtube_transcript(video_id, job_id=None):
         try:
             # Prioritize Indonesian manual transcripts
             transcript_obj = transcript_list.find_transcript(['id'])
-            transcript = transcript_obj.fetch()
+            fetched = transcript_obj.fetch()
         except Exception:
             # Fallback to generated Indonesian transcripts
             transcript_obj = transcript_list.find_generated_transcript(['id'])
-            transcript = transcript_obj.fetch()
+            fetched = transcript_obj.fetch()
             
+        raw_snippets = (
+            fetched.to_raw_data()
+            if callable(getattr(fetched, "to_raw_data", None))
+            else fetched
+        )
+
         segments = []
-        for t in transcript:
-            start = t['start']
-            end = start + t['duration']
-            text = t['text'].replace('\n', ' ')
-            
+        for t in raw_snippets:
+            if isinstance(t, dict):
+                start = float(t.get('start', 0.0))
+                duration = float(t.get('duration', 0.0))
+                text = str(t.get('text', '')).replace('\n', ' ')
+            else:
+                start = float(getattr(t, 'start', 0.0))
+                duration = float(getattr(t, 'duration', 0.0))
+                text = str(getattr(t, 'text', '')).replace('\n', ' ')
+
+            end = start + duration
             # Split segment into word-level timestamps proportionally
             segments.append({
                 "start": start,
@@ -442,9 +454,14 @@ def transcribe_video(video_path, source_url=None, model_size="groq", job_id=None
                 log(f"Gagal memuat cache transkrip: {e}, melakukan fetch ulang...", job_id=job_id)
 
     # Groq Cloud Whisper (Default & Ultra Cepat dengan Retry & Cache Lokal)
-    # Check local cache first berdasarkan nama file video
+    # Check local cache first berdasarkan composite fingerprint: path absolut, file size, & mtime
     import hashlib
-    file_hash = hashlib.md5(os.path.basename(video_path).encode("utf-8")).hexdigest()[:12]
+    norm_path = os.path.abspath(video_path)
+    file_size = os.path.getsize(norm_path) if os.path.exists(norm_path) else 0
+    file_mtime = int(os.path.getmtime(norm_path)) if os.path.exists(norm_path) else 0
+    fingerprint_raw = f"{norm_path}:{file_size}:{file_mtime}:{model_size}:id"
+    file_hash = hashlib.sha256(fingerprint_raw.encode("utf-8")).hexdigest()[:16]
+    
     from backend.utils import PROJECT_ROOT
     import json
     cache_dir = os.path.join(PROJECT_ROOT, "downloads", "transcripts")

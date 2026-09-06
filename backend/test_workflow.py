@@ -50,8 +50,46 @@ class WorkflowSelfCheck(unittest.TestCase):
         self.assertIn(("/api/render-selected", ("POST",)), routes)
 
     def test_analyze_rejects_empty_source(self):
-        response = asyncio.run(analyze(source=""))
+        mock_req = MagicMock()
+        response = asyncio.run(analyze(request=mock_req, source=""))
         self.assertEqual(response.status_code, 400)
+
+    def test_ass_escaping_and_word_filtering(self):
+        from backend.renderer import _escape_ass_text, generate_ass_subtitles
+        escaped = _escape_ass_text("Halo {teman} \\ dunia\n!")
+        self.assertNotIn("{", escaped)
+        self.assertNotIn("}", escaped)
+        self.assertNotIn("\\", escaped)
+        self.assertNotIn("\n", escaped)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ass_path = os.path.join(tmpdir, "test.ass")
+            segments = [
+                {
+                    "start": 10.0,
+                    "end": 20.0,
+                    "text": "sebelum dan sesudah",
+                    "words": [
+                        {"word": "sebelum", "start": 8.0, "end": 9.5},
+                        {"word": "dalam", "start": 11.0, "end": 12.0},
+                        {"word": "sesudah", "start": 21.0, "end": 22.0},
+                    ]
+                }
+            ]
+            generate_ass_subtitles(segments, ass_path, 10.0, 15.0)
+            self.assertTrue(os.path.exists(ass_path))
+            with open(ass_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            self.assertIn("dalam", content)
+            self.assertNotIn("sebelum", content)
+            self.assertNotIn("sesudah", content)
+
+    def test_ffmpeg_and_ffprobe_resolvers(self):
+        from backend.utils import get_ffmpeg_binary, get_ffprobe_binary
+        ffmpeg = get_ffmpeg_binary()
+        ffprobe = get_ffprobe_binary()
+        self.assertTrue(isinstance(ffmpeg, str) and len(ffmpeg) > 0)
+        self.assertTrue(isinstance(ffprobe, str) and len(ffprobe) > 0)
 
 
 if __name__ == "__main__":

@@ -3,12 +3,29 @@ import os
 import subprocess
 import time
 import signal
+import argparse
 
 PID_FILE = os.path.join(os.path.expanduser("~"), ".visionclipper.pid")
 SERVER_URL = "http://localhost:5050"
 
+def _is_vision_clipper_process(pid: int) -> bool:
+    """Verify if a given PID actually belongs to VisionClipper."""
+    try:
+        if os.name == 'nt':
+            res = subprocess.run(
+                ["wmic", "process", "where", f"ProcessId={pid}", "get", "CommandLine"],
+                capture_output=True, text=True, creationflags=0x08000000
+            )
+            return "vision" in res.stdout.lower() or "backend" in res.stdout.lower()
+        else:
+            res = subprocess.run(["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True)
+            cmd = res.stdout.lower()
+            return "vision" in cmd or "backend.bg_server" in cmd or "backend.main" in cmd or "uvicorn" in cmd
+    except Exception:
+        return False
+
 def get_running_pid():
-    """Read PID from file and check if the process is still alive."""
+    """Read PID from file and check if the process is still alive and belongs to VisionClipper."""
     if not os.path.exists(PID_FILE):
         return None
     try:
@@ -23,9 +40,9 @@ def get_running_pid():
             if str(pid) in result.stdout:
                 return pid
         else:
-            # POSIX / macOS: check if process is alive
             os.kill(pid, 0)
-            return pid
+            if _is_vision_clipper_process(pid):
+                return pid
     except (ValueError, FileNotFoundError, OSError):
         cleanup_pid_file()
         return None
@@ -193,45 +210,89 @@ def start_server():
         print("[ERROR] Server gagal start. Cek apakah port 5050 sudah dipakai.")
         cleanup_pid_file()
 
-def main():
-    if len(sys.argv) > 1 and sys.argv[1] in ("--stop", "-s", "stop"):
-        stop_server()
-    elif len(sys.argv) > 1 and sys.argv[1] in ("--status", "status"):
-        pid = get_running_pid()
-        if pid:
-            print(f"[RUNNING] VisionClipper Studio aktif (PID: {pid})")
-            print(f"          Dashboard: {SERVER_URL}")
-        elif is_server_alive():
-            print(f"[RUNNING] Server aktif di {SERVER_URL} (PID file tidak ditemukan)")
-        else:
-            print("[OFFLINE] Tidak ada server yang sedang berjalan.")
-    elif len(sys.argv) > 1 and sys.argv[1] in ("--config", "-c", "config", "configure"):
-        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        if os.name == 'nt':
-            script_path = os.path.join(project_root, "scripts", "configure_ai.bat")
-            if os.path.exists(script_path):
-                subprocess.run([script_path], shell=True)
-            else:
-                print(f"[ERROR] Script configure_ai.bat tidak ditemukan di {script_path}")
-        else:
-            script_path = os.path.join(project_root, "scripts", "configure_ai.sh")
-            if os.path.exists(script_path):
-                subprocess.run(["bash", script_path])
-            else:
-                print(f"[ERROR] Script configure_ai.sh tidak ditemukan di {script_path}")
-    elif len(sys.argv) > 1 and sys.argv[1] in ("--help", "-h", "help"):
-        print("VisionClipper Studio — AI Viral Video Clipper")
-        print()
-        print("Usage:")
-        print("  vision-clipper            Jalankan server di background & buka dashboard")
-        print("  vision-clipper install    Install dependensi & setup environment .venv")
-        print("  vision-clipper config     Atur / ganti API Key, Endpoint, dan Model AI")
-        print("  vision-clipper stop       Hentikan server yang sedang berjalan")
-        print("  vision-clipper status     Cek status server")
-        print("  vision-clipper uninstall  Hapus instalasi tools & bersihkan cache")
-        print("  vision-clipper help       Tampilkan bantuan ini")
+def run_install():
+    """Run installation and frontend build."""
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if os.name == 'nt':
+        script_path = os.path.join(project_root, "scripts", "install.bat")
+        if os.path.exists(script_path):
+            subprocess.run([script_path], shell=True)
     else:
+        script_path = os.path.join(project_root, "scripts", "install_mac.sh")
+        if os.path.exists(script_path):
+            subprocess.run(["bash", script_path, "install"])
+
+def run_uninstall():
+    """Run uninstall cleanup."""
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if os.name == 'nt':
+        script_path = os.path.join(project_root, "scripts", "uninstall_windows.bat")
+        if os.path.exists(script_path):
+            subprocess.run([script_path], shell=True)
+    else:
+        script_path = os.path.join(project_root, "scripts", "uninstall_mac.sh")
+        if os.path.exists(script_path):
+            subprocess.run(["bash", script_path])
+
+def run_config():
+    """Run interactive configuration wizard."""
+    try:
+        from backend.config_wizard import run_interactive_config
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        run_interactive_config(project_root)
+    except Exception as e:
+        print(f"[ERROR] Gagal menjalankan wizard konfigurasi: {e}")
+
+def get_status():
+    """Display running server status."""
+    pid = get_running_pid()
+    if pid:
+        print(f"[RUNNING] VisionClipper Studio aktif (PID: {pid})")
+        print(f"          Dashboard: {SERVER_URL}")
+    elif is_server_alive():
+        print(f"[RUNNING] Server aktif di {SERVER_URL} (PID file tidak ditemukan)")
+    else:
+        print("[OFFLINE] Tidak ada server yang sedang berjalan.")
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="vision-clipper",
+        description="VisionClipper Studio — AI Viral Video Clipper",
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+    subparsers = parser.add_subparsers(dest="command", help="Subcommand yang tersedia")
+
+    subparsers.add_parser("start", help="Jalankan server di background & buka dashboard")
+    subparsers.add_parser("stop", help="Hentikan server yang sedang berjalan")
+    subparsers.add_parser("status", help="Cek status server")
+    subparsers.add_parser("config", help="Atur / ganti API Key, Endpoint, dan Model AI")
+    subparsers.add_parser("install", help="Install dependensi & setup environment .venv")
+    subparsers.add_parser("uninstall", help="Hapus instalasi tools & bersihkan cache")
+
+    # Compatibility flags
+    parser.add_argument("--stop", "-s", action="store_true", help="Hentikan server")
+    parser.add_argument("--status", action="store_true", help="Cek status server")
+    parser.add_argument("--config", "-c", action="store_true", help="Konfigurasi AI")
+    parser.add_argument("--install", action="store_true", help="Instalasi dependensi")
+    parser.add_argument("--uninstall", action="store_true", help="Hapus instalasi")
+
+    # Handle bare call or flags
+    args = parser.parse_args()
+
+    if args.command == "stop" or args.stop:
+        stop_server()
+    elif args.command == "status" or args.status:
+        get_status()
+    elif args.command == "config" or args.config:
+        run_config()
+    elif args.command == "install" or args.install:
+        run_install()
+    elif args.command == "uninstall" or args.uninstall:
+        run_uninstall()
+    elif args.command == "start" or args.command is None:
         start_server()
+    else:
+        parser.print_help()
 
 if __name__ == "__main__":
     main()

@@ -2,9 +2,18 @@ import os
 import sys
 import time
 import json
+import subprocess
 import cv2
 import numpy as np
-from backend.utils import log, format_ass_timestamp, format_timestamp, run_command, get_ffmpeg_binary, TEMP_DIR
+from backend.utils import (
+    log,
+    format_ass_timestamp,
+    format_timestamp,
+    run_command,
+    get_ffmpeg_binary,
+    get_ffprobe_binary,
+    TEMP_DIR,
+)
 from moviepy import VideoFileClip
 from proglog import ProgressBarLogger
 
@@ -13,20 +22,31 @@ PROFILE_CASCADE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 YUNET_MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "face_detection_yunet_2023mar.onnx")
 YOLO_MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "yolov8n.pt")
 
+def _escape_ass_text(text: str) -> str:
+    """Escape ASS/SSA control characters and strip raw newlines."""
+    if not text:
+        return ""
+    # Replace backslash first, then curly braces to prevent style tag injection
+    sanitized = str(text).replace("\\", "＼").replace("{", "｛").replace("}", "｝")
+    sanitized = sanitized.replace("\r", " ").replace("\n", " ").strip()
+    return sanitized
+
 def _sanitize_word_timestamps(words, clip_start, clip_end, min_word_dur=0.18):
     """
     Sanitize and enforce strictly monotonic, non-overlapping timestamps.
+    Clamps word relative start and end strictly within [0.0, clip_end - clip_start].
     Prevents subtitle overlapping, flickering, and jumbled text when speaker talks fast.
     """
     cleaned = []
+    max_clip_dur = max(0.0, float(clip_end - clip_start))
     for w in words:
-        w_start = max(0.0, float(w.get("start", 0.0)) - clip_start)
-        w_end = min(clip_end - clip_start, float(w.get("end", 0.0)) - clip_start)
-        text = str(w.get("word", "")).strip()
+        w_start = max(0.0, min(max_clip_dur, float(w.get("start", 0.0)) - clip_start))
+        w_end = max(0.0, min(max_clip_dur, float(w.get("end", 0.0)) - clip_start))
+        text = _escape_ass_text(w.get("word", ""))
         if not text:
             continue
         if w_end <= w_start:
-            w_end = w_start + min_word_dur
+            w_end = min(max_clip_dur, w_start + min_word_dur)
         cleaned.append({"word": text, "start": w_start, "end": w_end})
         
     if not cleaned:
@@ -37,30 +57,37 @@ def _sanitize_word_timestamps(words, clip_start, clip_end, min_word_dur=0.18):
     # Monotonic clamping: ensure no word overlaps another
     sanitized = []
     for i, w in enumerate(cleaned):
-        s = w["start"]
-        e = max(w["end"], s + min_word_dur)
+        s = max(0.0, min(max_clip_dur, w["start"]))
+        e = max(0.0, min(max_clip_dur, max(w["end"], s + min_word_dur)))
         
         if sanitized and s < sanitized[-1]["end"]:
             s = sanitized[-1]["end"]
-            e = max(e, s + min_word_dur)
+            e = max(0.0, min(max_clip_dur, max(e, s + min_word_dur)))
             
         sanitized.append({"word": w["word"], "start": s, "end": e})
         
     return sanitized
 
-def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, title_hook=None, sub_style="tiktok_viral"):
+def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, sub_style="tiktok_viral"):
     """Generate .ass subtitle file for specified style (or skip if no_subtitle)."""
     if sub_style in ["none", "no_subtitle"]:
         return
 
-    # Collect words from segments
+    # Collect words from segments with strict word-level boundary checking
     words = []
     for seg in segments:
-        if seg["end"] < clip_start or seg["start"] > clip_end: continue
-        if "words" in seg: 
-            words.extend(seg["words"])
-        else: 
-            words.append({"word": seg["text"], "start": seg["start"], "end": seg["end"]})
+        seg_start = float(seg.get("start", 0.0))
+        seg_end = float(seg.get("end", 0.0))
+        if seg_end <= clip_start or seg_start >= clip_end:
+            continue
+        if "words" in seg and seg["words"]:
+            for w in seg["words"]:
+                w_start = float(w.get("start", 0.0))
+                w_end = float(w.get("end", 0.0))
+                if w_end > clip_start and w_start < clip_end:
+                    words.append(w)
+        else:
+            words.append({"word": seg.get("text", ""), "start": seg_start, "end": seg_end})
 
     # Sanitize timestamps to guarantee clean, non-overlapping flow
     sanitized_words = _sanitize_word_timestamps(words, clip_start, clip_end)
@@ -646,38 +673,82 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
         cap.release()
         out.release()
 
-    # Muxing Audio Asli dengan FFmpeg
-    ffmpeg_bin = get_ffmpeg_binary()
-    clip_dur = end_time - start_time
-    log("Menggabungkan audio asli ke video hasil render...", job_id=job_id)
-    
-    ffmpeg_cmd = [
-        ffmpeg_bin, "-y",
-        "-i", temp_video_path,
-        "-ss", str(start_time),
-        "-t", str(clip_dur),
-        "-i", video_path,
-        "-c:v", "libx264",
-        "-preset", "fast",
-        "-crf", "18",
-        "-pix_fmt", "yuv420p",
-        "-c:a", "aac",
-        "-b:a", "192k",
-        "-map", "0:v:0",
-        "-map", "1:a:0?",
-        "-avoid_negative_ts", "make_zero",
-        output_path
-    ]
-    run_command(ffmpeg_cmd, "Muxing final cinema video & audio...", job_id=job_id, duration=clip_dur)
-
-    if os.path.exists(temp_video_path):
-        try:
-            os.remove(temp_video_path)
-        except Exception:
-            pass
+    try:
+        # Muxing Audio Asli dengan FFmpeg
+        ffmpeg_bin = get_ffmpeg_binary()
+        clip_dur = end_time - start_time
+        log("Menggabungkan audio asli ke video hasil render...", job_id=job_id)
+        
+        ffmpeg_cmd = [
+            ffmpeg_bin, "-y",
+            "-i", temp_video_path,
+            "-ss", str(start_time),
+            "-t", str(clip_dur),
+            "-i", video_path,
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-map", "0:v:0",
+            "-map", "1:a:0?",
+            "-avoid_negative_ts", "make_zero",
+            output_path
+        ]
+        run_command(ffmpeg_cmd, "Muxing final cinema video & audio...", job_id=job_id, duration=clip_dur)
+    finally:
+        if os.path.exists(temp_video_path):
+            try:
+                os.remove(temp_video_path)
+            except Exception:
+                pass
 
     log("Cinema Clipper selesai 100% dengan mulus.", job_id=job_id)
     return output_path
+
+def _validate_rendered_video(file_path: str, min_duration: float = 0.5) -> bool:
+    """Validate that rendered file exists, non-empty, contains video stream, and has valid duration."""
+    if not os.path.exists(file_path) or os.path.getsize(file_path) <= 1024:
+        return False
+
+    ffprobe_bin = get_ffprobe_binary()
+    try:
+        # Check stream video
+        cmd_streams = [
+            ffprobe_bin, "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=codec_name,width,height",
+            "-of", "json",
+            file_path
+        ]
+        res_streams = subprocess.run(cmd_streams, capture_output=True, text=True)
+        if res_streams.returncode != 0:
+            return False
+        stream_data = json.loads(res_streams.stdout)
+        streams = stream_data.get("streams", [])
+        if not streams or not streams[0].get("codec_name"):
+            return False
+
+        # Check format duration
+        cmd_duration = [
+            ffprobe_bin, "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "csv=p=0",
+            file_path
+        ]
+        res_dur = subprocess.run(cmd_duration, capture_output=True, text=True)
+        if res_dur.returncode != 0:
+            return False
+        dur_str = res_dur.stdout.strip()
+        if not dur_str:
+            return False
+        dur = float(dur_str)
+        if dur < min_duration:
+            return False
+        return True
+    except Exception:
+        return False
 
 def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job_id=None, sub_style="tiktok_viral", framing_mode="smart_crop"):
     start = max(0.0, float(clip_info.get("start", 0.0)) - 0.2)
@@ -687,10 +758,10 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
     
     title_options = clip_info.get("title_options", [clip_info.get("title", f"clip_{index}")])
     title = title_options[0] if isinstance(title_options, list) and title_options else title_options
-    title_hook = clip_info.get("title_hook", "")
     
     safe_title = "".join(c if c.isalnum() else "_" for c in title).strip("_")
     out_file = os.path.join(out_dir, f"{index:02d}_{safe_title}.mp4")
+    part_out_file = out_file + ".part"
     temp_crop_file = os.path.join(TEMP_DIR, f"temp_crop_{index}.mp4")
     caption_file = os.path.join(out_dir, f"{index:02d}_{safe_title}.txt")
     
@@ -700,10 +771,10 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
     titles_text = "\n".join([f"- {t}" for t in title_options]) if isinstance(title_options, list) else title_options
     
     with open(caption_file, "w", encoding="utf-8") as f:
-        f.write(f"Title Options:\n{titles_text}\n\nTitle Hook (0-1s): {title_hook}\n\nCaption:\n{caption_text}\n\nHashtags:\n{hashtags_text}")
+        f.write(f"Title Options:\n{titles_text}\n\nCaption:\n{caption_text}\n\nHashtags:\n{hashtags_text}")
     
     ass_file = os.path.join(TEMP_DIR, f"temp_{index}.ass")
-    generate_ass_subtitles(segments, ass_file, start, end, title_hook=title_hook, sub_style=sub_style)
+    generate_ass_subtitles(segments, ass_file, start, end, sub_style=sub_style)
     
     escaped_ass = ass_file.replace('\\', '/').replace(':', '\\:')
     
@@ -725,6 +796,8 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
             ("libx264 (TikTok Golden)", tiktok_golden)
         ]
 
+    render_success = False
+
     try:
         if framing_mode == "fit_blur":
             log(f"Applying 16:9 Fit Blur Background for Clip {index} (Podcast/Live stream mode)...", job_id=job_id)
@@ -740,6 +813,11 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
 
         ffmpeg_bin = get_ffmpeg_binary()
         for name, codec_params in codecs_to_try:
+            if os.path.exists(part_out_file):
+                try:
+                    os.remove(part_out_file)
+                except Exception:
+                    pass
             cmd = [
                 ffmpeg_bin, "-y", 
                 "-fflags", "+genpts", 
@@ -747,10 +825,15 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
                 "-vf", vf_filter, 
                 "-af", af_filter,
                 "-avoid_negative_ts", "make_zero"
-            ] + codec_params + [out_file]
+            ] + codec_params + ["-f", "mp4", part_out_file]
             try:
                 run_command(cmd, f"Burning subtitles ({name})...", job_id=job_id, duration=duration)
-                break
+                if _validate_rendered_video(part_out_file, min_duration=max(0.3, duration * 0.7)):
+                    os.replace(part_out_file, out_file)
+                    render_success = True
+                    break
+                else:
+                    log(f"{name} produced an invalid or unreadable video file.", job_id=job_id)
             except Exception as e:
                 log(f"{name} Encoding failed: {e}. Falling back to next codec...", job_id=job_id)
             
@@ -767,21 +850,34 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
                 ffmpeg_bin, "-y", "-ss", str(start), "-t", str(end - start), "-i", video_path,
                 "-vf", vf_filter,
                 "-af", af_filter
-            ] + codec_params + [out_file]
+            ] + codec_params + ["-f", "mp4", part_out_file]
 
         for name, codec_params in codecs_to_try:
+            if os.path.exists(part_out_file):
+                try:
+                    os.remove(part_out_file)
+                except Exception:
+                    pass
             try:
                 run_command(build_fallback_cmd(codec_params), f"Fallback processing for Clip {index} ({name})...", job_id=job_id, duration=duration)
-                break
+                if _validate_rendered_video(part_out_file, min_duration=max(0.3, duration * 0.7)):
+                    os.replace(part_out_file, out_file)
+                    render_success = True
+                    break
+                else:
+                    log(f"Fallback {name} produced an invalid or unreadable video file.", job_id=job_id)
             except Exception as err:
                 log(f"Fallback {name} failed, trying next... {err}", job_id=job_id)
     
-    for tmp in [ass_file, temp_crop_file]:
+    for tmp in [ass_file, temp_crop_file, part_out_file]:
         try:
             if os.path.exists(tmp):
                 os.remove(tmp)
         except Exception as e:
             log(f"Warning: Could not remove temp file {tmp}: {e}", job_id=job_id)
+
+    if not render_success or not os.path.exists(out_file):
+        raise RuntimeError(f"All codecs failed to render clip {index} ('{title}'). Output file was not generated.")
 
     # Emit structured output marker for frontend / social integration
     clip_output_data = {

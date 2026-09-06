@@ -40,7 +40,6 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 - Segments MUST start with a strong hook (question, bold claim, or pattern interrupt) — NEVER start mid-sentence or on dead air.
 - END segments on a natural pause, complete thought, or conclusion. DO NOT cut off the speaker abruptly.
 - If possible, include the CTA/product mention within the segment. If the CTA is nearby but outside the segment, extend it.
-- The `title_hook` is a 1-3 word BOLD text shown in the first second of the video (think: "STOP BUYING THIS", "GAME CHANGER", "$9 VS $200"). It must create immediate curiosity or shock.
 - `viral_score` ranges from 0-100. Score based on: hook strength (30%), sales potential (40%), emotional impact (15%), shareability (15%).
 - `caption` must be written as a real TikTok creator would post, in a highly casual and everyday Indonesian slang/style (using lu-gue/casual colloquial Indonesian, to-the-point). Do NOT use rigid, AI-looking template phrases (avoid things like "Apakah kamu...", "Ini dia...", "Pernahkah Anda..."). Limit emojis to a maximum of 1-2. Include a strong hook sentence, value proposition, and CTA.
 - `hashtags`: Provide EXACTLY 4 to 5 HIGH-TRAFFIC, PROVEN Indonesian viral hashtags directly matching the video product and niche (e.g. ["#fyp", "#racuntiktok", "#bisnis", "#edukasi", "#trending"]). DO NOT output more than 5 hashtags.
@@ -50,12 +49,11 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 {{
   "clips": [
     {{
-      "start": 12.5,
-      "end": 45.0,
+      "start": 15.0,
+      "end": 82.5,
       "type": "affiliate|viral|hybrid",
       "title": "Short catchy title (max 60 chars)",
       "title_options": ["Title 1", "Title 2", "Title 3"],
-      "title_hook": "1-3 word bold hook text for first second",
       "reason": "Why this converts — which sales psychology triggers are present",
       "viral_score": 95,
       "sales_score": 88,
@@ -105,7 +103,6 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 - Segments MUST NOT overlap.
 - The first 2-3 seconds of each segment MUST contain a strong hook. NEVER start on dead air, filler words ("um", "so anyway"), or mid-sentence. If the hook starts slightly before your ideal segment, extend backward to capture it.
 - End segments on a punchline, conclusion, or natural pause — NOT mid-thought. It is completely fine to ignore the max_len if it means finishing a sentence properly.
-- The `title_hook` is a BOLD 1-3 word text overlay shown in the first second of the video. It must create instant curiosity or emotional reaction. Examples: "WAIT FOR IT", "HE SNAPPED", "THIS IS INSANE", "NOBODY KNOWS THIS".
 - `title_options` should provide 3 distinct angles: (1) curiosity-driven, (2) benefit-driven, (3) controversial/provocative.
 - `viral_score` ranges from 0-100. Weight: hook strength (35%), emotional intensity (25%), shareability (20%), comment potential (20%).
 - `caption` must be written as a real TikTok creator would post, in a highly casual and everyday Indonesian slang/style (using lu-gue/casual colloquial Indonesian, to-the-point). Do NOT use rigid, AI-looking template phrases (avoid things like "Apakah kamu...", "Ini dia...", "Pernahkah Anda..."). Limit emojis to a maximum of 1-2. Include a hook line, context, and CTA. Max 150 chars.
@@ -116,10 +113,9 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 {{
   "clips": [
     {{
-      "start": 12.5,
-      "end": 45.0,
+      "start": 15.0,
+      "end": 82.5,
       "title_options": ["Curiosity Title", "Benefit Title", "Controversial Title"],
-      "title_hook": "1-3 word bold text for first second",
       "reason": "Which viral triggers from the framework are present and why this will go viral",
       "viral_score": 95,
       "caption": "Hook + context + CTA + emojis (max 150 chars)",

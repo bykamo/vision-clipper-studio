@@ -57,7 +57,7 @@ TEMP_DIR = os.path.join(PROJECT_ROOT, "temp")
 os.makedirs(TEMP_DIR, exist_ok=True)
 DEFAULT_OUT_DIR = os.path.join(PROJECT_ROOT, "clips")
 
-for _pattern in ["tmp*.wav", "temp_crop_*.mp4", "temp_*.ass", "temp_sub*.vtt"]:
+for _pattern in ["tmp*.wav", "temp_crop_*.mp4", "temp_cinema_*.mp4", "temp_*.ass", "temp_sub*.vtt"]:
     for _f in glob.glob(os.path.join(TEMP_DIR, _pattern)):
         try:
             os.remove(_f)
@@ -67,16 +67,55 @@ for _pattern in ["tmp*.wav", "temp_crop_*.mp4", "temp_*.ass", "temp_sub*.vtt"]:
 VERTICAL_WIDTH = 1080
 VERTICAL_HEIGHT = 1920
 
+def _ffmpeg_has_subtitles_filter(exe_path: str) -> bool:
+    """Check if the given FFmpeg executable supports the subtitles / libass filter."""
+    if not exe_path:
+        return False
+    try:
+        import subprocess
+        res = subprocess.run([exe_path, "-filters"], capture_output=True, text=True, timeout=5)
+        for line in res.stdout.splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[1] in ("subtitles", "ass"):
+                return True
+    except Exception:
+        pass
+    return False
+
 def get_ffmpeg_binary():
-    """Mengambil path binary FFmpeg terbaik yang mendukung filter subtitle & audio."""
+    """Mengambil path binary FFmpeg terbaik yang mendukung filter subtitle & audio (libass)."""
+    # 1. Cek imageio_ffmpeg terlebih dahulu karena dijamin membawa build dengan libass lengkap
     try:
         import imageio_ffmpeg
         exe = imageio_ffmpeg.get_ffmpeg_exe()
-        if os.path.exists(exe):
+        if os.path.exists(exe) and _ffmpeg_has_subtitles_filter(exe):
             return exe
     except Exception:
         pass
+
+    # 2. Cek binary ffmpeg sistem jika mendukung filter subtitles
+    import shutil
+    sys_ffmpeg = shutil.which("ffmpeg")
+    if sys_ffmpeg and _ffmpeg_has_subtitles_filter(sys_ffmpeg):
+        return sys_ffmpeg
+
+    # 3. Fallback
+    if sys_ffmpeg:
+        return sys_ffmpeg
     return "ffmpeg"
+
+def get_ffprobe_binary():
+    """Mengambil path binary FFprobe terbaik untuk inspeksi stream dan durasi media."""
+    import shutil
+    sys_ffprobe = shutil.which("ffprobe")
+    if sys_ffprobe:
+        return sys_ffprobe
+    ffmpeg_exe = get_ffmpeg_binary()
+    if ffmpeg_exe and ffmpeg_exe != "ffmpeg":
+        probe_candidate = ffmpeg_exe.replace("ffmpeg", "ffprobe")
+        if os.path.exists(probe_candidate):
+            return probe_candidate
+    return "ffprobe"
 
 def log(message, job_id=None):
     timestamp = datetime.now().strftime("%H:%M:%S")
@@ -102,6 +141,7 @@ def run_command(cmd_list, description="", job_id=None, duration=None):
         kwargs['creationflags'] = 0x08000000
         
     import subprocess
+    from collections import deque
     process = subprocess.Popen(
         cmd_list,
         stdout=subprocess.PIPE,
@@ -111,7 +151,7 @@ def run_command(cmd_list, description="", job_id=None, duration=None):
         **kwargs
     )
     
-    output = []
+    output = deque(maxlen=200)
     import time
     import re
     start_time = time.time()

@@ -8,8 +8,12 @@ import signal
 import string
 import ctypes
 import queue
+import secrets
 import threading
 import time as _time
+import uuid
+import asyncio
+from urllib.parse import urlparse
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,8 +21,51 @@ from backend import youtube_uploader
 
 app = FastAPI()
 
-# Global to keep track of running process for cancellation
-current_process = None
+# Local CSRF / Host validation & Local Session Token
+SESSION_TOKEN = secrets.token_hex(32)
+ALLOWED_HOSTS = {
+    "localhost", "127.0.0.1", "[::1]",
+    "localhost:5050", "127.0.0.1:5050", "[::1]:5050",
+    "testserver"
+}
+
+@app.middleware("http")
+async def security_middleware(request: Request, call_next):
+    # 1. Validate Host header to protect against DNS rebinding
+    host_header = request.headers.get("host", "").strip().lower()
+    if host_header and host_header not in ALLOWED_HOSTS:
+        return JSONResponse(status_code=403, content={"error": "Forbidden: Invalid Host header"})
+
+    # 2. Validate Origin/Referer on mutating actions to mitigate localhost CSRF
+    if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+        origin = request.headers.get("origin")
+        referer = request.headers.get("referer")
+        
+        # Check Origin if present
+        if origin:
+            try:
+                parsed = urlparse(origin)
+                netloc = parsed.netloc.lower()
+                if netloc not in ALLOWED_HOSTS:
+                    return JSONResponse(status_code=403, content={"error": "Forbidden: Invalid Origin header"})
+            except Exception:
+                return JSONResponse(status_code=403, content={"error": "Forbidden: Malformed Origin header"})
+        elif referer:
+            try:
+                parsed = urlparse(referer)
+                netloc = parsed.netloc.lower()
+                if netloc not in ALLOWED_HOSTS:
+                    return JSONResponse(status_code=403, content={"error": "Forbidden: Invalid Referer header"})
+            except Exception:
+                return JSONResponse(status_code=403, content={"error": "Forbidden: Malformed Referer header"})
+
+    response = await call_next(request)
+    return response
+
+# Global synchronization and registry for worker processes
+_WORKER_LOCK = threading.Lock()
+# Structure: {"job_id": str, "process": Optional[subprocess.Popen]}
+_ACTIVE_JOB = None
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND_DIR = os.path.join(PROJECT_ROOT, "frontend")
@@ -27,20 +74,102 @@ SERVE_DIR = DIST_DIR if os.path.exists(DIST_DIR) else FRONTEND_DIR
 
 
 def _stop_process(process):
-    """Stop worker and every child renderer process."""
+    """Stop worker and every child renderer process in its process group."""
     if not process or process.poll() is not None:
         return
     try:
         if os.name == 'nt':
             subprocess.run(['taskkill', '/F', '/T', '/PID', str(process.pid)], capture_output=True)
         else:
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+            try:
+                pgid = os.getpgid(process.pid)
+                os.killpg(pgid, signal.SIGTERM)
+                _time.sleep(0.2)
+                if process.poll() is None:
+                    os.killpg(pgid, signal.SIGKILL)
+            except Exception:
+                process.kill()
     except Exception:
-        process.kill()
+        try:
+            process.kill()
+        except Exception:
+            pass
+    try:
+        process.wait(timeout=1.0)
+    except Exception:
+        pass
 
 
 def _worker_is_active():
-    return current_process is not None and current_process.poll() is None
+    with _WORKER_LOCK:
+        global _ACTIVE_JOB
+        if _ACTIVE_JOB is None:
+            return False
+        process = _ACTIVE_JOB.get("process")
+        if process is None:
+            return True  # Slot reserved, process launching
+        if process.poll() is None:
+            return True
+        _ACTIVE_JOB = None
+        return False
+
+
+def _reserve_worker_slot() -> str:
+    """Synchronously reserve worker slot before creating HTTP response."""
+    with _WORKER_LOCK:
+        global _ACTIVE_JOB
+        if _ACTIVE_JOB is not None:
+            process = _ACTIVE_JOB.get("process")
+            if process is None or process.poll() is None:
+                raise RuntimeError("A worker is already processing a request")
+        job_id = str(uuid.uuid4())
+        _ACTIVE_JOB = {"job_id": job_id, "process": None}
+        return job_id
+
+
+def _release_worker_slot(job_id: str, process=None):
+    with _WORKER_LOCK:
+        global _ACTIVE_JOB
+        if _ACTIVE_JOB and _ACTIVE_JOB.get("job_id") == job_id:
+            proc = process or _ACTIVE_JOB.get("process")
+            if proc:
+                _stop_process(proc)
+            _ACTIVE_JOB = None
+
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"}
+
+def _is_path_safe_and_allowed(target_path: str, must_exist: bool = True) -> bool:
+    """Validate that target_path does not access sensitive system folders."""
+    try:
+        real_target = os.path.realpath(os.path.abspath(target_path))
+        if must_exist and not os.path.exists(real_target):
+            return False
+
+        # Disallow sensitive directories across OS
+        forbidden_prefixes = [
+            "/etc", "/proc", "/sys", "/dev", "/var/run", "/var/log",
+            "C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)"
+        ]
+        # Sensitive home folders (.ssh, .gnupg, .config, credentials)
+        user_home = os.path.realpath(os.path.expanduser("~"))
+        sensitive_home_dirs = [
+            os.path.join(user_home, ".ssh"),
+            os.path.join(user_home, ".gnupg"),
+            os.path.join(user_home, ".aws"),
+            os.path.join(user_home, ".config", "gcloud"),
+        ]
+
+        for p in forbidden_prefixes:
+            if real_target.lower().startswith(os.path.realpath(p).lower()):
+                return False
+
+        for s in sensitive_home_dirs:
+            if real_target.lower().startswith(s.lower()):
+                return False
+
+        return True
+    except Exception:
+        return False
 
 @app.api_route("/api/video-stream", methods=["GET", "HEAD"])
 async def video_stream(path: str = ""):
@@ -57,19 +186,59 @@ async def video_stream(path: str = ""):
     else:
         path = os.path.normpath(path)
 
-    if not os.path.exists(path) or not os.path.isfile(path):
+    real_path = os.path.realpath(path)
+    if not os.path.exists(real_path) or not os.path.isfile(real_path):
         return JSONResponse(status_code=404, content={"error": f"Video file not found: {path}"})
 
-    media_type, _ = mimetypes.guess_type(path)
-    return FileResponse(path, media_type=media_type or "application/octet-stream")
+    ext = os.path.splitext(real_path)[1].lower()
+    if ext not in ALLOWED_VIDEO_EXTENSIONS:
+        return JSONResponse(status_code=403, content={"error": "File type not allowed for video streaming"})
+
+    if not _is_path_safe_and_allowed(real_path, must_exist=True):
+        return JSONResponse(status_code=403, content={"error": "Access to path is forbidden"})
+
+    media_type, _ = mimetypes.guess_type(real_path)
+    return FileResponse(real_path, media_type=media_type or "application/octet-stream")
+
+FALLBACK_HTML = """<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VisionClipper Studio — Frontend Build Diperlukan</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
+        .card { max-width: 600px; background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 32px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        h1 { color: #f59e0b; margin-top: 0; font-size: 24px; }
+        p { line-height: 1.6; color: #cbd5e1; }
+        code { background: #0f172a; padding: 3px 8px; border-radius: 6px; font-family: monospace; color: #38bdf8; border: 1px solid #1e293b; }
+        pre { background: #0f172a; padding: 14px; border-radius: 8px; overflow-x: auto; color: #38bdf8; border: 1px solid #334155; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>⚠️ Frontend Belum Dibuild</h1>
+        <p>Aplikasi VisionClipper Studio berjalan, namun berkas produksi dashboard (<code>frontend/dist</code>) belum tersedia.</p>
+        <p>Silakan build frontend dengan menjalankan perintah berikut di terminal:</p>
+        <pre>cd frontend
+npm ci && npm run build</pre>
+        <p>Setelah build selesai, muat ulang (refresh) halaman ini untuk membuka Dashboard VisionClipper Studio.</p>
+    </div>
+</body>
+</html>
+"""
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
     index_path = os.path.join(SERVE_DIR, "index.html")
     if not os.path.exists(index_path):
-        index_path = os.path.join(FRONTEND_DIR, "index.html")
+        # Do not serve raw unbundled TSX/HTML
+        return HTMLResponse(content=FALLBACK_HTML, status_code=200)
     with open(index_path, "r", encoding="utf-8") as f:
-        return f.read()
+        html_content = f.read()
+    response = HTMLResponse(content=html_content)
+    response.set_cookie(key="vc_session_token", value=SESSION_TOKEN, httponly=False, samesite="strict")
+    return response
 
 @app.get("/api/list-dir")
 async def list_dir_api(path: str = ""):
@@ -92,9 +261,11 @@ async def list_dir_api(path: str = ""):
         path = os.path.abspath(path)
 
     path = os.path.normpath(path)
-    if not os.path.exists(path):
-        path = os.path.expanduser("~")
-        path = os.path.normpath(path)
+    real_path = os.path.realpath(path)
+
+    if not os.path.exists(real_path) or not _is_path_safe_and_allowed(real_path, must_exist=True):
+        real_path = os.path.realpath(os.path.expanduser("~"))
+        path = real_path
 
     try:
         entries = os.scandir(path)
@@ -176,23 +347,27 @@ async def open_folder(request: Request):
         return JSONResponse(status_code=400, content={"error": "Path parameter is empty"})
 
     path = os.path.normpath(path)
-    if os.path.exists(path):
+    real_path = os.path.realpath(path)
+
+    if not _is_path_safe_and_allowed(real_path, must_exist=True):
+        return JSONResponse(status_code=403, content={"error": "Access to path is forbidden"})
+
+    if os.path.exists(real_path):
         try:
             if os.name == 'nt':
-                os.startfile(path)
+                os.startfile(real_path)
             elif sys.platform == 'darwin':
-                subprocess.Popen(['open', path])
+                subprocess.Popen(['open', real_path])
             else:
-                subprocess.Popen(['xdg-open', path])
+                subprocess.Popen(['xdg-open', real_path])
             return {"status": "opened"}
         except Exception as e:
             return JSONResponse(status_code=500, content={"error": str(e)})
     return JSONResponse(status_code=404, content={"error": f"Folder tidak ditemukan: {path}"})
 
 
-@app.get("/api/pick-file")
-async def pick_file():
-    """Trigger native OS file chooser dialog (Windows / macOS / Linux) and return chosen file path."""
+def _run_native_picker() -> str:
+    """Synchronous file picker logic called inside asyncio.to_thread."""
     selected_path = ""
     try:
         if sys.platform == 'darwin':
@@ -218,6 +393,16 @@ async def pick_file():
             res = subprocess.run(['zenity', '--file-selection', '--title=Pilih File Video', '--file-filter=Video Files | *.mp4 *.mkv *.mov *.webm *.avi'], capture_output=True, text=True)
             if res.returncode == 0:
                 selected_path = res.stdout.strip()
+    except Exception:
+        pass
+    return selected_path
+
+
+@app.post("/api/pick-file")
+async def pick_file():
+    """Trigger native OS file chooser dialog in threadpool and return chosen file path."""
+    try:
+        selected_path = await asyncio.to_thread(_run_native_picker)
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
@@ -225,18 +410,26 @@ async def pick_file():
 
 @app.post("/cancel")
 async def cancel():
-    global current_process
-    if current_process and current_process.poll() is None:
-        _stop_process(current_process)
-        current_process = None
-        return {"status": "cancelled"}
+    with _WORKER_LOCK:
+        global _ACTIVE_JOB
+        if _ACTIVE_JOB and _ACTIVE_JOB.get("process"):
+            proc = _ACTIVE_JOB.get("process")
+            if proc.poll() is None:
+                _stop_process(proc)
+            _ACTIVE_JOB = None
+            return {"status": "cancelled"}
+        elif _ACTIVE_JOB:
+            _ACTIVE_JOB = None
+            return {"status": "cancelled"}
     return {"status": "no_process"}
 
 @app.post("/shutdown")
 async def shutdown():
-    global current_process
-    if current_process and current_process.poll() is None:
-        _stop_process(current_process)
+    with _WORKER_LOCK:
+        global _ACTIVE_JOB
+        if _ACTIVE_JOB and _ACTIVE_JOB.get("process"):
+            _stop_process(_ACTIVE_JOB.get("process"))
+            _ACTIVE_JOB = None
     pid_file = os.path.join(os.path.expanduser("~"), ".visionclipper.pid")
     try:
         os.remove(pid_file)
@@ -246,15 +439,14 @@ async def shutdown():
     return {"status": "shutting_down"}
 
 
-# ── Helper: SSE generator from subprocess ──
-def _sse_from_process(cmd):
-    """Shared SSE generator: spawn subprocess, stream stdout line-by-line."""
-    global current_process
+# ── Helper: Async SSE generator from subprocess with disconnect detection ──
+async def _sse_from_process(cmd, job_id: str, request: Request = None):
+    """Shared async SSE generator: spawn subprocess, stream stdout line-by-line, detect client disconnect."""
     process = None
     try:
         kwargs = {}
         if os.name == 'nt':
-            kwargs['creationflags'] = 0x08000000
+            kwargs['creationflags'] = 0x08000200  # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
         else:
             kwargs['start_new_session'] = True
 
@@ -266,42 +458,52 @@ def _sse_from_process(cmd):
             cwd=os.path.dirname(FRONTEND_DIR),
             **kwargs
         )
-        current_process = process
+        with _WORKER_LOCK:
+            global _ACTIVE_JOB
+            if _ACTIVE_JOB and _ACTIVE_JOB.get("job_id") == job_id:
+                _ACTIVE_JOB["process"] = process
 
         q = queue.Queue()
 
         def read_output():
             buffer = ""
             while True:
-                byte = process.stdout.read(1)
-                if not byte:
+                try:
+                    byte = process.stdout.read(1)
+                    if not byte:
+                        break
+                    char = byte.decode('utf-8', errors='replace')
+                    if char == '\r' or char == '\n':
+                        if buffer:
+                            q.put(buffer)
+                            buffer = ""
+                    else:
+                        buffer += char
+                except Exception:
                     break
-                char = byte.decode('utf-8', errors='replace')
-                if char == '\r' or char == '\n':
-                    if buffer:
-                        q.put(buffer)
-                        buffer = ""
-                else:
-                    buffer += char
             if buffer:
                 q.put(buffer)
             q.put(None)
 
-        t = threading.Thread(target=read_output)
-        t.daemon = True
+        t = threading.Thread(target=read_output, daemon=True)
         t.start()
+
         while True:
+            # Check client disconnect periodically
+            if request and await request.is_disconnected():
+                _stop_process(process)
+                break
+
             try:
-                line = q.get(timeout=10)
+                line = q.get_nowait()
                 if line is None:
                     break
                 if line:
                     yield f"data: {line}\n\n".encode("utf-8")
             except queue.Empty:
-                yield b"data: [HEARTBEAT]\n\n"
+                await asyncio.sleep(0.1)
 
-        return_code = process.wait()
-
+        return_code = process.wait() if process else 1
         if return_code == 0:
             yield b"data: [PROCESS_COMPLETE]\n\n"
         else:
@@ -315,8 +517,7 @@ def _sse_from_process(cmd):
                 process.stdout.close()
             except Exception:
                 pass
-        if current_process is process:
-            current_process = None
+        _release_worker_slot(job_id, process)
 
 
 def _valid_analysis_id(value):
@@ -339,7 +540,7 @@ for _f in os.listdir(TEMP_ANALYSIS_DIR):
 
 
 @app.get("/api/analyze")
-async def analyze(mode: str = "", source: str = "", num_clips: str = "5", whisper_model: str = "groq"):
+async def analyze(request: Request, mode: str = "", source: str = "", num_clips: str = "5", whisper_model: str = "groq"):
     """Phase 1: Transcribe + LLM analysis only. Returns SSE stream with [ANALYSIS_RESULT] JSON."""
     if _worker_is_active():
         return JSONResponse(status_code=409, content={"error": "A worker is already processing a request"})
@@ -356,6 +557,11 @@ async def analyze(mode: str = "", source: str = "", num_clips: str = "5", whispe
     if not 1 <= clip_count <= 10:
         return JSONResponse(status_code=400, content={"error": "num_clips must be between 1 and 10"})
 
+    try:
+        job_id = _reserve_worker_slot()
+    except RuntimeError:
+        return JSONResponse(status_code=409, content={"error": "A worker is already processing a request"})
+
     analysis_id = f"analysis_{int(_time.time() * 1000)}"
 
     cmd = [
@@ -367,9 +573,9 @@ async def analyze(mode: str = "", source: str = "", num_clips: str = "5", whispe
         "--analyze-only"
     ]
 
-    def generate():
+    async def generate():
         save_failed = False
-        for chunk in _sse_from_process(cmd):
+        async for chunk in _sse_from_process(cmd, job_id=job_id, request=request):
             decoded = chunk.decode("utf-8", errors="replace")
             # Intercept analysis result: save to temp file
             if "data: [ANALYSIS_RESULT]" in decoded:
@@ -438,6 +644,11 @@ async def render_selected(request: Request):
         return JSONResponse(status_code=400, content={"error": "clip_indices are out of range"})
     indices_str = ",".join(str(index) for index in indices)
 
+    try:
+        job_id = _reserve_worker_slot()
+    except RuntimeError:
+        return JSONResponse(status_code=409, content={"error": "A worker is already processing a request"})
+
     cmd = [
         sys.executable, "-u", "-m", "backend.worker",
         "--file", video_path,
@@ -447,11 +658,21 @@ async def render_selected(request: Request):
         "--framing-mode", framing_mode
     ]
 
-    return StreamingResponse(_sse_from_process(cmd), media_type="text/event-stream")
+    return StreamingResponse(_sse_from_process(cmd, job_id=job_id, request=request), media_type="text/event-stream")
 
 
 @app.get("/stream")
-async def stream(mode: str = "", source_type: str = "", source: str = "", num_clips: str = "5", sub_style: str = "tiktok_viral", whisper_model: str = "groq", framing_mode: str = "smart_crop"):
+async def stream(request: Request, mode: str = "", source_type: str = "", source: str = "", num_clips: str = "5", sub_style: str = "tiktok_viral", whisper_model: str = "groq", framing_mode: str = "smart_crop"):
+    """Legacy streaming endpoint protected with synchronized worker slot."""
+    if _worker_is_active():
+        return JSONResponse(status_code=409, content={"error": "A worker is already processing a request"})
+    if not source.strip():
+        return JSONResponse(status_code=400, content={"error": "Source parameter is empty"})
+
+    try:
+        job_id = _reserve_worker_slot()
+    except RuntimeError:
+        return JSONResponse(status_code=409, content={"error": "A worker is already processing a request"})
 
     cmd = [
         sys.executable, "-u", "-m", "backend.worker",
@@ -463,7 +684,7 @@ async def stream(mode: str = "", source_type: str = "", source: str = "", num_cl
         "--framing-mode", framing_mode
     ]
 
-    return StreamingResponse(_sse_from_process(cmd), media_type="text/event-stream")
+    return StreamingResponse(_sse_from_process(cmd, job_id=job_id, request=request), media_type="text/event-stream")
 
 
 # ── YouTube Social Media Endpoints ──
@@ -478,12 +699,16 @@ async def youtube_auth_url():
 
 
 @app.get("/api/social/youtube/callback")
-async def youtube_callback(code: str = "", error: str = ""):
-    """Handle OAuth redirect callback from Google."""
-    if error or not code:
-        return RedirectResponse(url="/?youtube_auth=error")
+async def youtube_callback(code: str = "", state: str = "", error: str = ""):
+    """Handle OAuth redirect callback from Google with state validation."""
+    if error:
+        return RedirectResponse(url=f"/?youtube_auth=error&msg={error}")
+    if not code:
+        return RedirectResponse(url="/?youtube_auth=error&msg=missing_code")
+    if not state:
+        return RedirectResponse(url="/?youtube_auth=failed&msg=Missing+OAuth+state")
     try:
-        youtube_uploader.save_credentials_from_code(code)
+        youtube_uploader.save_credentials_from_code(code, state=state)
         return RedirectResponse(url="/?youtube_auth=success")
     except Exception as e:
         return RedirectResponse(url=f"/?youtube_auth=failed&msg={str(e)}")
@@ -508,7 +733,7 @@ async def youtube_disconnect():
 
 @app.post("/api/social/youtube/upload")
 async def youtube_upload(request: Request):
-    """Upload rendered video clip to YouTube channel."""
+    """Upload rendered video clip to YouTube channel in threadpool."""
     try:
         data = await request.json()
     except Exception:
@@ -524,7 +749,8 @@ async def youtube_upload(request: Request):
         return JSONResponse(status_code=400, content={"error": "Parameter video_path is required"})
 
     try:
-        result = youtube_uploader.upload_video_to_youtube(
+        result = await asyncio.to_thread(
+            youtube_uploader.upload_video_to_youtube,
             video_path=video_path,
             title=title,
             description=description,

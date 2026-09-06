@@ -57,7 +57,6 @@ interface ClipCandidate {
   end: number;
   duration: number;
   title_options: string[];
-  title_hook: string;
   reason: string;
   viral_score: number;
   sales_score?: number;
@@ -74,32 +73,25 @@ export const SimpleClipperDashboard: React.FC = () => {
   // Video Source State
   const [videoPathInput, setVideoPathInput] = useState<string>('');
   const [isPickingFile, setIsPickingFile] = useState<boolean>(false);
-  const browserFileInputRef = useRef<HTMLInputElement>(null);
 
   const handlePickNativeFile = async () => {
     setIsPickingFile(true);
     try {
-      const res = await fetch('/api/pick-file');
+      const res = await fetch('/api/pick-file', { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
         if (data.path) {
           setVideoPathInput(data.path);
+          showToast('File Video Terpilih', data.path, 'success');
           return;
         }
+      } else {
+        showToast('Gagal Membuka File Dialog', 'Silakan ketik atau tempel path video langsung ke input box.', 'error');
       }
     } catch {
-      // Fallback to browser file input
-      browserFileInputRef.current?.click();
+      showToast('Koneksi Error', 'Pastikan backend server VisionClipper sedang berjalan.', 'error');
     } finally {
       setIsPickingFile(false);
-    }
-  };
-
-  const handleBrowserFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      // If browser provides full path (in Electron/local) or file name
-      setVideoPathInput((file as any).path || file.name);
     }
   };
 
@@ -531,7 +523,6 @@ export const SimpleClipperDashboard: React.FC = () => {
             end: c.end,
             duration: c.duration || Math.round((c.end - c.start) * 100) / 100,
             title_options: c.title_options || [c.title || 'Untitled'],
-            title_hook: c.title_hook || '',
             reason: c.reason || '',
             viral_score: c.viral_score || 0,
             sales_score: c.sales_score,
@@ -1019,13 +1010,6 @@ export const SimpleClipperDashboard: React.FC = () => {
                 placeholder="/path/to/video.mp4 atau URL..."
                 className={`flex-1 rounded-xl border px-3 py-2 text-xs font-mono transition-all shadow-inner truncate ${themeClasses.input}`}
               />
-              <input
-                ref={browserFileInputRef}
-                type="file"
-                accept="video/*,.mp4,.mkv,.mov,.webm,.avi"
-                onChange={handleBrowserFileChange}
-                className="hidden"
-              />
               <button
                 type="button"
                 onClick={handlePickNativeFile}
@@ -1493,15 +1477,6 @@ export const SimpleClipperDashboard: React.FC = () => {
 
                         {/* Reason */}
                         <p className="text-[10px] text-slate-400 line-clamp-2 mb-2 leading-relaxed">{clip.reason}</p>
-
-                        {/* Title Hook */}
-                        {clip.title_hook && (
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="text-[9px] font-bold text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 px-1.5 py-0.5 rounded">
-                              HOOK: {clip.title_hook}
-                            </span>
-                          </div>
-                        )}
 
                         {/* Caption Preview */}
                         <p className="text-[9px] text-slate-500 italic line-clamp-1 mb-2.5">{clip.caption}</p>

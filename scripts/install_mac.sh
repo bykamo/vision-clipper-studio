@@ -39,7 +39,22 @@ source .venv/bin/activate
 pip install --upgrade pip setuptools wheel
 pip install -e .
 
-# 4. Buat file .env dan jalankan konfigurasi AI jika belum ada / belum lengkap
+# 4. Build Frontend jika belum tersedia atau source berubah
+if [ ! -d "frontend/dist" ] || [ ! -f "frontend/dist/index.html" ]; then
+    echo "[*] Memeriksa instalasi Node.js & membangun frontend..."
+    if command -v npm &> /dev/null; then
+        echo "[*] Menjalankan build frontend (npm ci && npm run build)..."
+        (cd frontend && if [ -f "package-lock.json" ]; then npm ci; else npm install; fi && npm run build)
+    else
+        echo "[!] Peringatan: npm / Node.js tidak ditemukan di sistem."
+        echo "    Frontend belum dibuild ke frontend/dist/."
+        echo "    Pasang Node.js (v18+) dan jalankan: cd frontend && npm install && npm run build"
+    fi
+else
+    echo "[✓] Frontend build (frontend/dist) sudah tersedia."
+fi
+
+# 5. Buat file .env dan jalankan konfigurasi AI jika belum ada / belum lengkap
 if [ -f "scripts/configure_ai.sh" ]; then
     chmod +x scripts/configure_ai.sh
 fi
@@ -72,7 +87,25 @@ PID_FILE="$HOME/.visionclipper.pid"
 PORT=5050
 
 is_running() {
-    lsof -i :$PORT >/dev/null 2>&1
+    if [ -f "$PID_FILE" ]; then
+        PID=$(cat "$PID_FILE" 2>/dev/null || true)
+        if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+            CMD=$(ps -p "$PID" -o command= 2>/dev/null || true)
+            if echo "$CMD" | grep -Eq 'vision|backend\.bg_server|backend\.main|uvicorn'; then
+                return 0
+            fi
+        fi
+    fi
+    return 1
+}
+
+open_url() {
+    local URL="$1"
+    if [ "$(uname -s)" = "Darwin" ]; then
+        open "$URL"
+    elif command -v xdg-open >/dev/null 2>&1; then
+        xdg-open "$URL" >/dev/null 2>&1 &
+    fi
 }
 
 case "$1" in
@@ -87,16 +120,16 @@ case "$1" in
     stop|--stop|-s)
         echo "[STOP] Menghentikan VisionClipper Studio..."
         if [ -f "$PID_FILE" ]; then
-            PID=$(cat "$PID_FILE")
-            if kill -0 "$PID" 2>/dev/null; then
-                kill "$PID" 2>/dev/null || true
+            PID=$(cat "$PID_FILE" 2>/dev/null || true)
+            if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+                CMD=$(ps -p "$PID" -o command= 2>/dev/null || true)
+                if echo "$CMD" | grep -Eq 'vision|backend\.bg_server|backend\.main|uvicorn'; then
+                    kill "$PID" 2>/dev/null || true
+                    sleep 0.5
+                    kill -9 "$PID" 2>/dev/null || true
+                fi
             fi
             rm -f "$PID_FILE"
-        fi
-        # Kill process listening on port 5050 jika masih ada
-        PIDS=$(lsof -ti :$PORT 2>/dev/null || true)
-        if [ -n "$PIDS" ]; then
-            kill -9 $PIDS 2>/dev/null || true
         fi
         echo "[DONE] VisionClipper berhasil dihentikan."
         ;;
@@ -158,7 +191,7 @@ case "$1" in
 
         if is_running; then
             echo "[INFO] VisionClipper Studio sudah berjalan di http://localhost:$PORT"
-            open "http://localhost:$PORT"
+            open_url "http://localhost:$PORT"
             exit 0
         fi
 
@@ -187,7 +220,7 @@ case "$1" in
             echo "          Dashboard: http://localhost:$PORT"
             echo "          Untuk Stop: vision-clipper stop"
             echo "======================================================="
-            open "http://localhost:$PORT"
+            open_url "http://localhost:$PORT"
         else
             echo "[ERROR] Gagal menjalankan server. Cek log di $PROJECT_DIR/server.log atau server_error.log"
             rm -f "$PID_FILE"
