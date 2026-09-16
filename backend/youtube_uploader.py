@@ -40,15 +40,21 @@ def generate_oauth_state() -> str:
     _PENDING_OAUTH_STATES[state] = {"created_at": time.time()}
     return state
 
-def verify_and_consume_oauth_state(state: str) -> bool:
-    """Validate that state is present, matching, and not expired, then remove it (single use)."""
+def _consume_oauth_state(state: str):
+    """Return the valid pending OAuth state once, then remove it."""
     if not state:
-        return False
+        return None
     _cleanup_expired_states()
     state_info = _PENDING_OAUTH_STATES.pop(state, None)
     if not state_info:
-        return False
-    return (time.time() - state_info.get("created_at", 0)) <= OAUTH_STATE_TTL_SECONDS
+        return None
+    if (time.time() - state_info.get("created_at", 0)) > OAUTH_STATE_TTL_SECONDS:
+        return None
+    return state_info
+
+def verify_and_consume_oauth_state(state: str) -> bool:
+    """Validate that state is present, matching, and not expired, then remove it (single use)."""
+    return _consume_oauth_state(state) is not None
 
 def _get_active_token_file():
     return HOME_TOKEN_FILE
@@ -124,8 +130,10 @@ def get_auth_url():
         return prepared.url, state
 
 def save_credentials_from_code(code: str, state: str = None):
+    state_info = {}
     if state is not None:
-        if not verify_and_consume_oauth_state(state):
+        state_info = _consume_oauth_state(state)
+        if not state_info:
             raise ValueError("State OAuth tidak valid atau telah kedaluwarsa.")
     config = get_client_config()
     client_config = {
@@ -145,7 +153,7 @@ def save_credentials_from_code(code: str, state: str = None):
             scopes=SCOPES,
             redirect_uri=config["redirect_uri"]
         )
-        # Ambil verifier jika tersimpan
+        flow.code_verifier = state_info.get("code_verifier")
         flow.fetch_token(code=code)
         creds = flow.credentials
         token_data = {
@@ -166,6 +174,8 @@ def save_credentials_from_code(code: str, state: str = None):
             "redirect_uri": config["redirect_uri"],
             "grant_type": "authorization_code"
         }
+        if state_info.get("code_verifier"):
+            data["code_verifier"] = state_info["code_verifier"]
         res = requests.post(token_url, data=data)
         token_json = res.json()
         if "error" in token_json:

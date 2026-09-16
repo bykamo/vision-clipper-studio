@@ -1,4 +1,6 @@
 import asyncio
+import os
+import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -71,6 +73,64 @@ class ConcurrencyAndOAuthTest(unittest.TestCase):
         res_invalid = asyncio.run(youtube_callback(code="auth_code_123", state="unregistered_fake_state"))
         self.assertEqual(res_invalid.status_code, 307)
         self.assertIn("youtube_auth=failed", res_invalid.headers.get("location", ""))
+
+    def test_youtube_oauth_exchange_reuses_pkce_verifier(self):
+        _, state = youtube_uploader.get_auth_url()
+        verifier = youtube_uploader._PENDING_OAUTH_STATES[state].get("code_verifier")
+        self.assertTrue(verifier)
+
+        class PkceCheckingFlow:
+            def __init__(self):
+                self.code_verifier = None
+                self.credentials = MagicMock(
+                    token="access-token",
+                    refresh_token="refresh-token",
+                    token_uri="https://oauth2.googleapis.com/token",
+                    client_id="client-id",
+                    client_secret="client-secret",
+                    scopes=youtube_uploader.SCOPES,
+                )
+
+            def fetch_token(self, code):
+                if self.code_verifier != verifier:
+                    raise AssertionError("PKCE verifier was not reused for token exchange")
+
+        flow = PkceCheckingFlow()
+        with tempfile.TemporaryDirectory() as tempdir:
+            token_file = os.path.join(tempdir, "youtube-token.json")
+            with patch.object(youtube_uploader, "HOME_TOKEN_FILE", token_file), \
+                 patch.object(youtube_uploader.Flow, "from_client_config", return_value=flow), \
+                 patch.object(youtube_uploader.requests, "post", side_effect=AssertionError("OAuth flow must not fall back")):
+                self.assertTrue(youtube_uploader.save_credentials_from_code("auth-code", state=state))
+
+    def test_youtube_oauth_fallback_reuses_pkce_verifier(self):
+        _, state = youtube_uploader.get_auth_url()
+        verifier = youtube_uploader._PENDING_OAUTH_STATES[state].get("code_verifier")
+        self.assertTrue(verifier)
+
+        class FailingFlow:
+            code_verifier = None
+
+            def fetch_token(self, code):
+                raise RuntimeError("simulated Flow failure")
+
+        response = MagicMock()
+        response.json.return_value = {
+            "access_token": "access-token",
+            "refresh_token": "refresh-token",
+        }
+
+        def post_token(url, data):
+            if data.get("code_verifier") != verifier:
+                raise AssertionError("PKCE verifier was not sent to the token endpoint")
+            return response
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            token_file = os.path.join(tempdir, "youtube-token.json")
+            with patch.object(youtube_uploader, "HOME_TOKEN_FILE", token_file), \
+                 patch.object(youtube_uploader.Flow, "from_client_config", return_value=FailingFlow()), \
+                 patch.object(youtube_uploader.requests, "post", side_effect=post_token):
+                self.assertTrue(youtube_uploader.save_credentials_from_code("auth-code", state=state))
 
 
 if __name__ == "__main__":
