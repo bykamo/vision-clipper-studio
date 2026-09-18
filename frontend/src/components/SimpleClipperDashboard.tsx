@@ -131,6 +131,7 @@ export const SimpleClipperDashboard: React.FC = () => {
   // YouTube Social Connection & Upload State
   const [ytConnected, setYtConnected] = useState(false);
   const [ytChannel, setYtChannel] = useState<{ title: string; customUrl?: string; thumbnail?: string; subscriberCount?: string; videoCount?: string; id?: string } | null>(null);
+  const [ytAvatarFailed, setYtAvatarFailed] = useState(false);
   const [isUploadingYt, setIsUploadingYt] = useState<string | null>(null); // clip id being uploaded
   const [uploadedYtLinks, setUploadedYtLinks] = useState<Record<string, string>>({}); // clip id -> url
 
@@ -180,6 +181,10 @@ export const SimpleClipperDashboard: React.FC = () => {
     }
   }, [logs]);
 
+  useEffect(() => {
+    setYtAvatarFailed(false);
+  }, [ytChannel?.thumbnail]);
+
   // Clean up EventSource on unmount
   useEffect(() => {
     return () => {
@@ -227,22 +232,32 @@ export const SimpleClipperDashboard: React.FC = () => {
   const [ttCopied, setTtCopied] = useState(false);
 
   useEffect(() => {
-    checkYouTubeStatus();
+    const initializeYouTube = async () => {
+      try {
+        await fetch('/api/session');
+      } catch {
+        // The status request below will surface an unavailable backend.
+      }
 
-    // Check if redirected from Google OAuth callback
-    const urlParams = new URLSearchParams(window.location.search);
-    const authStatus = urlParams.get('youtube_auth');
-    if (authStatus === 'success') {
-      const ts = new Date().toTimeString().split(' ')[0];
-      setLogs(prev => [...prev, `[${ts}] [YOUTUBE] 🎉 Akun YouTube berhasil terhubung!`]);
-      checkYouTubeStatus(true);
-      window.history.replaceState({}, document.title, window.location.pathname);
-    } else if (authStatus === 'error' || authStatus === 'failed') {
-      const ts = new Date().toTimeString().split(' ')[0];
-      const msg = urlParams.get('msg') || 'Otorisasi ditolak';
-      setLogs(prev => [...prev, `[${ts}] [YOUTUBE] ❌ Gagal menghubungkan akun YouTube: ${msg}`]);
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
+      await checkYouTubeStatus();
+
+      // Check if redirected from Google OAuth callback
+      const urlParams = new URLSearchParams(window.location.search);
+      const authStatus = urlParams.get('youtube_auth');
+      if (authStatus === 'success') {
+        const ts = new Date().toTimeString().split(' ')[0];
+        setLogs(prev => [...prev, `[${ts}] [YOUTUBE] 🎉 Akun YouTube berhasil terhubung!`]);
+        await checkYouTubeStatus(true);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      } else if (authStatus === 'error' || authStatus === 'failed') {
+        const ts = new Date().toTimeString().split(' ')[0];
+        const msg = urlParams.get('msg') || 'Otorisasi ditolak';
+        setLogs(prev => [...prev, `[${ts}] [YOUTUBE] ❌ Gagal menghubungkan akun YouTube: ${msg}`]);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    };
+
+    void initializeYouTube();
   }, []);
 
   const handleConnectYouTube = async () => {
@@ -908,8 +923,8 @@ export const SimpleClipperDashboard: React.FC = () => {
                 title="Klik untuk melihat status koneksi YouTube & channel info"
               >
                 <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                {ytChannel.thumbnail ? (
-                  <img src={ytChannel.thumbnail} alt="" className="h-4 w-4 rounded-full" />
+                {ytChannel.thumbnail && !ytAvatarFailed ? (
+                  <img src={ytChannel.thumbnail} alt="" onError={() => setYtAvatarFailed(true)} className="h-4 w-4 rounded-full object-cover" />
                 ) : (
                   <svg className="h-3.5 w-3.5 text-red-500 fill-current" viewBox="0 0 24 24">
                     <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
@@ -2195,8 +2210,8 @@ export const SimpleClipperDashboard: React.FC = () => {
             {ytChannel && (
               <div className="flex items-center justify-between rounded-xl bg-slate-950/80 border border-slate-800 p-3 mb-4">
                 <div className="flex items-center gap-3">
-                  {ytChannel.thumbnail ? (
-                    <img src={ytChannel.thumbnail} alt="" className="h-9 w-9 rounded-full border border-red-500/40 object-cover" />
+                  {ytChannel.thumbnail && !ytAvatarFailed ? (
+                    <img src={ytChannel.thumbnail} alt="" onError={() => setYtAvatarFailed(true)} className="h-9 w-9 rounded-full border border-red-500/40 object-cover" />
                   ) : (
                     <div className="h-9 w-9 rounded-full bg-red-600/20 flex items-center justify-center text-red-400 font-bold text-xs">
                       YT
@@ -2481,8 +2496,8 @@ export const SimpleClipperDashboard: React.FC = () => {
             {ytConnected && ytChannel ? (
               <div className="space-y-3.5">
                 <div className="flex items-center gap-3.5 rounded-xl bg-slate-950 p-3 border border-slate-800">
-                  {ytChannel.thumbnail ? (
-                    <img src={ytChannel.thumbnail} alt="" className="h-12 w-12 rounded-full border border-red-500/50 object-cover" />
+                  {ytChannel.thumbnail && !ytAvatarFailed ? (
+                    <img src={ytChannel.thumbnail} alt="" onError={() => setYtAvatarFailed(true)} className="h-12 w-12 rounded-full border border-red-500/50 object-cover" />
                   ) : (
                     <div className="h-12 w-12 rounded-full bg-red-600/20 text-red-400 font-bold flex items-center justify-center text-base">
                       YT

@@ -132,6 +132,29 @@ class ConcurrencyAndOAuthTest(unittest.TestCase):
                  patch.object(youtube_uploader.requests, "post", side_effect=post_token):
                 self.assertTrue(youtube_uploader.save_credentials_from_code("auth-code", state=state))
 
+    def test_channel_info_prefers_highest_available_thumbnail(self):
+        channel = MagicMock()
+        channel.channels().list().execute.return_value = {
+            "items": [{
+                "id": "UC123",
+                "snippet": {
+                    "title": "Vision Channel",
+                    "thumbnails": {
+                        "default": {"url": "https://img.youtube.com/default.jpg"},
+                        "medium": {"url": "https://img.youtube.com/medium.jpg"},
+                        "high": {"url": "https://img.youtube.com/high.jpg"},
+                    },
+                },
+                "statistics": {},
+            }],
+        }
+
+        with patch.object(youtube_uploader, "get_saved_credentials", return_value=MagicMock()), \
+             patch.object(youtube_uploader, "build", return_value=channel):
+            info = youtube_uploader.get_channel_info()
+
+        self.assertEqual(info["thumbnail"], "https://img.youtube.com/high.jpg")
+
 
 if __name__ == "__main__":
     unittest.main()

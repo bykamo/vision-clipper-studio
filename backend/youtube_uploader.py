@@ -249,11 +249,16 @@ def get_channel_info():
         if items:
             snippet = items[0]["snippet"]
             stats = items[0].get("statistics", {})
+            thumbnails = snippet.get("thumbnails", {})
+            thumbnail = next(
+                (thumbnails.get(size, {}).get("url") for size in ("high", "medium", "default") if thumbnails.get(size, {}).get("url")),
+                ""
+            )
             return {
                 "id": items[0]["id"],
                 "title": snippet.get("title", ""),
                 "customUrl": snippet.get("customUrl", ""),
-                "thumbnail": snippet.get("thumbnails", {}).get("default", {}).get("url", ""),
+                "thumbnail": thumbnail,
                 "subscriberCount": stats.get("subscriberCount", "0"),
                 "videoCount": stats.get("videoCount", "0")
             }

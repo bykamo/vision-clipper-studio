@@ -15,7 +15,7 @@ import uuid
 import asyncio
 from urllib.parse import urlparse
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from backend import youtube_uploader
 
@@ -25,9 +25,12 @@ app = FastAPI()
 SESSION_TOKEN = secrets.token_hex(32)
 ALLOWED_HOSTS = {
     "localhost", "127.0.0.1", "[::1]",
+    "localhost:3000", "127.0.0.1:3000", "[::1]:3000",
     "localhost:5050", "127.0.0.1:5050", "[::1]:5050",
     "testserver"
 }
+SESSION_EXEMPT_PATHS = {"/api/session", "/api/social/youtube/callback"}
+SESSION_PROTECTED_PATHS = {"/stream", "/cancel", "/shutdown"}
 
 @app.middleware("http")
 async def security_middleware(request: Request, call_next):
@@ -36,7 +39,15 @@ async def security_middleware(request: Request, call_next):
     if host_header and host_header not in ALLOWED_HOSTS:
         return JSONResponse(status_code=403, content={"error": "Forbidden: Invalid Host header"})
 
-    # 2. Validate Origin/Referer on mutating actions to mitigate localhost CSRF
+    # 2. Require the browser session cookie for every local API/control endpoint.
+    path = request.url.path
+    session_required = path.startswith("/api/") or path in SESSION_PROTECTED_PATHS
+    if session_required and path not in SESSION_EXEMPT_PATHS:
+        session_token = request.cookies.get("vc_session_token", "")
+        if not session_token or not secrets.compare_digest(session_token, SESSION_TOKEN):
+            return JSONResponse(status_code=403, content={"error": "Forbidden: Invalid local session"})
+
+    # 3. Validate Origin/Referer when supplied on mutating actions.
     if request.method in ("POST", "PUT", "DELETE", "PATCH"):
         origin = request.headers.get("origin")
         referer = request.headers.get("referer")
@@ -71,6 +82,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND_DIR = os.path.join(PROJECT_ROOT, "frontend")
 DIST_DIR = os.path.join(FRONTEND_DIR, "dist")
 SERVE_DIR = DIST_DIR if os.path.exists(DIST_DIR) else FRONTEND_DIR
+CLIPS_DIR = os.path.realpath(os.path.join(PROJECT_ROOT, "clips"))
 
 
 def _stop_process(process):
@@ -171,6 +183,18 @@ def _is_path_safe_and_allowed(target_path: str, must_exist: bool = True) -> bool
     except Exception:
         return False
 
+
+def _is_allowed_clip_upload(target_path: str) -> bool:
+    try:
+        real_target = os.path.realpath(os.path.abspath(target_path))
+        return (
+            os.path.isfile(real_target)
+            and os.path.splitext(real_target)[1].lower() in ALLOWED_VIDEO_EXTENSIONS
+            and os.path.commonpath([CLIPS_DIR, real_target]) == CLIPS_DIR
+        )
+    except (OSError, ValueError, TypeError):
+        return False
+
 @app.api_route("/api/video-stream", methods=["GET", "HEAD"])
 async def video_stream(path: str = ""):
     """Stream video file for HTML5 Video Preview."""
@@ -228,17 +252,31 @@ npm ci && npm run build</pre>
 </html>
 """
 
+def _set_session_cookie(response: Response):
+    response.set_cookie(
+        key="vc_session_token",
+        value=SESSION_TOKEN,
+        httponly=True,
+        samesite="strict",
+    )
+    return response
+
+
+@app.get("/api/session", status_code=204)
+async def bootstrap_session():
+    response = Response(status_code=204, headers={"Cache-Control": "no-store"})
+    return _set_session_cookie(response)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     index_path = os.path.join(SERVE_DIR, "index.html")
     if not os.path.exists(index_path):
         # Do not serve raw unbundled TSX/HTML
-        return HTMLResponse(content=FALLBACK_HTML, status_code=200)
+        return _set_session_cookie(HTMLResponse(content=FALLBACK_HTML, status_code=200))
     with open(index_path, "r", encoding="utf-8") as f:
         html_content = f.read()
-    response = HTMLResponse(content=html_content)
-    response.set_cookie(key="vc_session_token", value=SESSION_TOKEN, httponly=False, samesite="strict")
-    return response
+    return _set_session_cookie(HTMLResponse(content=html_content))
 
 @app.get("/api/list-dir")
 async def list_dir_api(path: str = ""):
@@ -747,6 +785,9 @@ async def youtube_upload(request: Request):
 
     if not video_path:
         return JSONResponse(status_code=400, content={"error": "Parameter video_path is required"})
+    if not _is_allowed_clip_upload(video_path):
+        return JSONResponse(status_code=403, content={"error": "Only rendered videos inside the clips folder may be uploaded"})
+    video_path = os.path.realpath(video_path)
 
     try:
         result = await asyncio.to_thread(

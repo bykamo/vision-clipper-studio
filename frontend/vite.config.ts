@@ -9,24 +9,20 @@ export default defineConfig({
     tailwindcss(),
   ],
   server: {
-    host: '0.0.0.0',
+    host: '127.0.0.1',
     port: 3000,
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:5050',
-        changeOrigin: true,
       },
       '/cancel': {
         target: 'http://127.0.0.1:5050',
-        changeOrigin: true,
       },
       '/shutdown': {
         target: 'http://127.0.0.1:5050',
-        changeOrigin: true,
       },
       '/stream': {
         target: 'http://127.0.0.1:5050',
-        changeOrigin: true,
       },
     },
   },
