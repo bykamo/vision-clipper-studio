@@ -31,18 +31,33 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 - Relatable "I was today years old" moments
 - Satisfying demo/unboxing energy
 
-## STRICT RULES
-- DURATION STRATEGY (CRITICAL):
-  1. Gold Standard (60 - 90 seconds): This is the primary target for TikTok Creator Rewards. Must be >60 seconds.
-  2. Mid-Form Highlights (120 - 180 seconds): Use this ONLY IF the topic is extremely engaging and cannot be cut (e.g., deep analysis, case studies, storytelling, horror/conspiracies that need atmosphere building).
-- PRIORITIZE NATURAL FLOW: You MUST ensure the segment starts and ends naturally without cutting off mid-sentence or mid-thought, even if it slightly violates the duration targets.
+## CRITICAL RULES (MUST FOLLOW STRICTLY)
+
+### 1. COMPLETE POINT & FULL CLOSURE (ABSOLUTE HIGHEST PRIORITY - NEVER CUT OFF MID-POINT):
+- **FULL NARRATIVE ARC**: Every clip MUST be 100% self-contained and deliver a full thought from start to finish: `[Hook / Problem Opening] -> [Product Solution / Core Argument] -> [Full Conclusion / Takeaway / CTA]`.
+- **NO PREMATURE CUTOFF**: NEVER end a clip while the speaker is still explaining the solution, in the middle of a sentence, or before the final conclusion is delivered. The audience must get the full payoff.
+- **NO HANGING CONJUNCTIONS**: NEVER end on connector words or incomplete clauses (e.g. "karena...", "tapi...", "dan akhirnya...", "artinya...", "jadi...", "makanya...").
+- **DURATION IS FLEXIBLE FOR COMPLETENESS**: Target duration is typically 60 - 150 seconds (up to 180 seconds for deep explanations). **NEVER sacrifice the completeness of a point just to keep the duration under 90 seconds**. A clip that cuts off mid-point has ZERO conversion value. Extend `end` until the point finishes completely.
+- **EXACT TRANSCRIPT TIMESTAMPS**:
+  * Set `start` (in seconds, e.g. 15.0) matching the start timestamp `[HH:MM:SS.mmm --> ...]` of the opening sentence.
+  * Set `end` (in seconds, e.g. 112.5) matching the end timestamp `[... --> HH:MM:SS.mmm]` of the concluding sentence.
+
+### 2. HOOK & FLOW:
+- The first 2-3 seconds MUST contain a strong hook (question, bold claim, or pattern interrupt). Never start on filler words ("um", "jadi gini") or mid-sentence.
 - Segments MUST NOT overlap.
-- Segments MUST start with a strong hook (question, bold claim, or pattern interrupt) — NEVER start mid-sentence or on dead air.
-- END segments on a natural pause, complete thought, or conclusion. DO NOT cut off the speaker abruptly.
-- If possible, include the CTA/product mention within the segment. If the CTA is nearby but outside the segment, extend it.
+- If possible, include the CTA/product mention within the segment. If the CTA is nearby, extend the segment to include it.
 - `viral_score` ranges from 0-100. Score based on: hook strength (30%), sales potential (40%), emotional impact (15%), shareability (15%).
-- `caption` must be written as a real TikTok creator would post, in a highly casual and everyday Indonesian slang/style (using lu-gue/casual colloquial Indonesian, to-the-point). Do NOT use rigid, AI-looking template phrases (avoid things like "Apakah kamu...", "Ini dia...", "Pernahkah Anda..."). Limit emojis to a maximum of 1-2. Include a strong hook sentence, value proposition, and CTA.
-- `hashtags`: Provide EXACTLY 4 to 5 HIGH-TRAFFIC, PROVEN Indonesian viral hashtags directly matching the video product and niche (e.g. ["#fyp", "#racuntiktok", "#bisnis", "#edukasi", "#trending"]). DO NOT output more than 5 hashtags.
+
+### 3. CAPTION GUIDELINES (100% HUMAN CREATOR TONE, NO AI VIBES):
+- Write like an authentic Indonesian TikTok / Reels affiliate creator. Use natural, conversational colloquial Indonesian (lu-gue/gw/lo/aja/nih/banget/kan/worth it).
+- Length: 1-2 punchy, concise sentences (max 100-120 chars). Maximum 1 emoji (e.g. 😭, 🤯, 🔥).
+- ABSOLUTE PROHIBITION - NEVER END WITH A QUESTION: Do NOT end with questions or engagement bait like "Gimana menurut kalian?", "Setuju gak?", "Pernah ngalamin?", "Coba komen di bawah!", "Ada yang relate?". The caption MUST end with a strong, definitive statement, benefit takeaway, or relatable insight.
+- FORBIDDEN BANNED AI WORDS: "Apakah kamu", "Ini dia", "Pernahkah Anda", "Yuk simak", "Tonton sampai habis", "Tahukah kamu", "Fakta menarik", "Jangan lewatkan", "Simak penjelasannya".
+- GOOD EXAMPLES:
+  * "Nyesel baru tau barang ini sekarang, beneran ngebantu banget pas kerjaan numpuk 😭"
+  * "Solusi paling masuk akal buat yang pengen rapi tanpa harus keluar modal jutaan."
+  * "Ternyata ini alasan kenapa barang murah gini bisa laku ratusan ribu pcs."
+- HASHTAGS: Provide EXACTLY 4 to 5 HIGH-TRAFFIC, targeted Indonesian viral hashtags with '#' prefix directly matching the product and niche (e.g. ["#fyp", "#racuntiktok", "#gadget", "#rekomendasi", "#trending"]). DO NOT output more than 5 hashtags.
 
 ## RESPONSE FORMAT (ONLY valid JSON, no explanation, no markdown)
 
@@ -57,8 +72,8 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
       "reason": "Why this converts — which sales psychology triggers are present",
       "viral_score": 95,
       "sales_score": 88,
-      "caption": "Hook sentence + value + CTA + emojis for TikTok caption",
-      "hashtags": ["#fyp", "#racuntiktok", "#bisnis", "#edukasi", "#trending"]
+      "caption": "Nyesel baru tau barang ini sekarang, beneran ngebantu pas kerjaan numpuk 😭",
+      "hashtags": ["#fyp", "#racuntiktok", "#gadget", "#rekomendasi", "#trending"]
     }}
   ]
 }}
@@ -95,18 +110,34 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 11. **Humor/Wit** — Genuinely funny moments (high share rate)
 12. **Quotable Moment** — One-liners people will screenshot or stitch
 
-## STRICT RULES
-- DURATION STRATEGY (CRITICAL):
-  1. Gold Standard (60 - 90 seconds): This is the primary target for TikTok Creator Rewards. Must be >60 seconds.
-  2. Mid-Form Highlights (120 - 180 seconds): Use this ONLY IF the topic is extremely engaging and cannot be cut (e.g., deep analysis, case studies, storytelling, horror/conspiracies that need atmosphere building).
-- PRIORITIZE NATURAL FLOW: You MUST ensure the segment starts and ends naturally without cutting off mid-sentence or mid-thought, even if it slightly violates the duration targets.
+## CRITICAL RULES (MUST FOLLOW STRICTLY)
+
+### 1. COMPLETE POINT & FULL CLOSURE (ABSOLUTE HIGHEST PRIORITY - NEVER CUT OFF MID-POINT):
+- **FULL NARRATIVE ARC & THOUGHT COMPLETION**: Every clip MUST be 100% self-contained and deliver a full thought from start to finish: `[Hook / Intriguing Setup] -> [Core Argument / Story / Insight] -> [Full Conclusion / Punchline / Takeaway]`.
+- **NO PREMATURE CUTOFF**: NEVER cut off while the speaker is still in the middle of making a point, explaining a concept, building up an argument, or before delivering the conclusion/takeaway. The audience must get the full payoff and context.
+- **NO HANGING CONJUNCTIONS**: NEVER end on connector words or incomplete thoughts (e.g. "karena...", "tapi...", "dan setelah itu...", "artinya...", "jadi kesimpulannya...", "sehingga...").
+- **DURATION IS FLEXIBLE FOR COMPLETENESS**: Target duration is typically 60 - 150 seconds (up to 180 seconds for deep analysis, case studies, or storytelling). **NEVER sacrifice the completeness of a point just to keep duration under 90 seconds**. It is 100x better to have a 110s or 140s clip where the point is 100% complete and understandable, than an 80s clip that cuts off abruptly.
+- **EXACT TRANSCRIPT TIMESTAMPS**:
+  * Set `start` (in seconds as float, e.g. 15.0) matching the start timestamp `[HH:MM:SS.mmm --> ...]` of the opening line.
+  * Set `end` (in seconds as float, e.g. 125.4) matching the end timestamp `[... --> HH:MM:SS.mmm]` of the concluding sentence.
+
+### 2. HOOK & FLOW:
+- The first 2-3 seconds of each segment MUST contain a strong hook. NEVER start on dead air, filler words ("um", "so anyway", "jadi begini"), or mid-sentence. If the hook starts slightly before your ideal segment, extend backward to capture it cleanly.
 - Segments MUST NOT overlap.
-- The first 2-3 seconds of each segment MUST contain a strong hook. NEVER start on dead air, filler words ("um", "so anyway"), or mid-sentence. If the hook starts slightly before your ideal segment, extend backward to capture it.
-- End segments on a punchline, conclusion, or natural pause — NOT mid-thought. It is completely fine to ignore the max_len if it means finishing a sentence properly.
 - `title_options` should provide 3 distinct angles: (1) curiosity-driven, (2) benefit-driven, (3) controversial/provocative.
 - `viral_score` ranges from 0-100. Weight: hook strength (35%), emotional intensity (25%), shareability (20%), comment potential (20%).
-- `caption` must be written as a real TikTok creator would post, in a highly casual and everyday Indonesian slang/style (using lu-gue/casual colloquial Indonesian, to-the-point). Do NOT use rigid, AI-looking template phrases (avoid things like "Apakah kamu...", "Ini dia...", "Pernahkah Anda..."). Limit emojis to a maximum of 1-2. Include a hook line, context, and CTA. Max 150 chars.
-- `hashtags`: Provide EXACTLY 4 to 5 HIGH-TRAFFIC, PROVEN Indonesian viral hashtags directly matching the video topic (e.g. ["#fyp", "#beranda", "#bisnis", "#mindset", "#motivasi"]). DO NOT output more than 5 hashtags.
+
+### 3. CAPTION GUIDELINES (100% HUMAN CREATOR TONE, NO AI VIBES):
+- Write like an authentic Indonesian podcast/video clipper posting on TikTok, Shorts, or Instagram Reels. Use natural, everyday colloquial Indonesian (lu-gue/gw/lo/aja/nih/banget/kan/parah/asli).
+- Length: 1-2 punchy, concise sentences (max 100-120 chars). Maximum 1 subtle emoji (e.g. 🗿, 💀, 🤯, 🔥) or no emoji.
+- ABSOLUTE PROHIBITION - NEVER END WITH A QUESTION: Do NOT end with questions or engagement bait like "Gimana menurut kalian?", "Setuju gak?", "Pernah ngalamin hal serupa?", "Kalian tim mana nih?", "Coba komen di bawah!", "Ada yang ngerasa gini juga?". The caption MUST end with a strong, definitive statement, hard-hitting observation, or brutal truth takeaway.
+- FORBIDDEN BANNED AI WORDS: "Apakah kamu", "Ini dia", "Pernahkah Anda", "Yuk simak", "Tonton sampai habis", "Tahukah kamu", "Fakta menariknya", "Simak baik-baik", "Mari kita bahas", "Jangan lewatkan".
+- GOOD EXAMPLES:
+  * "Realita pahit kenapa kerja keras doang gak bakal bikin lu kaya kalau polanya salah 🗿"
+  * "Mindset kayak gini yang bikin banyak orang stuck bertahun-tahun tanpa sadar."
+  * "Alasan kenapa orang yang beneran kompeten justru jarang banyak omong di publik."
+  * "Ternyata ini penyebab utama kenapa generasi sekarang gampang banget burnout."
+- HASHTAGS: Provide EXACTLY 4 to 5 HIGH-TRAFFIC, targeted Indonesian viral hashtags with '#' prefix directly matching the video topic (e.g. ["#fyp", "#mindset", "#bisnis", "#edukasi", "#beranda"]). DO NOT output more than 5 hashtags.
 
 ## RESPONSE FORMAT (ONLY valid JSON, no explanation, no markdown)
 
@@ -118,8 +149,8 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
       "title_options": ["Curiosity Title", "Benefit Title", "Controversial Title"],
       "reason": "Which viral triggers from the framework are present and why this will go viral",
       "viral_score": 95,
-      "caption": "Hook + context + CTA + emojis (max 150 chars)",
-      "hashtags": ["#fyp", "#beranda", "#bisnis", "#mindset", "#motivasi"]
+      "caption": "Realita pahit kenapa kerja keras doang gak bakal bikin lu kaya kalau polanya salah 🗿",
+      "hashtags": ["#fyp", "#mindset", "#bisnis", "#edukasi", "#beranda"]
     }}
   ]
 }}
@@ -137,23 +168,66 @@ def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None):
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    payload = {
-        "model": model_name,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False,
-        "temperature": 0.7,
-    }
+    candidate_models = [model_name]
+    fallback_pool = ["groq/openai/gpt-oss-120b", "gh/gpt-4o-mini", "gh/gpt-4o"]
+    for fb in fallback_pool:
+        if fb not in candidate_models:
+            candidate_models.append(fb)
 
-    log(f"Sending transcript to '{model_name}' via {endpoint} for analysis...", job_id=job_id)
-    response = requests.post(endpoint, json=payload, headers=headers, timeout=600)
-    response.raise_for_status()
-    data = response.json()
+    last_error = None
+    for m in candidate_models:
+        payload = {
+            "model": m,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            "temperature": 0.7,
+        }
 
-    try:
-        return data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError):
-        log("Unexpected response shape from LLM endpoint: " + json.dumps(data)[:500], job_id=job_id)
-        return ""
+        log(f"Sending transcript to '{m}' via {endpoint} for analysis...", job_id=job_id)
+        try:
+            response = requests.post(endpoint, json=payload, headers=headers, timeout=600)
+            if response.status_code != 200:
+                err_msg = ""
+                try:
+                    err_json = response.json()
+                    err_msg = err_json.get("error", {}).get("message", "") or json.dumps(err_json)
+                except Exception:
+                    err_msg = response.text[:500]
+                log(f"LLM API Error with '{m}' [{response.status_code}]: {err_msg}", job_id=job_id)
+                response.raise_for_status()
+
+            # Handle standard JSON or SSE chunked formats
+            resp_text = response.text.strip()
+            if resp_text.startswith("data:"):
+                collected = []
+                for line in resp_text.splitlines():
+                    line = line.strip()
+                    if line.startswith("data:") and not line.endswith("[DONE]"):
+                        raw = line[5:].strip()
+                        try:
+                            chunk = json.loads(raw)
+                            delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                            if delta:
+                                collected.append(delta)
+                        except Exception:
+                            pass
+                if collected:
+                    return "".join(collected)
+
+            data = response.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            if content and content.strip():
+                return content
+            log(f"Unexpected response shape from LLM endpoint with '{m}': {json.dumps(data)[:500]}", job_id=job_id)
+        except Exception as e:
+            last_error = e
+            if m != candidate_models[-1]:
+                log(f"Model '{m}' gagal ({e}), otomatis beralih ke model fallback berikutnya...", job_id=job_id)
+            continue
+
+    if last_error:
+        raise last_error
+    return ""
 
 def extract_json_block(raw_text, job_id=None):
     text = raw_text.strip()

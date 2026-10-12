@@ -89,10 +89,18 @@ scripts\install.bat
 
 ---
 
-## 🤖 Konfigurasi AI (Interactive Wizard)
+## 🤖 Konfigurasi AI & Model
 
-Anda bisa mengatur atau mengganti Provider AI, Model LLM, dan API Key kapan saja lewat CLI interaktif tanpa perlu edit file `.env` manual:
+Anda dapat mengatur atau mengganti Provider AI, Model LLM, dan API Key kapan saja melalui dua cara:
 
+### 1. Langsung dari Web Dashboard (Paling Mudah)
+* Buka dashboard Studio (`http://localhost:5050`).
+* Klik ikon **⚙️ Setup AI / Pengaturan AI** di header atas (atau klik banner jika belum dikonfigurasi).
+* Pilih provider siap pakai (**OpenRouter**, **OpenAI**, **Groq**, **DeepSeek**, atau **Custom Endpoint / Ollama / 9Router**).
+* Klik tombol **Uji Koneksi AI** untuk memastikan respon model bekerja.
+* Klik **Simpan & Sambungkan ke Engine** — konfigurasi langsung aktif secara instan tanpa perlu restart server!
+
+### 2. Melalui Terminal / CLI Interaktif
 ```bash
 vision-clipper config
 ```
@@ -100,7 +108,9 @@ vision-clipper config
 Tersedia preset siap pakai untuk:
 1. **OpenRouter** (Rekomendasi - model gratis `google/gemini-2.0-flash-exp:free` / Claude / Llama)
 2. **OpenAI Resmi** (`gpt-4o`, `gpt-4o-mini`)
-3. **Custom Endpoint** (9Router, Groq, DeepSeek, Local Ollama, dll)
+3. **Groq LLM** (`llama-3.3-70b-versatile`)
+4. **DeepSeek** (`deepseek-chat`, `deepseek-reasoner`)
+5. **Custom Endpoint** (Local Ollama, 9Router, vLLM, dll)
 
 ---
 
@@ -161,6 +171,17 @@ Mode utama — AI menganalisa transkrip video, menemukan momen-momen *hook* pali
 
 ### 🛒 Affiliate Clipper
 Mode alternatif — Dioptimalkan untuk konten *affiliate/review*, memotong segmen pembahasan produk dan *call-to-action (CTA)* secara otomatis.
+
+### 📂 Posting Ulang Hasil Render Lama
+
+Klip yang sudah dirender sebelumnya dapat dibuka kembali langsung menggunakan dialog folder bawaan OS (Finder / File Explorer):
+
+1. Pada bagian **Video Source**, klik tombol folder hijau (Folder Explorer bawaan OS). Dialog bawaan akan langsung mengarah ke folder `clips/`.
+2. Pilih satu subfolder proyek render (misalnya: `clips/Judul_Video_...`) lalu klik **Pilih / Choose**.
+3. Dashboard akan langsung masuk ke mode **Output Clips / Complete** dan memutar klip pertama di phone preview.
+4. Anda dapat langsung mengklik tombol **YouTube** untuk posting langsung, **TikTok** untuk copy caption + buka TikTok Studio, atau **Preview** untuk memutar klip lain tanpa perlu render ulang.
+
+> **Catatan**: Tombol kamera video di sebelahnya digunakan untuk memilih file video baru untuk proses clipping normal. Jika Anda memilih file video `.mp4` yang berada di dalam subfolder `clips/`, sistem juga akan otomatis mendeteksi dan memuat seluruh klip proyek tersebut. Metadata judul, caption, dan hashtag dibaca otomatis dari file `.txt` pasangan video jika tersedia.
 
 ---
 

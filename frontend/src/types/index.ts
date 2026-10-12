@@ -1,4 +1,4 @@
-export type FramingMode = 'smart_crop' | 'fit_blur';
+export type FramingMode = 'smart_crop' | 'fit_blur' | 'split_screen';
 
 export type SubtitleAnimation = 
   | 'word_pop' 

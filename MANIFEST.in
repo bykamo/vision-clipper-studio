@@ -1,4 +1,5 @@
 recursive-include frontend *
+recursive-include backend/fonts *
 include backend/*.onnx
 include backend/*.xml
 include backend/*.pt

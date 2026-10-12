@@ -11,12 +11,17 @@ import {
 } from '@heroicons/react/24/solid';
 
 interface PhonePreviewProps {
-  framingMode: 'smart_crop' | 'fit_blur';
+  framingMode: 'smart_crop' | 'fit_blur' | 'split_screen';
   selectedPresetId: string;
   videoSource?: string;
   previewClip?: { start: number; end: number } | null;
   clipTitle?: string;
   isRenderedClip?: boolean;
+  subPosition?: number;
+  showEmoji?: boolean;
+  watermarkEnabled?: boolean;
+  sourceWatermark?: string;
+  accountWatermark?: string;
 }
 
 export const PhonePreview: React.FC<PhonePreviewProps> = ({
@@ -25,7 +30,12 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   videoSource,
   previewClip,
   clipTitle,
-  isRenderedClip = false
+  isRenderedClip = false,
+  subPosition = 68,
+  showEmoji = true,
+  watermarkEnabled = true,
+  sourceWatermark = '',
+  accountWatermark = ''
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -219,7 +229,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
             <span className="text-yellow-400 bg-black/90 px-2 py-0.5 rounded font-black scale-105 inline-block drop-shadow-[0_3px_6px_rgba(0,0,0,0.9)] border border-yellow-400/40 text-base">
               SUBTITLE
             </span>
-            <span className="text-white drop-shadow-[0_2px_4px_rgba(0,0,0,1)] text-base">&nbsp;✨</span>
+            {showEmoji && <span className="text-white drop-shadow-[0_2px_4px_rgba(0,0,0,1)] text-base">&nbsp;✨</span>}
           </div>
         );
     }
@@ -364,14 +374,55 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
                     {/* Subtitle floating in safe area (only shown on raw video preview, not final rendered clip) */}
                     {!isRenderedClip && (
-                      <div className="absolute top-[60%] z-20 w-full px-3 flex justify-center pointer-events-none">
+                      <div
+                        className="absolute z-20 w-full px-3 flex justify-center pointer-events-none transition-all duration-200"
+                        style={{ top: `${subPosition}%` }}
+                      >
                         {getSubtitleSample()}
                       </div>
                     )}
                   </div>
                 ) : (
                   // ── EMPTY STATE GRAPHICS (NO SOURCE VIDEO SELECTED) ──
-                  framingMode === 'fit_blur' ? (
+                  framingMode === 'split_screen' ? (
+                    // Dual Stack 50:50 (Podcast Host Atas / Guest Bawah)
+                    <div className="relative w-full h-full flex flex-col items-center justify-between bg-slate-950 overflow-hidden select-none">
+                      {/* Top Window: Host (50%) */}
+                      <div className="relative w-full h-1/2 bg-gradient-to-b from-[#0c1524] to-[#070b12] flex flex-col items-center justify-center border-b-2 border-neutral-800/80 overflow-hidden">
+                        <div className="absolute top-2 left-2 flex items-center gap-1 bg-black/60 backdrop-blur-xs px-1.5 py-0.5 rounded border border-cyan-500/30 z-10">
+                          <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                          <span className="text-[7.5px] font-bold text-cyan-300 font-mono">HOST (Top 50%)</span>
+                        </div>
+                        <div className="h-14 w-14 rounded-2xl bg-gradient-to-tr from-cyan-950 to-cyan-800 border border-cyan-400/40 flex items-center justify-center shadow-lg">
+                          <UserIcon className="h-9 w-9 text-cyan-300" />
+                        </div>
+                        <span className="text-[8px] font-mono text-cyan-300 font-bold mt-1">Host Anchor (Left)</span>
+                      </div>
+
+                      {/* Center Divider Line */}
+                      <div className="w-full h-1 bg-gradient-to-r from-cyan-500/40 via-amber-400/60 to-cyan-500/40 shadow-sm z-10" />
+
+                      {/* Bottom Window: Guest (50%) */}
+                      <div className="relative w-full h-1/2 bg-gradient-to-b from-[#070b12] to-[#120d1c] flex flex-col items-center justify-center overflow-hidden">
+                        <div className="absolute top-2 left-2 flex items-center gap-1 bg-black/60 backdrop-blur-xs px-1.5 py-0.5 rounded border border-amber-500/30 z-10">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+                          <span className="text-[7.5px] font-bold text-amber-300 font-mono">GUEST (Bottom 50%)</span>
+                        </div>
+                        <div className="h-14 w-14 rounded-2xl bg-gradient-to-tr from-amber-950 to-amber-800 border border-amber-400/40 flex items-center justify-center shadow-lg">
+                          <UserIcon className="h-9 w-9 text-amber-300" />
+                        </div>
+                        <span className="text-[8px] font-mono text-amber-300 font-bold mt-1">Guest Anchor (Right)</span>
+                      </div>
+
+                      {/* Subtitle floating in safe area */}
+                      <div
+                        className="absolute z-20 w-full px-3 flex justify-center pointer-events-none transition-all duration-200"
+                        style={{ top: `${subPosition}%` }}
+                      >
+                        {getSubtitleSample()}
+                      </div>
+                    </div>
+                  ) : framingMode === 'fit_blur' ? (
                     // 16:9 Fit with Blur Backdrop inside 9:16 iPhone screen
                     <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
                       {/* Dynamic Studio Gradient Blur Backdrop */}
@@ -422,7 +473,10 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       </div>
 
                       {/* Subtitle floating below 16:9 frame */}
-                      <div className="absolute top-[60%] z-20 w-full px-3 flex justify-center">
+                      <div
+                        className="absolute z-20 w-full px-3 flex justify-center pointer-events-none transition-all duration-200"
+                        style={{ top: `${subPosition}%` }}
+                      >
                         {getSubtitleSample()}
                       </div>
                     </div>
@@ -461,11 +515,35 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       </div>
 
                       {/* Subtitle Floating Center-Bottom */}
-                      <div className="absolute top-[60%] z-20 w-full px-3 flex justify-center">
+                      <div
+                        className="absolute z-20 w-full px-3 flex justify-center pointer-events-none transition-all duration-200"
+                        style={{ top: `${subPosition}%` }}
+                      >
                         {getSubtitleSample()}
                       </div>
                     </div>
                   )
+                )}
+
+                {/* ── LIVE GLASS WATERMARK BADGES (Top Safe Zone) ── */}
+                {watermarkEnabled && !isRenderedClip && (sourceWatermark || accountWatermark) && (
+                  <div className="absolute top-5 inset-x-3.5 flex items-center justify-between pointer-events-none z-30">
+                    {sourceWatermark ? (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#121418]/70 backdrop-blur-md border border-white/15 shadow-[0_4px_12px_rgba(0,0,0,0.5)] max-w-[55%]">
+                        <span className="text-[8px] text-white/90 font-medium truncate tracking-wide">
+                          <span className="text-cyan-400 mr-1 text-[7px]">▶</span>Source: {sourceWatermark}
+                        </span>
+                      </div>
+                    ) : <div />}
+
+                    {accountWatermark ? (
+                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#121418]/70 backdrop-blur-md border border-white/15 shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
+                        <span className="text-[8.5px] font-bold text-amber-300 font-mono tracking-tight">
+                          {accountWatermark.startsWith('@') ? accountWatermark : `@${accountWatermark}`}
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
                 )}
 
               </div>

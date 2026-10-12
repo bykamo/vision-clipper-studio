@@ -18,6 +18,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from backend import youtube_uploader
+from backend.config_wizard import (
+    get_ai_config,
+    save_ai_config,
+    test_ai_connection,
+    test_groq_connection,
+)
 
 app = FastAPI()
 
@@ -149,6 +155,151 @@ def _release_worker_slot(job_id: str, process=None):
             _ACTIVE_JOB = None
 
 ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"}
+
+
+class RenderedClipsFolderError(ValueError):
+    def __init__(self, status_code: int, message: str):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _path_is_within(root_path: str, target_path: str) -> bool:
+    try:
+        real_root = os.path.realpath(os.path.abspath(root_path))
+        real_target = os.path.realpath(os.path.abspath(target_path))
+        return os.path.commonpath([real_root, real_target]) == real_root
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def _resolve_rendered_clips_folder(target_path: str) -> str:
+    """Resolve one render project folder while keeping it contained in clips/."""
+    if not isinstance(target_path, str) or not target_path.strip():
+        raise RenderedClipsFolderError(400, "Path parameter is empty")
+
+    raw_path = target_path.strip()
+    if not os.path.isabs(raw_path):
+        candidate = os.path.join(PROJECT_ROOT, raw_path)
+        if os.path.exists(candidate):
+            requested_path = candidate
+        else:
+            requested_path = os.path.abspath(os.path.expanduser(raw_path))
+    else:
+        requested_path = os.path.abspath(os.path.expanduser(raw_path))
+
+    if not os.path.exists(requested_path):
+        raise RenderedClipsFolderError(404, f"Folder tidak ditemukan: {target_path}")
+
+    # If the user selected a video file inside a project folder, resolve to its parent folder
+    if os.path.isfile(requested_path):
+        requested_path = os.path.dirname(requested_path)
+
+    if not os.path.isdir(requested_path):
+        raise RenderedClipsFolderError(400, "Path must point to a rendered clips folder")
+    if os.path.islink(requested_path):
+        raise RenderedClipsFolderError(403, "Symlink folders cannot be loaded as rendered clips")
+
+    real_clips_dir = os.path.realpath(CLIPS_DIR)
+    real_target = os.path.realpath(requested_path)
+    if real_target == real_clips_dir:
+        raise RenderedClipsFolderError(400, "Select one project folder inside clips, not the clips root")
+    if not _path_is_within(real_clips_dir, real_target):
+        raise RenderedClipsFolderError(403, "Rendered clips folder must be inside the clips directory")
+    return real_target
+
+
+def _rendered_clip_sort_key(path: str):
+    filename = os.path.basename(path)
+    prefix = re.match(r"^(\d+)(?:[\s_-]|$)", filename)
+    return (0, int(prefix.group(1)), filename.lower()) if prefix else (1, 0, filename.lower())
+
+
+def _rendered_video_paths(target_path: str):
+    real_folder = _resolve_rendered_clips_folder(target_path)
+    video_paths = []
+    with os.scandir(real_folder) as entries:
+        for entry in entries:
+            try:
+                if entry.name.startswith('.') or not entry.is_file(follow_symlinks=False):
+                    continue
+                if os.path.splitext(entry.name)[1].lower() not in ALLOWED_VIDEO_EXTENSIONS:
+                    continue
+                real_file = os.path.realpath(entry.path)
+                if _path_is_within(real_folder, real_file):
+                    video_paths.append(real_file)
+            except OSError:
+                continue
+    return real_folder, sorted(video_paths, key=_rendered_clip_sort_key)
+
+
+def _fallback_rendered_title(video_path: str) -> str:
+    stem = os.path.splitext(os.path.basename(video_path))[0]
+    stem = re.sub(r"^\d+[\s_-]*", "", stem)
+    title = re.sub(r"[_\s]+", " ", stem).strip()
+    return title or "Rendered Clip"
+
+
+def _parse_rendered_clip_metadata(metadata_path: str):
+    """Parse renderer sidecar text without requiring metadata to load a clip."""
+    sections = {"title options": [], "caption": [], "hashtags": []}
+    current_section = None
+    try:
+        with open(metadata_path, "r", encoding="utf-8") as metadata_file:
+            for raw_line in metadata_file.read().splitlines():
+                heading = raw_line.strip().rstrip(":").lower()
+                if heading in sections:
+                    current_section = heading
+                    continue
+                if current_section is not None:
+                    sections[current_section].append(raw_line)
+    except (OSError, UnicodeError):
+        return {"title": "", "caption": "", "hashtags": []}
+
+    titles = [
+        re.sub(r"^\s*[-*]\s*", "", line).strip()
+        for line in sections["title options"]
+        if line.strip()
+    ]
+    caption = "\n".join(sections["caption"]).strip()
+    hashtags_text = " ".join(sections["hashtags"]).strip()
+    hashtags = re.findall(r"#[^\s#]+", hashtags_text)
+    if not hashtags and hashtags_text:
+        hashtags = [token.lstrip("#") for token in re.split(r"[\s,]+", hashtags_text) if token.strip("#")]
+
+    return {
+        "title": titles[0] if titles else "",
+        "caption": caption,
+        "hashtags": hashtags,
+    }
+
+
+def _load_rendered_clips(target_path: str):
+    real_folder, video_paths = _rendered_video_paths(target_path)
+    if not video_paths:
+        raise RenderedClipsFolderError(404, "Folder ini tidak berisi video hasil render")
+
+    clips = []
+    for index, video_path in enumerate(video_paths, 1):
+        metadata_path = os.path.splitext(video_path)[0] + ".txt"
+        metadata = {"title": "", "caption": "", "hashtags": []}
+        if (
+            os.path.isfile(metadata_path)
+            and not os.path.islink(metadata_path)
+            and _path_is_within(real_folder, metadata_path)
+        ):
+            metadata = _parse_rendered_clip_metadata(metadata_path)
+
+        fallback_title = _fallback_rendered_title(video_path)
+        clips.append({
+            "id": str(index),
+            "title": metadata["title"] or fallback_title,
+            "filename": os.path.basename(video_path),
+            "out_file": video_path,
+            "caption": metadata["caption"] or fallback_title,
+            "hashtags": metadata["hashtags"],
+        })
+
+    return {"output_dir": real_folder, "clips": clips}
 
 def _is_path_safe_and_allowed(target_path: str, must_exist: bool = True) -> bool:
     """Validate that target_path does not access sensitive system folders."""
@@ -305,42 +456,43 @@ async def list_dir_api(path: str = ""):
         real_path = os.path.realpath(os.path.expanduser("~"))
         path = real_path
 
+    path = real_path
     try:
-        entries = os.scandir(path)
         folders = []
         files = []
-        for entry in entries:
-            try:
-                if entry.name.startswith('.'):
-                    continue
-                if entry.is_dir(follow_symlinks=False):
-                    folders.append({
-                        "name": entry.name,
-                        "path": os.path.normpath(entry.path)
-                    })
-                elif entry.is_file(follow_symlinks=False):
-                    ext = os.path.splitext(entry.name)[1].lower()
-                    if ext in ['.mp4', '.mov', '.mkv', '.avi', '.webm', '.m4v']:
-                        try:
-                            size_bytes = entry.stat().st_size
-                            if size_bytes < 1024:
-                                size_str = f"{size_bytes} B"
-                            elif size_bytes < 1024 * 1024:
-                                size_str = f"{size_bytes / 1024:.1f} KB"
-                            elif size_bytes < 1024 * 1024 * 1024:
-                                size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
-                            else:
-                                size_str = f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
-                        except Exception:
-                            size_str = "Unknown size"
-
-                        files.append({
+        with os.scandir(path) as entries:
+            for entry in entries:
+                try:
+                    if entry.name.startswith('.'):
+                        continue
+                    if entry.is_dir(follow_symlinks=False):
+                        folders.append({
                             "name": entry.name,
-                            "path": os.path.normpath(entry.path),
-                            "size": size_str
+                            "path": os.path.normpath(entry.path)
                         })
-            except Exception:
-                pass
+                    elif entry.is_file(follow_symlinks=False):
+                        ext = os.path.splitext(entry.name)[1].lower()
+                        if ext in ALLOWED_VIDEO_EXTENSIONS:
+                            try:
+                                size_bytes = entry.stat().st_size
+                                if size_bytes < 1024:
+                                    size_str = f"{size_bytes} B"
+                                elif size_bytes < 1024 * 1024:
+                                    size_str = f"{size_bytes / 1024:.1f} KB"
+                                elif size_bytes < 1024 * 1024 * 1024:
+                                    size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+                                else:
+                                    size_str = f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
+                            except Exception:
+                                size_str = "Unknown size"
+
+                            files.append({
+                                "name": entry.name,
+                                "path": os.path.normpath(entry.path),
+                                "size": size_str
+                            })
+                except Exception:
+                    pass
 
         folders.sort(key=lambda x: x['name'].lower())
         files.sort(key=lambda x: x['name'].lower())
@@ -351,10 +503,21 @@ async def list_dir_api(path: str = ""):
         else:
             parent_path = os.path.normpath(parent_path)
 
+        render_clip_count = 0
+        try:
+            _, rendered_paths = _rendered_video_paths(path)
+            render_clip_count = len(rendered_paths)
+        except RenderedClipsFolderError:
+            pass
+
         return {
             "current_path": path,
             "parent_path": parent_path,
             "drives": drives,
+            "home_path": os.path.realpath(os.path.expanduser("~")),
+            "clips_path": os.path.realpath(CLIPS_DIR),
+            "can_load_rendered": render_clip_count > 0,
+            "render_clip_count": render_clip_count,
             "folders": folders,
             "files": files
         }
@@ -369,9 +532,28 @@ async def list_dir_api(path: str = ""):
             "current_path": path,
             "parent_path": parent_path,
             "drives": drives,
+            "home_path": os.path.realpath(os.path.expanduser("~")),
+            "clips_path": os.path.realpath(CLIPS_DIR),
+            "can_load_rendered": False,
+            "render_clip_count": 0,
             "folders": [],
             "files": []
         }
+
+
+@app.post("/api/rendered-clips/load")
+async def load_rendered_clips(request: Request):
+    """Restore an existing render project so it can be previewed and posted."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "Invalid JSON body"})
+
+    path = data.get("path") if isinstance(data, dict) else None
+    try:
+        return _load_rendered_clips(path)
+    except RenderedClipsFolderError as error:
+        return JSONResponse(status_code=error.status_code, content={"error": str(error)})
 
 @app.post("/api/open-folder")
 async def open_folder(request: Request):
@@ -441,6 +623,61 @@ async def pick_file():
     """Trigger native OS file chooser dialog in threadpool and return chosen file path."""
     try:
         selected_path = await asyncio.to_thread(_run_native_picker)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+    return {"path": selected_path}
+
+
+def _run_native_folder_picker(initial_dir: str = "") -> str:
+    """Synchronous folder picker logic called inside asyncio.to_thread."""
+    selected_path = ""
+    target_dir = initial_dir if initial_dir and os.path.exists(initial_dir) else CLIPS_DIR
+    try:
+        if sys.platform == 'darwin':
+            # AppleScript native folder picker
+            if target_dir and os.path.exists(target_dir):
+                escaped_dir = os.path.realpath(target_dir).replace('"', '\\"')
+                script = (
+                    f'set defaultLoc to POSIX file "{escaped_dir}"\n'
+                    'return POSIX path of (choose folder with prompt "Pilih Folder Hasil Render (Clips)" default location defaultLoc)'
+                )
+            else:
+                script = 'return POSIX path of (choose folder with prompt "Pilih Folder Hasil Render (Clips)")'
+            res = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+            if res.returncode == 0:
+                selected_path = res.stdout.strip()
+        elif os.name == 'nt':
+            escaped_dir = os.path.realpath(target_dir).replace('"', '`"') if target_dir and os.path.exists(target_dir) else ""
+            initial_ps = f'$f.SelectedPath = "{escaped_dir}";' if escaped_dir else ""
+            ps_script = (
+                'Add-Type -AssemblyName System.Windows.Forms;'
+                '$f = New-Object System.Windows.Forms.FolderBrowserDialog;'
+                '$f.Description = "Pilih Folder Hasil Render (Clips)";'
+                + initial_ps +
+                'if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }'
+            )
+            res = subprocess.run(['powershell', '-NoProfile', '-Command', ps_script], capture_output=True, text=True)
+            if res.returncode == 0:
+                selected_path = res.stdout.strip()
+        else:
+            # Linux zenity fallback
+            cmd = ['zenity', '--file-selection', '--directory', '--title=Pilih Folder Hasil Render (Clips)']
+            if target_dir and os.path.exists(target_dir):
+                cmd.append(f'--filename={os.path.realpath(target_dir)}/')
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if res.returncode == 0:
+                selected_path = res.stdout.strip()
+    except Exception:
+        pass
+    return selected_path
+
+
+@app.post("/api/pick-folder")
+async def pick_folder():
+    """Trigger native OS folder chooser dialog in threadpool and return chosen folder path."""
+    try:
+        selected_path = await asyncio.to_thread(_run_native_folder_picker, CLIPS_DIR)
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
@@ -566,7 +803,10 @@ def _valid_analysis_id(value):
 TEMP_ANALYSIS_DIR = os.path.join(os.path.dirname(FRONTEND_DIR), "temp")
 os.makedirs(TEMP_ANALYSIS_DIR, exist_ok=True)
 
-# Cleanup old analysis files (>24h) on startup
+# Cleanup stale files on startup
+from backend.utils import cleanup_temp_files
+cleanup_temp_files()
+
 for _f in os.listdir(TEMP_ANALYSIS_DIR):
     if _f.startswith("analysis_") and _f.endswith(".json"):
         _fpath = os.path.join(TEMP_ANALYSIS_DIR, _f)
@@ -578,7 +818,7 @@ for _f in os.listdir(TEMP_ANALYSIS_DIR):
 
 
 @app.get("/api/analyze")
-async def analyze(request: Request, mode: str = "", source: str = "", num_clips: str = "5", whisper_model: str = "groq"):
+async def analyze(request: Request, mode: str = "", source: str = "", num_clips: str = "5", whisper_model: str = "groq", source_lang: str = "id", target_lang: str = "id"):
     """Phase 1: Transcribe + LLM analysis only. Returns SSE stream with [ANALYSIS_RESULT] JSON."""
     if _worker_is_active():
         return JSONResponse(status_code=409, content={"error": "A worker is already processing a request"})
@@ -588,6 +828,10 @@ async def analyze(request: Request, mode: str = "", source: str = "", num_clips:
         return JSONResponse(status_code=400, content={"error": "Invalid mode"})
     if whisper_model not in {"groq", "youtube"}:
         return JSONResponse(status_code=400, content={"error": "Invalid transcription model"})
+    if source_lang not in {"id", "en", "auto"}:
+        return JSONResponse(status_code=400, content={"error": "Invalid source language"})
+    if target_lang not in {"id", "en", "none"}:
+        return JSONResponse(status_code=400, content={"error": "Invalid target language"})
     try:
         clip_count = int(num_clips)
     except ValueError:
@@ -608,6 +852,8 @@ async def analyze(request: Request, mode: str = "", source: str = "", num_clips:
         "--num-clips", str(clip_count),
         "--mode", mode or "hook",
         "--model", whisper_model,
+        "--source-lang", source_lang,
+        "--target-lang", target_lang,
         "--analyze-only"
     ]
 
@@ -654,12 +900,18 @@ async def render_selected(request: Request):
     clip_indices = data.get("clip_indices", [])
     sub_style = data.get("sub_style", "tiktok_viral")
     framing_mode = data.get("framing_mode", "smart_crop")
+    sub_position = data.get("sub_position", 68)
+    try:
+        sub_position = max(30, min(85, int(sub_position)))
+    except (TypeError, ValueError):
+        sub_position = 68
+    show_emoji = bool(data.get("show_emoji", True))
 
     if not _valid_analysis_id(analysis_id) or not isinstance(clip_indices, list) or not clip_indices:
         return JSONResponse(status_code=400, content={"error": "Missing analysis_id or clip_indices"})
     if sub_style not in {"tiktok_viral", "classic_karaoke", "minimalist", "word_pop", "no_subtitle", "none"}:
         return JSONResponse(status_code=400, content={"error": "Invalid subtitle style"})
-    if framing_mode not in {"smart_crop", "fit_blur"}:
+    if framing_mode not in {"smart_crop", "fit_blur", "split_screen"}:
         return JSONResponse(status_code=400, content={"error": "Invalid framing mode"})
 
     analysis_path = os.path.join(TEMP_ANALYSIS_DIR, f"{analysis_id}.json")
@@ -693,19 +945,44 @@ async def render_selected(request: Request):
         "--clips-json", analysis_path,
         "--render-indices", indices_str,
         "--sub-style", sub_style,
-        "--framing-mode", framing_mode
+        "--framing-mode", framing_mode,
+        "--sub-position", str(sub_position),
     ]
+    if show_emoji:
+        cmd.append("--show-emoji")
+    else:
+        cmd.append("--no-emoji")
+
+    watermark_enabled = bool(data.get("watermark_enabled", True))
+    source_watermark = str(data.get("source_watermark", "")).strip()
+    account_watermark = str(data.get("account_watermark", "")).strip()
+    if watermark_enabled:
+        cmd.append("--watermark-enabled")
+    else:
+        cmd.append("--no-watermark")
+    if source_watermark:
+        cmd.extend(["--source-watermark", source_watermark])
+    if account_watermark:
+        cmd.extend(["--account-watermark", account_watermark])
 
     return StreamingResponse(_sse_from_process(cmd, job_id=job_id, request=request), media_type="text/event-stream")
 
 
 @app.get("/stream")
-async def stream(request: Request, mode: str = "", source_type: str = "", source: str = "", num_clips: str = "5", sub_style: str = "tiktok_viral", whisper_model: str = "groq", framing_mode: str = "smart_crop"):
+async def stream(request: Request, mode: str = "", source_type: str = "", source: str = "", num_clips: str = "5", sub_style: str = "tiktok_viral", whisper_model: str = "groq", framing_mode: str = "smart_crop", sub_position: str = "68", show_emoji: str = "true", watermark_enabled: str = "true", source_watermark: str = "", account_watermark: str = "", source_lang: str = "id", target_lang: str = "id"):
     """Legacy streaming endpoint protected with synchronized worker slot."""
     if _worker_is_active():
         return JSONResponse(status_code=409, content={"error": "A worker is already processing a request"})
     if not source.strip():
         return JSONResponse(status_code=400, content={"error": "Source parameter is empty"})
+    if framing_mode not in {"smart_crop", "fit_blur", "split_screen"}:
+        return JSONResponse(status_code=400, content={"error": "Invalid framing mode"})
+
+    try:
+        sub_pos_int = max(30, min(85, int(sub_position)))
+    except (TypeError, ValueError):
+        sub_pos_int = 68
+    emoji_bool = show_emoji.lower() in {"1", "true", "yes"}
 
     try:
         job_id = _reserve_worker_slot()
@@ -719,8 +996,25 @@ async def stream(request: Request, mode: str = "", source_type: str = "", source
         "--mode", mode,
         "--sub-style", sub_style,
         "--model", whisper_model,
-        "--framing-mode", framing_mode
+        "--framing-mode", framing_mode,
+        "--sub-position", str(sub_pos_int),
+        "--source-lang", source_lang if source_lang in {"id", "en", "auto"} else "id",
+        "--target-lang", target_lang if target_lang in {"id", "en", "none"} else "id",
     ]
+    if emoji_bool:
+        cmd.append("--show-emoji")
+    else:
+        cmd.append("--no-emoji")
+
+    wm_bool = watermark_enabled.lower() in {"1", "true", "yes"}
+    if wm_bool:
+        cmd.append("--watermark-enabled")
+    else:
+        cmd.append("--no-watermark")
+    if source_watermark.strip():
+        cmd.extend(["--source-watermark", source_watermark.strip()])
+    if account_watermark.strip():
+        cmd.extend(["--account-watermark", account_watermark.strip()])
 
     return StreamingResponse(_sse_from_process(cmd, job_id=job_id, request=request), media_type="text/event-stream")
 
@@ -801,6 +1095,76 @@ async def youtube_upload(request: Request):
         return {"status": "success", **result}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+# ── AI Model & Provider Configuration Endpoints ──
+@app.get("/api/ai-config")
+async def api_get_ai_config(request: Request):
+    """Retrieve current AI configuration with masked secrets."""
+    try:
+        config = get_ai_config()
+        return JSONResponse(config)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/api/ai-config")
+async def api_save_ai_config(request: Request):
+    """Save AI configuration atomically and refresh active engine settings."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "Invalid JSON body"})
+
+    try:
+        result = save_ai_config(
+            provider=data.get("provider"),
+            endpoint=data.get("endpoint"),
+            model=data.get("model"),
+            api_key=data.get("api_key"),
+            groq_key=data.get("groq_key"),
+        )
+        return JSONResponse(result)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+
+@app.post("/api/ai-config/test")
+async def api_test_ai_connection(request: Request):
+    """Test connection to LLM endpoint with given or saved credentials."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+
+    try:
+        result = await asyncio.to_thread(
+            test_ai_connection,
+            endpoint=data.get("endpoint"),
+            api_key=data.get("api_key"),
+            model=data.get("model"),
+        )
+        return JSONResponse(result)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+
+
+@app.post("/api/ai-config/test-groq")
+async def api_test_groq_connection(request: Request):
+    """Test Groq API key with Groq Cloud."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+
+    try:
+        result = await asyncio.to_thread(
+            test_groq_connection,
+            groq_key=data.get("groq_key"),
+        )
+        return JSONResponse(result)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
 
 
 # Serve static files from frontend directory (production dist or root)

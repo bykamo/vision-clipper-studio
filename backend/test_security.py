@@ -144,6 +144,88 @@ class LocalApiSecurityTest(unittest.TestCase):
         self.assertEqual(inside.status_code, 200)
         self.assertEqual(uploaded["video_path"], os.path.realpath(inside_path))
 
+    def test_rendered_clips_loader_stays_inside_project_clips(self):
+        with tempfile.TemporaryDirectory() as clips_dir, tempfile.TemporaryDirectory() as outside_dir:
+            project_dir = os.path.join(clips_dir, "project")
+            os.makedirs(project_dir)
+            inside_video = os.path.join(project_dir, "01_Inside.mp4")
+            with open(inside_video, "wb") as video_file:
+                video_file.write(b"inside")
+
+            outside_video = os.path.join(outside_dir, "02_Outside.mp4")
+            outside_metadata = os.path.join(outside_dir, "01_Inside.txt")
+            with open(outside_video, "wb") as video_file:
+                video_file.write(b"outside")
+            with open(outside_metadata, "w", encoding="utf-8") as metadata_file:
+                metadata_file.write("Title Options:\n- Escaped Title")
+
+            video_symlink = os.path.join(project_dir, "02_Escape.mp4")
+            metadata_symlink = os.path.join(project_dir, "01_Inside.txt")
+            folder_symlink = os.path.join(clips_dir, "outside-project")
+            os.symlink(outside_video, video_symlink)
+            os.symlink(outside_metadata, metadata_symlink)
+            os.symlink(outside_dir, folder_symlink)
+
+            traversal_path = os.path.join(project_dir, "..", "..", os.path.basename(outside_dir))
+            with patch.object(main_module, "CLIPS_DIR", os.path.realpath(clips_dir)):
+                with TestClient(app) as client:
+                    self.assertEqual(client.get("/api/session").status_code, 204)
+                    valid = client.post("/api/rendered-clips/load", json={"path": project_dir})
+                    root = client.post("/api/rendered-clips/load", json={"path": clips_dir})
+                    outside = client.post("/api/rendered-clips/load", json={"path": outside_dir})
+                    traversal = client.post("/api/rendered-clips/load", json={"path": traversal_path})
+                    linked_folder = client.post("/api/rendered-clips/load", json={"path": folder_symlink})
+
+        self.assertEqual(valid.status_code, 200)
+        self.assertEqual(len(valid.json()["clips"]), 1)
+        self.assertEqual(valid.json()["clips"][0]["title"], "Inside")
+        self.assertEqual(root.status_code, 400)
+        self.assertEqual(outside.status_code, 403)
+        self.assertIn(traversal.status_code, (403, 404))
+        self.assertEqual(linked_folder.status_code, 403)
+
+    def test_rendered_clip_from_loader_remains_upload_eligible(self):
+        with tempfile.TemporaryDirectory() as clips_dir:
+            project_dir = os.path.join(clips_dir, "project")
+            os.makedirs(project_dir)
+            video_path = os.path.join(project_dir, "01_Ready.mp4")
+            with open(video_path, "wb") as video_file:
+                video_file.write(b"ready")
+
+            uploaded = {}
+
+            def fake_upload(**kwargs):
+                uploaded["video_path"] = kwargs["video_path"]
+                return {"video_id": "restored"}
+
+            with patch.object(main_module, "CLIPS_DIR", os.path.realpath(clips_dir)):
+                with patch.object(
+                    main_module.youtube_uploader,
+                    "upload_video_to_youtube",
+                    side_effect=fake_upload,
+                ):
+                    with TestClient(app) as client:
+                        self.assertEqual(client.get("/api/session").status_code, 204)
+                        loaded = client.post("/api/rendered-clips/load", json={"path": project_dir})
+                        upload = client.post(
+                            "/api/social/youtube/upload",
+                            json={"video_path": loaded.json()["clips"][0]["out_file"]},
+                        )
+
+        self.assertEqual(loaded.status_code, 200)
+        self.assertEqual(upload.status_code, 200)
+        self.assertEqual(uploaded["video_path"], os.path.realpath(video_path))
+
+    def test_pick_folder_route_returns_selected_path_and_requires_session(self):
+        with patch.object(main_module, "_run_native_folder_picker", return_value="/mock/clips/project"):
+            with TestClient(app) as client:
+                client.cookies.clear()
+                self.assertEqual(client.post("/api/pick-folder").status_code, 403)
+                self.assertEqual(client.get("/api/session").status_code, 204)
+                response = client.post("/api/pick-folder")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json(), {"path": "/mock/clips/project"})
+
     def test_vite_dev_proxy_is_loopback_only_and_preserves_host(self):
         vite_config_path = os.path.join(
             main_module.PROJECT_ROOT, "frontend", "vite.config.ts"

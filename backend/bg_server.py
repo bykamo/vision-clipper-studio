@@ -1,7 +1,7 @@
 """
 Background server launcher for VisionClipper Studio.
 This script is spawned by cli.py as a detached process (via pythonw.exe).
-It runs the Flask app and cleans up the PID file when shutting down.
+It runs the FastAPI/Uvicorn app and cleans up the PID file when shutting down.
 """
 import os
 import sys

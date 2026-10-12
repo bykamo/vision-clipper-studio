@@ -29,15 +29,45 @@ import {
   LockClosedIcon,
   LinkIcon,
   CommandLineIcon,
-  FilmIcon
+  FilmIcon,
+  HomeIcon,
+  ComputerDesktopIcon,
+  Cog6ToothIcon,
+  ExclamationTriangleIcon,
+  KeyIcon,
+  ServerIcon,
+  CpuChipIcon,
+  EyeIcon,
+  ShieldCheckIcon
 } from '@heroicons/react/24/outline';
 import {
   StopIcon as StopIconSolid,
   FilmIcon as FilmIconSolid
 } from '@heroicons/react/24/solid';
-import { SubtitleStyleConfig } from '../types';
+import { SubtitleStyleConfig, FramingMode } from '../types';
 import { SUBTITLE_PRESETS } from '../data/subtitlePresets';
 import { PhonePreview } from './PhonePreview';
+import { StudioSettingsModal } from './StudioSettingsModal';
+
+interface AiProviderPreset {
+  label: string;
+  endpoint: string;
+  default_model: string;
+  doc_url?: string;
+}
+
+interface AiConfigResponse {
+  provider: string;
+  endpoint: string;
+  model: string;
+  api_key_set: boolean;
+  api_key_masked: string;
+  groq_key_set: boolean;
+  groq_key_masked: string;
+  ready: boolean;
+  groq_ready: boolean;
+  presets: Record<string, AiProviderPreset>;
+}
 
 interface GeneratedClipItem {
   id: string;
@@ -72,28 +102,9 @@ export const SimpleClipperDashboard: React.FC = () => {
 
   // Video Source State
   const [videoPathInput, setVideoPathInput] = useState<string>('');
+  const [sourceKind, setSourceKind] = useState<'video' | 'render-folder'>('video');
   const [isPickingFile, setIsPickingFile] = useState<boolean>(false);
-
-  const handlePickNativeFile = async () => {
-    setIsPickingFile(true);
-    try {
-      const res = await fetch('/api/pick-file', { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.path) {
-          setVideoPathInput(data.path);
-          showToast('File Video Terpilih', data.path, 'success');
-          return;
-        }
-      } else {
-        showToast('Gagal Membuka File Dialog', 'Silakan ketik atau tempel path video langsung ke input box.', 'error');
-      }
-    } catch {
-      showToast('Koneksi Error', 'Pastikan backend server VisionClipper sedang berjalan.', 'error');
-    } finally {
-      setIsPickingFile(false);
-    }
-  };
+  const [isPickingFolder, setIsPickingFolder] = useState<boolean>(false);
 
   // Workflow Phase State
   const [phase, setPhase] = useState<WorkflowPhase>('config');
@@ -107,8 +118,17 @@ export const SimpleClipperDashboard: React.FC = () => {
   const [clipCount, setClipCount] = useState<number>(4);
   const [transcriptionModel, setTranscriptionModel] = useState<string>('groq');
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const [languageMode, setLanguageMode] = useState<string>('id');
+  const [langDropdownOpen, setLangDropdownOpen] = useState(false);
   const [selectedPresetId, setSelectedPresetId] = useState<string>('tiktok_viral');
-  const [framingMode, setFramingMode] = useState<'smart_crop' | 'fit_blur'>('smart_crop');
+  const [framingMode, setFramingMode] = useState<FramingMode>('smart_crop');
+  const [subPosition, setSubPosition] = useState<number>(68);
+  const [showEmoji, setShowEmoji] = useState<boolean>(true);
+
+  // Watermark Settings State (Glass Effect)
+  const [watermarkEnabled, setWatermarkEnabled] = useState<boolean>(true);
+  const [sourceWatermark, setSourceWatermark] = useState<string>('');
+  const [accountWatermark, setAccountWatermark] = useState<string>('');
 
   // Generated Clips & Output Folder
   const [outputDir, setOutputDir] = useState<string>('');
@@ -137,7 +157,6 @@ export const SimpleClipperDashboard: React.FC = () => {
 
   // YouTube Posting Confirmation Modal State
   const [ytModalOpen, setYtModalOpen] = useState(false);
-  const [ytChannelModalOpen, setYtChannelModalOpen] = useState(false);
   const [selectedClipForYt, setSelectedClipForYt] = useState<GeneratedClipItem | null>(null);
   const [ytFormTitle, setYtFormTitle] = useState('');
   const [ytFormDescription, setYtFormDescription] = useState('');
@@ -151,16 +170,178 @@ export const SimpleClipperDashboard: React.FC = () => {
   const [showTerminalInPreview, setShowTerminalInPreview] = useState(false);
   const [renderErrorMessage, setRenderErrorMessage] = useState<string | null>(null);
 
+  // Studio Settings Modal State (AI, YouTube, TikTok)
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [settingsActiveTab, setSettingsActiveTab] = useState<'ai' | 'whisper' | 'youtube' | 'tiktok'>('ai');
+  const [aiConfig, setAiConfig] = useState<AiConfigResponse | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiSaving, setAiSaving] = useState(false);
+  const [aiTesting, setAiTesting] = useState(false);
+  const [aiTestingGroq, setAiTestingGroq] = useState(false);
+  const [aiShowKey, setAiShowKey] = useState(false);
+  const [aiShowGroqKey, setAiShowGroqKey] = useState(false);
+
+  // AI Form State
+  const [aiSelectedProvider, setAiSelectedProvider] = useState<string>('openrouter');
+  const [aiEndpointInput, setAiEndpointInput] = useState<string>('');
+  const [aiModelInput, setAiModelInput] = useState<string>('');
+  const [aiApiKeyInput, setAiApiKeyInput] = useState<string>('');
+  const [aiGroqKeyInput, setAiGroqKeyInput] = useState<string>('');
+  const [aiTestResult, setAiTestResult] = useState<{ ok: boolean; message?: string; error?: string; reply?: string } | null>(null);
+  const [aiGroqTestResult, setAiGroqTestResult] = useState<{ ok: boolean; message?: string; error?: string } | null>(null);
+
+  const fetchAiConfig = async () => {
+    try {
+      setAiLoading(true);
+      const res = await fetch('/api/ai-config');
+      if (res.ok) {
+        const data: AiConfigResponse = await res.json();
+        setAiConfig(data);
+        setAiSelectedProvider(data.provider || 'openrouter');
+        setAiEndpointInput(data.endpoint || '');
+        setAiModelInput(data.model || '');
+      }
+    } catch {
+      // Backend may be starting
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAiConfig();
+  }, []);
+
+  const handleOpenSettings = (tab: 'ai' | 'whisper' | 'youtube' | 'tiktok' = 'ai') => {
+    setSettingsActiveTab(tab);
+    if ((tab === 'ai' || tab === 'whisper') && aiConfig) {
+      setAiSelectedProvider(aiConfig.provider || 'openrouter');
+      setAiEndpointInput(aiConfig.endpoint || '');
+      setAiModelInput(aiConfig.model || '');
+      setAiApiKeyInput('');
+      setAiGroqKeyInput('');
+    }
+    setAiTestResult(null);
+    setAiGroqTestResult(null);
+    setSettingsModalOpen(true);
+  };
+
+  const handleOpenAiSettings = () => {
+    handleOpenSettings('ai');
+  };
+
+  // Backwards compatibility aliases
+  const setAiSettingsOpen = (open: boolean) => {
+    if (open) handleOpenSettings('ai');
+    else setSettingsModalOpen(false);
+  };
+
+  const setYtChannelModalOpen = (open: boolean) => {
+    if (open) handleOpenSettings('youtube');
+    else setSettingsModalOpen(false);
+  };
+
+  const handleSelectProvider = (providerKey: string) => {
+    setAiSelectedProvider(providerKey);
+    setAiTestResult(null);
+    if (aiConfig?.presets && aiConfig.presets[providerKey]) {
+      const preset = aiConfig.presets[providerKey];
+      if (providerKey !== 'custom') {
+        setAiEndpointInput(preset.endpoint);
+        setAiModelInput(preset.default_model);
+      }
+    }
+  };
+
+  const handleTestAiConnection = async () => {
+    setAiTesting(true);
+    setAiTestResult(null);
+    try {
+      const res = await fetch('/api/ai-config/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endpoint: aiEndpointInput.trim(),
+          api_key: aiApiKeyInput.trim() || undefined,
+          model: aiModelInput.trim(),
+        }),
+      });
+      const data = await res.json();
+      setAiTestResult(data);
+    } catch (e: any) {
+      setAiTestResult({ ok: false, error: e.message || 'Gagal menghubungi backend.' });
+    } finally {
+      setAiTesting(false);
+    }
+  };
+
+  const handleTestGroqConnection = async () => {
+    setAiTestingGroq(true);
+    setAiGroqTestResult(null);
+    try {
+      const res = await fetch('/api/ai-config/test-groq', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          groq_key: aiGroqKeyInput.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      setAiGroqTestResult(data);
+    } catch (e: any) {
+      setAiGroqTestResult({ ok: false, error: e.message || 'Gagal menghubungi backend.' });
+    } finally {
+      setAiTestingGroq(false);
+    }
+  };
+
+  const handleSaveAiConfig = async () => {
+    setAiSaving(true);
+    try {
+      const payload: any = {
+        provider: aiSelectedProvider,
+        endpoint: aiEndpointInput.trim(),
+        model: aiModelInput.trim(),
+      };
+      if (aiApiKeyInput.trim()) {
+        payload.api_key = aiApiKeyInput.trim();
+      }
+      if (aiGroqKeyInput.trim()) {
+        payload.groq_key = aiGroqKeyInput.trim();
+      }
+
+      const res = await fetch('/api/ai-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Gagal menyimpan konfigurasi.');
+      }
+      const updated: AiConfigResponse = await res.json();
+      setAiConfig(updated);
+      setSettingsModalOpen(false);
+      showToast('Konfigurasi AI Disimpan', 'Pengaturan model dan API Key telah tersambung langsung ke Engine.', 'success');
+      const ts = new Date().toTimeString().split(' ')[0];
+      setLogs(prev => [...prev, `[${ts}] [SYSTEM] 🤖 Konfigurasi AI tersambung: ${updated.model} via ${updated.endpoint}`]);
+    } catch (e: any) {
+      showToast('Gagal Menyimpan', e.message || 'Terjadi kesalahan saat menyimpan.', 'error');
+    } finally {
+      setAiSaving(false);
+    }
+  };
+
   // Toast Popup Message State (Bottom-Right)
   const [toast, setToast] = useState<{
     id: number;
     title: string;
     message: string;
-    type: 'success' | 'info' | 'error';
+    type: 'success' | 'info' | 'error' | 'warning';
   } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showToast = (title: string, message: string, type: 'success' | 'info' | 'error' = 'success') => {
+  const showToast = (title: string, message: string, type: 'success' | 'info' | 'error' | 'warning' = 'success') => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ id: Date.now(), title, message, type });
     toastTimerRef.current = setTimeout(() => {
@@ -173,6 +354,130 @@ export const SimpleClipperDashboard: React.FC = () => {
   const renderAbortControllerRef = useRef<AbortController | null>(null);
   const analysisReceivedRef = useRef(false);
   const confirmedClipCount = clipCandidates.filter(c => c.decision === 'approved').length;
+
+  const resetWorkflow = (clearSource = false) => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+    renderAbortControllerRef.current?.abort();
+    renderAbortControllerRef.current = null;
+    setPhase('config');
+    setStatus('ready');
+    setProgress(0);
+    setIsProcessing(false);
+    setClipCandidates([]);
+    setAnalysisId('');
+    setResolvedVideoPath('');
+    setPreviewClipRange(null);
+    setPreviewOutputClip(null);
+    setGeneratedClips([]);
+    setOutputDir('');
+    setRenderErrorMessage(null);
+    setShowTerminalInPreview(false);
+    setUploadedYtLinks({});
+    setSelectedClipForYt(null);
+    setSelectedClipForTt(null);
+    setYtModalOpen(false);
+    setTtModalOpen(false);
+    setYtUploadProgress('idle');
+    setYtUploadResult(null);
+    setYtUploadErrorMessage(null);
+    setSourceKind('video');
+    if (clearSource) setVideoPathInput('');
+  };
+
+  const handleLoadRenderedFolder = async (targetPath: string) => {
+    try {
+      const response = await fetch('/api/rendered-clips/load', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: targetPath.trim() })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Hasil render tidak dapat dimuat');
+      }
+      const clips = (data.clips || []) as GeneratedClipItem[];
+      if (clips.length === 0) {
+        throw new Error('Folder ini tidak berisi video hasil render');
+      }
+
+      resetWorkflow(false);
+      setVideoPathInput(data.output_dir);
+      setSourceKind('render-folder');
+      setOutputDir(data.output_dir);
+      setGeneratedClips(clips);
+      setPreviewOutputClip({
+        path: clips[0].out_file || '',
+        title: clips[0].title,
+        id: clips[0].id
+      });
+      setProgress(100);
+      setPhase('complete');
+      setStatus('complete');
+
+      const timestamp = new Date().toTimeString().split(' ')[0];
+      setLogs(prev => [
+        ...prev,
+        `[${timestamp}] [SYSTEM] 📂 Folder hasil render dimuat: ${data.output_dir}`,
+        `[${timestamp}] [SYSTEM] ✅ ${clips.length} klip siap dipreview dan diposting langsung ke YouTube / TikTok!`
+      ]);
+      showToast('Hasil Render Dimuat 🎬', `${clips.length} klip siap diposting ke YouTube / TikTok.`, 'success');
+      return true;
+    } catch (error: any) {
+      showToast('Gagal Memuat Render ❌', error.message || 'Folder tidak valid', 'error');
+      return false;
+    }
+  };
+
+  const handlePickNativeFile = async () => {
+    setIsPickingFile(true);
+    try {
+      const res = await fetch('/api/pick-file', { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Gagal membuka file dialog');
+      }
+      const data = await res.json();
+      if (data.path) {
+        // If the user selected a clip file inside the clips directory, automatically restore the project!
+        const isClipsVideo = data.path.includes('/clips/') || data.path.includes('\\clips\\');
+        if (isClipsVideo) {
+          const loaded = await handleLoadRenderedFolder(data.path);
+          if (loaded) return;
+        }
+
+        resetWorkflow(false);
+        setVideoPathInput(data.path);
+        setSourceKind('video');
+        showToast('File Video Terpilih', data.path, 'success');
+      }
+    } catch (e: any) {
+      showToast('Gagal Membuka File Dialog', e.message || 'Pastikan backend server berjalan', 'error');
+    } finally {
+      setIsPickingFile(false);
+    }
+  };
+
+  const handlePickNativeFolder = async () => {
+    setIsPickingFolder(true);
+    try {
+      const res = await fetch('/api/pick-folder', { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Gagal membuka folder dialog');
+      }
+      const data = await res.json();
+      if (data.path) {
+        await handleLoadRenderedFolder(data.path);
+      }
+    } catch (e: any) {
+      showToast('Gagal Membuka Folder Dialog', e.message || 'Pastikan backend server berjalan', 'error');
+    } finally {
+      setIsPickingFolder(false);
+    }
+  };
 
   // Auto Scroll Terminal
   useEffect(() => {
@@ -205,6 +510,11 @@ export const SimpleClipperDashboard: React.FC = () => {
         const data = await res.json();
         setYtConnected(data.connected);
         setYtChannel(data.channel);
+        if (data.channel?.customUrl) {
+          setAccountWatermark(prev => prev || data.channel.customUrl);
+        } else if (data.channel?.title) {
+          setAccountWatermark(prev => prev || `@${data.channel.title.replace(/\s+/g, '').toLowerCase()}`);
+        }
         if (showNotification) {
           const ts = new Date().toTimeString().split(' ')[0];
           if (data.connected && data.channel) {
@@ -327,9 +637,8 @@ export const SimpleClipperDashboard: React.FC = () => {
   // Open Confirmation Modal for Direct YouTube Posting
   const handleOpenUploadModal = (clip: GeneratedClipItem) => {
     if (!ytConnected) {
-      if (confirm("Akun YouTube belum terhubung. Apakah Anda ingin menghubungkan channel YouTube sekarang?")) {
-        handleConnectYouTube();
-      }
+      showToast('YouTube Belum Terhubung', 'Silakan hubungkan channel YouTube di tab Pengaturan.', 'warning');
+      handleOpenSettings('youtube');
       return;
     }
 
@@ -459,9 +768,25 @@ export const SimpleClipperDashboard: React.FC = () => {
 
   // Start Real Processing via SSE — Phase 1: Analyze Only
   const handleStartProcessing = () => {
+    if (sourceKind === 'render-folder') {
+      showToast('Hasil Render Sudah Siap', 'Pilih file video baru jika ingin menjalankan analisis.', 'info');
+      return;
+    }
     const source = videoPathInput.trim();
     if (!source) {
       alert('Silakan masukkan file path video atau URL YouTube terlebih dahulu!');
+      return;
+    }
+
+    if (aiConfig && !aiConfig.ready) {
+      showToast('AI Belum Dikonfigurasi', 'Silakan setup AI Provider dan API Key terlebih dahulu.', 'warning');
+      handleOpenAiSettings();
+      return;
+    }
+
+    if (transcriptionModel === 'groq' && aiConfig && !aiConfig.groq_ready) {
+      showToast('Groq API Key Kosong', 'Transkripsi Groq membutuhkan API Key. Buka Pengaturan AI untuk memasukkannya.', 'warning');
+      handleOpenAiSettings();
       return;
     }
 
@@ -483,14 +808,35 @@ export const SimpleClipperDashboard: React.FC = () => {
     analysisReceivedRef.current = false;
 
     const startTimestamp = new Date().toTimeString().split(' ')[0];
+    const langLabel = languageMode === 'en_to_id'
+      ? 'English ➔ Terjemahkan ke Indo'
+      : languageMode === 'en'
+      ? 'English (Asli)'
+      : languageMode === 'auto'
+      ? 'Auto-Detect'
+      : 'Bahasa Indonesia';
+
     setLogs([
       `[${startTimestamp}] [SYSTEM] Inisialisasi ${activeTab.toUpperCase()} CLIPPER ENGINE...`,
-      `[${startTimestamp}] [SYSTEM] Model AI: ${transcriptionModel} | Subtitle Style: ${selectedPresetId}`,
+      `[${startTimestamp}] [SYSTEM] Model AI: ${transcriptionModel} | Bahasa: ${langLabel} | Subtitle Style: ${selectedPresetId}`,
       `[${startTimestamp}] [SYSTEM] Sumber video: ${source}`,
       `[${startTimestamp}] [SYSTEM] Memulai proses transkripsi & analisis AI (tanpa render)...`
     ]);
 
-    const streamUrl = `/api/analyze?mode=${encodeURIComponent(activeTab)}&source=${encodeURIComponent(source)}&num_clips=${encodeURIComponent(clipCount)}&whisper_model=${encodeURIComponent(transcriptionModel)}`;
+    let sourceLang = 'id';
+    let targetLang = 'id';
+    if (languageMode === 'en_to_id') {
+      sourceLang = 'en';
+      targetLang = 'id';
+    } else if (languageMode === 'en') {
+      sourceLang = 'en';
+      targetLang = 'en';
+    } else if (languageMode === 'auto') {
+      sourceLang = 'auto';
+      targetLang = 'id';
+    }
+
+    const streamUrl = `/api/analyze?mode=${encodeURIComponent(activeTab)}&source=${encodeURIComponent(source)}&num_clips=${encodeURIComponent(clipCount)}&whisper_model=${encodeURIComponent(transcriptionModel)}&source_lang=${encodeURIComponent(sourceLang)}&target_lang=${encodeURIComponent(targetLang)}`;
     const es = new EventSource(streamUrl);
     eventSourceRef.current = es;
     let analysisComplete = false;
@@ -550,6 +896,9 @@ export const SimpleClipperDashboard: React.FC = () => {
           setAnalysisId(result.analysis_id || '');
           setResolvedVideoPath(result.video_path || source);
           setOutputDir(result.output_dir || '');
+          if (result.source_name) {
+            setSourceWatermark(prev => prev || result.source_name);
+          }
           analysisReceivedRef.current = true;
           setPhase('preview');
           const ts = new Date().toTimeString().split(' ')[0];
@@ -626,7 +975,12 @@ export const SimpleClipperDashboard: React.FC = () => {
       analysis_id: analysisId,
       clip_indices: approved.map(c => c.index),
       sub_style: selectedPresetId,
-      framing_mode: framingMode
+      framing_mode: framingMode,
+      sub_position: subPosition,
+      show_emoji: showEmoji,
+      watermark_enabled: watermarkEnabled,
+      source_watermark: sourceWatermark.trim(),
+      account_watermark: accountWatermark.trim()
     };
 
     const controller = new AbortController();
@@ -911,66 +1265,8 @@ export const SimpleClipperDashboard: React.FC = () => {
           </button>
         </div>
 
-        {/* Right: Active Processing Badge & YouTube Connection Button */}
-        <div className="flex items-center gap-3">
-          {/* YouTube Social Status Pill */}
-          {ytConnected && ytChannel ? (
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setYtChannelModalOpen(true)}
-                className="flex items-center gap-2 rounded-full border border-red-500/30 bg-red-950/40 hover:bg-red-900/40 px-2.5 py-1 text-xs transition-all cursor-pointer group shadow-sm active:scale-95"
-                title="Klik untuk melihat status koneksi YouTube & channel info"
-              >
-                <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                {ytChannel.thumbnail && !ytAvatarFailed ? (
-                  <img src={ytChannel.thumbnail} alt="" onError={() => setYtAvatarFailed(true)} className="h-4 w-4 rounded-full object-cover" />
-                ) : (
-                  <svg className="h-3.5 w-3.5 text-red-500 fill-current" viewBox="0 0 24 24">
-                    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
-                  </svg>
-                )}
-                <span className="font-semibold text-slate-200 text-[11px] max-w-[110px] truncate group-hover:text-white">
-                  {ytChannel.title}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={handleDisconnectYouTube}
-                className="text-[10px] text-slate-400 hover:text-red-400 font-bold px-1.5 py-1 hover:bg-slate-800 rounded-full transition-colors"
-                title="Disconnect YouTube"
-              >
-                ✕
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={handleConnectYouTube}
-              className="flex items-center gap-1.5 rounded-full border border-red-500/40 bg-red-600/20 hover:bg-red-600/30 px-3 py-1 text-xs font-semibold text-red-300 transition-colors shadow-sm active:scale-95"
-              title="Hubungkan Channel YouTube untuk Direct Upload"
-            >
-              <svg className="h-3.5 w-3.5 text-red-500 fill-current" viewBox="0 0 24 24">
-                <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
-              </svg>
-              <span>Connect YouTube</span>
-            </button>
-          )}
-
-          {/* Quick TikTok Creator Center Link */}
-          <a
-            href="https://www.tiktok.com/creator-center/upload"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 rounded-full border border-cyan-500/40 bg-cyan-950/40 hover:bg-cyan-900/40 px-3 py-1 text-xs font-semibold text-cyan-300 transition-colors shadow-sm active:scale-95 group"
-            title="Buka TikTok Creator Center Upload Web"
-          >
-            <svg className="h-3.5 w-3.5 fill-current text-cyan-400 group-hover:text-white transition-colors" viewBox="0 0 24 24">
-              <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-2.88 2.89 2.89 2.89 0 0 1-2.89-2.89 2.89 2.89 0 0 1 2.89-2.89c.35 0 .69.06 1 .17V9.45a6.34 6.34 0 0 0-1-.08 6.34 6.34 0 0 0-6.34 6.34 6.34 6.34 0 0 0 6.34 6.34 6.34 6.34 0 0 0 6.34-6.34V8.75a8.28 8.28 0 0 0 4.76 1.49V6.79a4.85 4.85 0 0 1-1-.1z"/>
-            </svg>
-            <span>TikTok Studio</span>
-            <ArrowUpRightIcon className="h-3 w-3 stroke-2 opacity-70 transition-all group-hover:-translate-y-px group-hover:translate-x-px group-hover:opacity-100" />
-          </a>
-
+        {/* Right: Active Processing Badge & Studio Settings Icon */}
+        <div className="flex items-center gap-2.5">
           {status === 'processing' ? (
             <div className="flex items-center gap-2 rounded-full bg-amber-950/60 border border-amber-500/40 px-3 py-1 text-xs font-bold text-amber-400 font-['Outfit',_sans-serif]">
               <span className="relative flex h-2 w-2">
@@ -995,9 +1291,52 @@ export const SimpleClipperDashboard: React.FC = () => {
               <span className="tracking-wider uppercase text-[10px]">READY</span>
             </div>
           )}
+
+          {/* Unified Settings Icon Button */}
+          <button
+            type="button"
+            onClick={() => handleOpenSettings()}
+            className={`relative flex h-9 w-9 items-center justify-center rounded-xl border transition-all shadow-sm active:scale-95 cursor-pointer ${
+              aiConfig && !aiConfig.ready
+                ? 'border-amber-500/60 bg-amber-500/20 text-amber-300 ring-2 ring-amber-500/30 animate-pulse'
+                : 'border-slate-800 bg-slate-900/90 text-slate-300 hover:text-emerald-400 hover:border-emerald-500/40 hover:bg-slate-800'
+            }`}
+            title="Pengaturan Studio (Model AI, YouTube, TikTok)"
+          >
+            <Cog6ToothIcon className={`h-5 w-5 stroke-[1.8] ${aiConfig && !aiConfig.ready ? 'text-amber-400' : 'text-slate-300 hover:text-emerald-400'}`} />
+            {aiConfig && !aiConfig.ready ? (
+              <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500 border border-[#0f141b]"></span>
+              </span>
+            ) : ytConnected ? (
+              <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400 border border-[#0f141b]"></span>
+              </span>
+            ) : null}
+          </button>
         </div>
 
       </header>
+
+      {/* AI Warning Banner when not configured */}
+      {aiConfig && !aiConfig.ready && (
+        <div className="flex items-center justify-between bg-gradient-to-r from-amber-950/90 via-amber-900/60 to-slate-950/90 border-b border-amber-500/40 px-5 py-2 text-xs text-amber-200 z-10 shadow-sm flex-shrink-0">
+          <div className="flex items-center gap-2.5">
+            <ExclamationTriangleIcon className="h-4 w-4 text-amber-400 flex-shrink-0" />
+            <span>
+              <strong className="text-white">AI Engine belum terhubung:</strong> Masukkan API Key & Provider (OpenRouter, OpenAI, Groq, DeepSeek, atau Custom) agar AI dapat menganalisis momen viral.
+            </span>
+          </div>
+          <button
+            onClick={() => handleOpenSettings('ai')}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-all shadow-sm active:scale-95 cursor-pointer ml-3 flex-shrink-0"
+          >
+            <Cog6ToothIcon className="h-3.5 w-3.5 stroke-[2.5]" />
+            <span>Buka Pengaturan AI</span>
+          </button>
+        </div>
+      )}
 
       {/* ─────────────────────────────────────────────────────────────
           2. MAIN CONTENT: 3-COLUMN WORKSPACE
@@ -1015,26 +1354,60 @@ export const SimpleClipperDashboard: React.FC = () => {
             </div>
 
             <label className="block text-[11px] font-medium text-slate-400 mb-1">
-              File Path or YouTube URL
+              File Video, YouTube URL, atau Folder Clips
             </label>
             <div className="flex items-center gap-1.5">
               <input
                 type="text"
                 value={videoPathInput}
-                onChange={(e) => setVideoPathInput(e.target.value)}
-                placeholder="/path/to/video.mp4 atau URL..."
-                className={`flex-1 rounded-xl border px-3 py-2 text-xs font-mono transition-all shadow-inner truncate ${themeClasses.input}`}
+                onChange={(e) => {
+                  if (sourceKind === 'render-folder') resetWorkflow(false);
+                  setVideoPathInput(e.target.value);
+                  setSourceKind('video');
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && videoPathInput.trim()) {
+                    void handleLoadRenderedFolder(videoPathInput.trim());
+                  }
+                }}
+                placeholder="/path/to/video.mp4 atau folder clips..."
+                className={`flex-1 rounded-xl border px-3 py-2 text-xs font-mono transition-all shadow-inner truncate ${themeClasses.input} ${sourceKind === 'render-folder' ? 'border-emerald-500/60 ring-1 ring-emerald-500/30' : ''}`}
               />
               <button
                 type="button"
                 onClick={handlePickNativeFile}
-                disabled={isPickingFile}
+                disabled={isPickingFile || isPickingFolder || isProcessing}
                 className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-900/90 text-slate-400 hover:text-white hover:border-slate-700 transition-colors shadow-sm flex-shrink-0 disabled:opacity-50"
                 title="Pilih File Video dari Komputer (Native File Explorer)"
               >
-                <FolderOpenIcon className={`h-4 w-4 stroke-[2] ${isPickingFile ? 'animate-pulse text-emerald-400' : ''}`} />
+                <VideoCameraIcon className={`h-4 w-4 stroke-[2] ${isPickingFile ? 'animate-pulse text-cyan-400' : ''}`} />
+              </button>
+              <button
+                type="button"
+                onClick={handlePickNativeFolder}
+                disabled={isPickingFile || isPickingFolder || isProcessing}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-500/40 bg-emerald-950/40 text-emerald-400 hover:text-white hover:bg-emerald-900/50 hover:border-emerald-500/60 transition-colors shadow-sm flex-shrink-0 disabled:opacity-50"
+                title="Pilih Folder Hasil Render di clips (Native Folder Explorer)"
+              >
+                <FolderOpenIcon className={`h-4 w-4 stroke-[2] ${isPickingFolder ? 'animate-pulse text-emerald-300' : ''}`} />
               </button>
             </div>
+            {sourceKind === 'render-folder' && (
+              <div className="mt-2 flex items-center justify-between text-[10px] font-semibold text-emerald-300 bg-emerald-950/50 border border-emerald-500/30 rounded-xl px-3 py-1.5 shadow-xs">
+                <div className="flex items-center gap-1.5 truncate mr-2">
+                  <CheckCircleIcon className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" />
+                  <span className="truncate">Folder render aktif ({generatedClips.length} klip) — Mode upload aktif</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => resetWorkflow(true)}
+                  className="text-slate-400 hover:text-white underline font-normal flex-shrink-0"
+                  title="Kembali ke mode input video baru"
+                >
+                  Reset
+                </button>
+              </div>
+            )}
           </div>
 
           {/* 2. SETTINGS SECTION */}
@@ -1097,6 +1470,56 @@ export const SimpleClipperDashboard: React.FC = () => {
           </div>
 
           {/* Setting 2: AI Transcription Model */}
+          {/* LANGUAGE & TRANSLATION SECTION */}
+          <div className="mb-4 relative">
+            <label className="block text-[11px] font-medium text-slate-400 mb-1">
+              Bahasa Audio & Subtitle
+            </label>
+            <button
+              type="button"
+              onClick={() => setLangDropdownOpen(!langDropdownOpen)}
+              className="flex w-full items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-left text-xs font-medium text-slate-200 hover:border-slate-700 transition-all shadow-inner"
+            >
+              <div className="flex items-center gap-2 truncate">
+                <GlobeAltIcon className="h-3.5 w-3.5 stroke-[2] text-sky-400 flex-shrink-0" />
+                <span className="truncate text-[11px]">
+                  {languageMode === 'id' && '🇮🇩 Bahasa Indonesia (Asli)'}
+                  {languageMode === 'en_to_id' && '🇬🇧 English ➔ 🇮🇩 Terjemahkan ke Indo'}
+                  {languageMode === 'en' && '🇬🇧 English (Asli / Original)'}
+                  {languageMode === 'auto' && '🌐 Auto-Detect ➔ 🇮🇩 Terjemahkan ke Indo'}
+                </span>
+              </div>
+              <ChevronDownIcon className={`h-3.5 w-3.5 stroke-[2] text-slate-400 transition-transform ${langDropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {langDropdownOpen && (
+              <div className="absolute top-full left-0 right-0 mt-1 z-30 rounded-xl border border-slate-800 bg-slate-900 p-1 shadow-2xl backdrop-blur-md">
+                {[
+                  { id: 'id', label: '🇮🇩 Bahasa Indonesia (Asli)', desc: 'Audio & subtitle bahasa Indonesia' },
+                  { id: 'en_to_id', label: '🇬🇧 English ➔ 🇮🇩 Terjemahkan ke Indo', desc: 'Subtitle & klip otomatis ke bahasa Indonesia' },
+                  { id: 'en', label: '🇬🇧 English (Asli / Original)', desc: 'Audio & subtitle bahasa Inggris tanpa terjemahan' },
+                  { id: 'auto', label: '🌐 Auto-Detect ➔ 🇮🇩 Terjemahkan ke Indo', desc: 'Deteksi otomatis bahasa audio' }
+                ].map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setLanguageMode(item.id);
+                      setLangDropdownOpen(false);
+                    }}
+                    className={`flex w-full flex-col rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
+                      languageMode === item.id
+                        ? `${themeClasses.pillActive} font-semibold`
+                        : 'text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="font-semibold text-[11px]">{item.label}</span>
+                    <span className="text-[9px] text-slate-400">{item.desc}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="mb-4 relative">
             <label className="block text-[11px] font-medium text-slate-400 mb-1">
               AI Transcription Model
@@ -1151,7 +1574,7 @@ export const SimpleClipperDashboard: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-1.5">
               {/* Option 1: 9:16 Smart Face Tracker */}
               <button
                 type="button"
@@ -1163,20 +1586,20 @@ export const SimpleClipperDashboard: React.FC = () => {
                 }`}
               >
                 <div className="flex items-center justify-between w-full mb-1 px-0.5">
-                  <span className={`text-[10px] font-bold truncate ${framingMode === 'smart_crop' ? themeClasses.accentText : 'text-slate-200'}`}>
-                    9:16 Smart Follow
+                  <span className={`text-[9.5px] font-bold truncate ${framingMode === 'smart_crop' ? themeClasses.accentText : 'text-slate-200'}`}>
+                    Smart Follow
                   </span>
                 </div>
 
                 {/* Visual Preview Box */}
                 <div className="w-full h-10 rounded-lg bg-neutral-950 border border-neutral-800 flex items-center justify-center overflow-hidden px-1 shadow-inner relative select-none">
-                  <div className="w-5 h-7 rounded border border-emerald-500/60 bg-emerald-500/10 flex flex-col items-center justify-center gap-0.5 shadow-sm">
+                  <div className="w-4 h-6 rounded border border-emerald-500/60 bg-emerald-500/10 flex flex-col items-center justify-center gap-0.5 shadow-sm">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                    <span className="h-1.5 w-2 rounded-t-sm bg-emerald-500/60" />
+                    <span className="h-1 w-2 rounded-t-sm bg-emerald-500/60" />
                   </div>
                 </div>
-                <span className="mt-1 text-[8.5px] text-slate-400 px-0.5 leading-tight">
-                  AI Face Tracking
+                <span className="mt-1 text-[8px] text-slate-400 px-0.5 leading-tight">
+                  AI 9:16 Follow
                 </span>
               </button>
 
@@ -1191,21 +1614,52 @@ export const SimpleClipperDashboard: React.FC = () => {
                 }`}
               >
                 <div className="flex items-center justify-between w-full mb-1 px-0.5">
-                  <span className={`text-[10px] font-bold truncate ${framingMode === 'fit_blur' ? themeClasses.accentText : 'text-slate-200'}`}>
-                    16:9 Fit (Blur)
+                  <span className={`text-[9.5px] font-bold truncate ${framingMode === 'fit_blur' ? themeClasses.accentText : 'text-slate-200'}`}>
+                    16:9 Fit Blur
                   </span>
                 </div>
 
                 {/* Visual Preview Box */}
                 <div className="w-full h-10 rounded-lg bg-neutral-950 border border-neutral-800 flex flex-col items-center justify-center overflow-hidden p-1 shadow-inner relative select-none">
-                  <div className="absolute inset-0 bg-slate-700/30 backdrop-blur-sm" />
-                  <div className="relative w-full h-4 rounded border border-cyan-400/80 bg-slate-900 flex items-center justify-center gap-1 shadow-md">
+                  <div className="absolute inset-0 bg-slate-700/30 backdrop-blur-xs" />
+                  <div className="relative w-full h-3.5 rounded border border-cyan-400/80 bg-slate-900 flex items-center justify-center gap-1 shadow-md">
                     <span className="h-1 w-1 rounded-full bg-cyan-400" />
                     <span className="h-1 w-1 rounded-full bg-amber-400" />
                   </div>
                 </div>
-                <span className="mt-1 text-[8.5px] text-slate-400 px-0.5 leading-tight">
-                  Podcast 16:9 Fit
+                <span className="mt-1 text-[8px] text-slate-400 px-0.5 leading-tight">
+                  Landscape Fit
+                </span>
+              </button>
+
+              {/* Option 3: Dual Stack Split-Screen */}
+              <button
+                type="button"
+                onClick={() => setFramingMode('split_screen')}
+                className={`flex flex-col items-start rounded-xl p-2 text-left transition-all border ${
+                  framingMode === 'split_screen'
+                    ? `border-emerald-500 bg-emerald-950/30 shadow-xs ring-2 ring-emerald-500/20`
+                    : `border-slate-800 bg-slate-950/50 hover:bg-slate-900 hover:border-slate-700`
+                }`}
+              >
+                <div className="flex items-center justify-between w-full mb-1 px-0.5">
+                  <span className={`text-[9.5px] font-bold truncate ${framingMode === 'split_screen' ? themeClasses.accentText : 'text-slate-200'}`}>
+                    Dual Stack
+                  </span>
+                </div>
+
+                {/* Visual Preview Box */}
+                <div className="w-full h-10 rounded-lg bg-neutral-950 border border-neutral-800 flex flex-col items-center justify-between overflow-hidden p-0.5 shadow-inner relative select-none">
+                  <div className="w-full h-[15px] rounded-xs bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center">
+                    <span className="text-[6.5px] font-bold text-cyan-300 font-mono">HOST</span>
+                  </div>
+                  <div className="w-full h-px bg-neutral-700" />
+                  <div className="w-full h-[15px] rounded-xs bg-amber-950/80 border border-amber-500/50 flex items-center justify-center">
+                    <span className="text-[6.5px] font-bold text-amber-300 font-mono">GUEST</span>
+                  </div>
+                </div>
+                <span className="mt-1 text-[8px] text-slate-400 px-0.5 leading-tight">
+                  Split 50:50
                 </span>
               </button>
             </div>
@@ -1290,20 +1744,184 @@ export const SimpleClipperDashboard: React.FC = () => {
             })}
           </div>
 
+          {/* Subtitle Position & Auto-Emoji Options */}
+          {selectedPresetId !== 'no_subtitle' && (
+            <div className="mb-4 rounded-xl border border-slate-800/80 bg-slate-950/40 p-2.5 flex flex-col gap-2.5">
+              {/* Vertical Position Slider */}
+              <div>
+                <div className="flex items-center justify-between text-[11px] mb-1">
+                  <span className="font-semibold text-slate-300 flex items-center gap-1.5">
+                    <AdjustmentsHorizontalIcon className="h-3.5 w-3.5 text-emerald-400" />
+                    <span>Posisi Vertikal Subtitle</span>
+                  </span>
+                  <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-emerald-400 font-bold">
+                    {subPosition}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="35"
+                  max="85"
+                  step="1"
+                  value={subPosition}
+                  onChange={(e) => setSubPosition(Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                />
+                {/* Quick position buttons */}
+                <div className="flex items-center justify-between gap-1 mt-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setSubPosition(50)}
+                    className={`flex-1 py-1 rounded-md text-[9px] font-medium border transition-colors ${
+                      subPosition === 50
+                        ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Tengah (50%)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSubPosition(68)}
+                    className={`flex-1 py-1 rounded-md text-[9px] font-medium border transition-colors ${
+                      subPosition === 68
+                        ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    TikTok Safe (68%)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSubPosition(80)}
+                    className={`flex-1 py-1 rounded-md text-[9px] font-medium border transition-colors ${
+                      subPosition === 80
+                        ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
+                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Bawah (80%)
+                  </button>
+                </div>
+              </div>
+
+              {/* Auto-Emoji Toggle */}
+              <div className="flex items-center justify-between pt-1 border-t border-slate-800/60">
+                <div className="flex flex-col">
+                  <span className="text-[11px] font-semibold text-slate-300 flex items-center gap-1">
+                    <SparklesIcon className="h-3.5 w-3.5 text-yellow-400" />
+                    <span>Auto-Emoji Hook</span>
+                  </span>
+                  <span className="text-[9px] text-slate-500">
+                    Suntikkan emoji viral di kata kunci
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowEmoji(!showEmoji)}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    showEmoji ? 'bg-emerald-500' : 'bg-slate-800'
+                  }`}
+                  role="switch"
+                  aria-checked={showEmoji}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                      showEmoji ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* GLASS WATERMARK SETTINGS CARD */}
+          <div className={`rounded-xl border ${themeClasses.card} p-3 space-y-2.5 shadow-lg`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <ShieldCheckIcon className="h-4 w-4 text-cyan-400" />
+                <span className="text-[11px] font-bold text-slate-200 uppercase tracking-wider font-['Outfit']">
+                  Glass Watermark (Top)
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWatermarkEnabled(!watermarkEnabled)}
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  watermarkEnabled ? 'bg-cyan-500' : 'bg-slate-800'
+                }`}
+                role="switch"
+                aria-checked={watermarkEnabled}
+                title="Aktifkan / Nonaktifkan Watermark Glass Effect"
+              >
+                <span
+                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                    watermarkEnabled ? 'translate-x-4' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {watermarkEnabled && (
+              <div className="space-y-2 pt-1 border-t border-slate-800/60 animate-in fade-in duration-150">
+                {/* Source Channel Watermark (Top Left) */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] font-semibold text-slate-400 flex items-center gap-1">
+                      <span className="text-cyan-400">▶</span> Sumber (Kiri Atas)
+                    </label>
+                    <span className="text-[9px] text-slate-500 font-mono">Pill Kaca</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={sourceWatermark}
+                    onChange={(e) => setSourceWatermark(e.target.value)}
+                    placeholder="Contoh: Deddy Corbuzier / Channel"
+                    className="w-full h-8 px-2.5 rounded-lg bg-slate-900/80 border border-slate-800 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/40 transition-all font-sans"
+                  />
+                </div>
+
+                {/* Account Handle Watermark (Top Right) */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] font-semibold text-slate-400 flex items-center gap-1">
+                      <span className="text-amber-400">@</span> Akun Clipper (Kanan Atas)
+                    </label>
+                    <span className="text-[9px] text-amber-500/80 font-mono">Amber Pop</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={accountWatermark}
+                    onChange={(e) => setAccountWatermark(e.target.value)}
+                    placeholder="Contoh: @visionclipper"
+                    className="w-full h-8 px-2.5 rounded-lg bg-slate-900/80 border border-slate-800 text-xs text-amber-300 placeholder-slate-600 focus:outline-none focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/40 transition-all font-mono"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* STICKY BOTTOM GENERATE BUTTON */}
           <div className="mt-auto pt-3 flex items-center gap-2 sticky bottom-0 bg-[#0e1218] border-t border-slate-800/80 pb-2">
               <button
-                onClick={handleStartProcessing}
-                disabled={isProcessing}
-                className={`flex flex-1 h-11 items-center justify-center gap-2 rounded-xl text-xs font-bold transition-all ${themeClasses.actionBtn} ${
-                  isProcessing ? 'opacity-70 cursor-wait' : 'active:scale-[0.98]'
-                }`}
+                onClick={sourceKind === 'render-folder' ? undefined : handleStartProcessing}
+                disabled={isProcessing || sourceKind === 'render-folder'}
+                className={`flex flex-1 h-11 items-center justify-center gap-2 rounded-xl text-xs font-bold transition-all ${
+                  sourceKind === 'render-folder'
+                    ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/40 cursor-default'
+                    : themeClasses.actionBtn
+                } ${isProcessing ? 'opacity-70 cursor-wait' : 'active:scale-[0.98]'}`}
               >
                 {isProcessing ? (
                   <>
                     <span>Processing...</span>
                     <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                   </>
+                ) : sourceKind === 'render-folder' ? (
+                  <span className="flex items-center gap-1.5">
+                    <CheckCircleIcon className="h-4 w-4 text-emerald-400" />
+                    <span>Hasil Render Siap Diposting ({generatedClips.length} Klip)</span>
+                  </span>
                 ) : (
                   <span>✦ Analyze {clipCount} Clips</span>
                 )}
@@ -1331,6 +1949,11 @@ export const SimpleClipperDashboard: React.FC = () => {
             previewClip={previewOutputClip ? null : previewClipRange}
             clipTitle={previewOutputClip ? previewOutputClip.title : undefined}
             isRenderedClip={Boolean(previewOutputClip)}
+            subPosition={subPosition}
+            showEmoji={showEmoji}
+            watermarkEnabled={watermarkEnabled}
+            sourceWatermark={sourceWatermark}
+            accountWatermark={accountWatermark}
           />
         </section>
 
@@ -1385,7 +2008,7 @@ export const SimpleClipperDashboard: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-slate-800/60 text-[10px] text-slate-500 font-mono flex-shrink-0">
-                  <span>Model: {transcriptionModel === 'groq' ? 'Groq Whisper Cloud' : 'YouTube Transcript'}</span>
+                  <span>Model: {transcriptionModel === 'groq' ? 'Groq Whisper Cloud' : 'YouTube Transcript'} | Lang: {languageMode === 'en_to_id' ? 'EN ➔ ID' : languageMode.toUpperCase()}</span>
                   <span>Target: {clipCount} Klip</span>
                 </div>
               </div>
@@ -1628,7 +2251,7 @@ export const SimpleClipperDashboard: React.FC = () => {
                       {generatedClips.length > 0 ? `${generatedClips.length} Klip Dihasilkan` : 'Folder Siap'}
                     </span>
                     <button
-                      onClick={() => { setPhase('config'); setClipCandidates([]); setPreviewClipRange(null); setPreviewOutputClip(null); setGeneratedClips([]); setOutputDir(''); }}
+                      onClick={() => resetWorkflow(true)}
                       className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-white transition-colors"
                     >
                       <ArrowPathIcon className="h-3 w-3 stroke-[2]" />
@@ -2473,108 +3096,47 @@ export const SimpleClipperDashboard: React.FC = () => {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          YOUTUBE CONNECTIVITY & CHANNEL STATUS MODAL
+          SHADCN UI STUDIO SETTINGS MODAL
          ───────────────────────────────────────────────────────────── */}
-      {ytChannelModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-          <div className="w-full max-w-md rounded-2xl bg-slate-900 p-5 shadow-2xl border border-slate-800 text-slate-100">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
-              <div className="flex items-center gap-2">
-                <svg className="h-5 w-5 text-red-500 fill-current" viewBox="0 0 24 24">
-                  <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
-                </svg>
-                <h3 className="text-sm font-bold text-white">Status Konektivitas YouTube API</h3>
-              </div>
-              <button
-                onClick={() => setYtChannelModalOpen(false)}
-                className="rounded-lg p-1 text-slate-400 hover:text-white"
-              >
-                <XMarkIcon className="h-4 w-4" />
-              </button>
-            </div>
-
-            {ytConnected && ytChannel ? (
-              <div className="space-y-3.5">
-                <div className="flex items-center gap-3.5 rounded-xl bg-slate-950 p-3 border border-slate-800">
-                  {ytChannel.thumbnail && !ytAvatarFailed ? (
-                    <img src={ytChannel.thumbnail} alt="" onError={() => setYtAvatarFailed(true)} className="h-12 w-12 rounded-full border border-red-500/50 object-cover" />
-                  ) : (
-                    <div className="h-12 w-12 rounded-full bg-red-600/20 text-red-400 font-bold flex items-center justify-center text-base">
-                      YT
-                    </div>
-                  )}
-                  <div className="flex-1">
-                    <h4 className="text-sm font-bold text-white">{ytChannel.title}</h4>
-                    <p className="text-xs text-slate-400 font-mono">{ytChannel.customUrl || '@asal.sharing'}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="flex items-center gap-1 rounded bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 text-[9px] font-bold text-emerald-400">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                        API Aktif & Terhubung
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="rounded-lg bg-slate-950/60 p-2.5 border border-slate-800/80">
-                    <span className="text-[10px] text-slate-400 block">Subscribers</span>
-                    <span className="text-sm font-bold text-slate-200">{(ytChannel as any).subscriberCount || '2'}</span>
-                  </div>
-                  <div className="rounded-lg bg-slate-950/60 p-2.5 border border-slate-800/80">
-                    <span className="text-[10px] text-slate-400 block">Total Video</span>
-                    <span className="text-sm font-bold text-slate-200">{(ytChannel as any).videoCount || '5'}</span>
-                  </div>
-                </div>
-
-                <div className="rounded-lg bg-slate-950/40 p-2.5 border border-slate-800/60 text-[11px] space-y-1">
-                  <div className="flex justify-between text-slate-400">
-                    <span>Channel ID:</span>
-                    <span className="font-mono text-slate-300 text-[10px]">{(ytChannel as any).id || 'UCmUbuH3agtBcNREw5VfzPlw'}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-400">
-                    <span>Scopes:</span>
-                    <span className="font-mono text-emerald-400 text-[10px]">youtube.upload, readonly</span>
-                  </div>
-                  <div className="flex justify-between text-slate-400">
-                    <span>OAuth Token:</span>
-                    <span className="font-mono text-emerald-400 text-[10px]">Valid (Auto-Refresh)</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-                  <button
-                    onClick={() => checkYouTubeStatus(true)}
-                    disabled={isCheckingYtStatus}
-                    className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 transition-colors active:scale-95"
-                  >
-                    <ArrowPathIcon className={`h-3.5 w-3.5 ${isCheckingYtStatus ? 'animate-spin text-emerald-400' : ''}`} />
-                    <span>{isCheckingYtStatus ? 'Memeriksa...' : 'Tes Ulang Koneksi'}</span>
-                  </button>
-
-                  <button
-                    onClick={() => { setYtChannelModalOpen(false); handleDisconnectYouTube(); }}
-                    className="rounded-lg border border-red-500/30 bg-red-950/40 hover:bg-red-900/60 px-3 py-1.5 text-xs font-semibold text-red-400 transition-colors"
-                  >
-                    Putuskan Akun
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-4 space-y-3">
-                <p className="text-xs text-slate-400">
-                  Akun YouTube belum terhubung. Klik tombol di bawah untuk login ke Google dan memberi izin upload.
-                </p>
-                <button
-                  onClick={handleConnectYouTube}
-                  className="rounded-xl bg-red-600 hover:bg-red-500 px-4 py-2 text-xs font-bold text-white transition-colors shadow-md"
-                >
-                  Hubungkan Channel YouTube
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <StudioSettingsModal
+        open={settingsModalOpen}
+        onOpenChange={setSettingsModalOpen}
+        activeTab={settingsActiveTab}
+        setActiveTab={setSettingsActiveTab}
+        aiConfig={aiConfig}
+        aiSelectedProvider={aiSelectedProvider}
+        handleSelectProvider={handleSelectProvider}
+        aiEndpointInput={aiEndpointInput}
+        setAiEndpointInput={setAiEndpointInput}
+        aiModelInput={aiModelInput}
+        setAiModelInput={setAiModelInput}
+        aiApiKeyInput={aiApiKeyInput}
+        setAiApiKeyInput={setAiApiKeyInput}
+        aiGroqKeyInput={aiGroqKeyInput}
+        setAiGroqKeyInput={setAiGroqKeyInput}
+        aiShowKey={aiShowKey}
+        setAiShowKey={setAiShowKey}
+        aiShowGroqKey={aiShowGroqKey}
+        setAiShowGroqKey={setAiShowGroqKey}
+        handleTestAiConnection={handleTestAiConnection}
+        aiTesting={aiTesting}
+        aiTestResult={aiTestResult}
+        setAiTestResult={setAiTestResult}
+        handleTestGroqConnection={handleTestGroqConnection}
+        aiTestingGroq={aiTestingGroq}
+        aiGroqTestResult={aiGroqTestResult}
+        setAiGroqTestResult={setAiGroqTestResult}
+        handleSaveAiConfig={handleSaveAiConfig}
+        aiSaving={aiSaving}
+        ytConnected={ytConnected}
+        ytChannel={ytChannel}
+        ytAvatarFailed={ytAvatarFailed}
+        setYtAvatarFailed={setYtAvatarFailed}
+        isCheckingYtStatus={isCheckingYtStatus}
+        checkYouTubeStatus={checkYouTubeStatus}
+        handleConnectYouTube={handleConnectYouTube}
+        handleDisconnectYouTube={handleDisconnectYouTube}
+      />
 
       {/* ─────────────────────────────────────────────────────────────
           TOAST POPUP NOTIFICATION (BOTTOM-RIGHT)
@@ -2587,12 +3149,15 @@ export const SimpleClipperDashboard: React.FC = () => {
           <div className={`flex h-9 w-9 items-center justify-center rounded-xl flex-shrink-0 ${
             toast.type === 'success' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
             toast.type === 'error' ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
+            toast.type === 'warning' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
             'bg-sky-500/20 text-sky-400 border border-sky-500/30'
           }`}>
             {toast.type === 'success' ? (
               <CheckCircleIcon className="h-5 w-5" />
             ) : toast.type === 'error' ? (
               <XCircleIcon className="h-5 w-5" />
+            ) : toast.type === 'warning' ? (
+              <ExclamationTriangleIcon className="h-5 w-5" />
             ) : (
               <SparklesIcon className="h-5 w-5" />
             )}

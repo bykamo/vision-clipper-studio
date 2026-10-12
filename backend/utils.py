@@ -40,8 +40,29 @@ load_env()
 
 DEFAULT_ENDPOINT = os.environ.get("ROUTER_API_ENDPOINT", "")
 DEFAULT_API_KEY = os.environ.get("ROUTER_API_KEY", "")
-DEFAULT_LLM_MODEL = os.environ.get("ROUTER_LLM_MODEL", "ag/gemini-3.5-flash-low")
+DEFAULT_LLM_MODEL = os.environ.get("ROUTER_LLM_MODEL", "google/gemini-2.0-flash-exp:free")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+
+def env_float(key, default=0.0, min_val=None, max_val=None):
+    val_str = os.environ.get(key)
+    if val_str is None or str(val_str).strip() == "":
+        return default
+    try:
+        val = float(val_str)
+        if min_val is not None:
+            val = max(min_val, val)
+        if max_val is not None:
+            val = min(max_val, val)
+        return val
+    except (ValueError, TypeError):
+        return default
+
+def env_bool(key, default=False):
+    val_str = os.environ.get(key)
+    if val_str is None or str(val_str).strip() == "":
+        return default
+    return str(val_str).strip().lower() in ("1", "true", "yes", "on", "y", "t")
+
 
 def get_groq_api_keys():
     """Mengambil daftar seluruh GROQ API Key yang tersedia (mendukung single key atau comma-separated multi-keys)."""
@@ -56,13 +77,17 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMP_DIR = os.path.join(PROJECT_ROOT, "temp")
 os.makedirs(TEMP_DIR, exist_ok=True)
 DEFAULT_OUT_DIR = os.path.join(PROJECT_ROOT, "clips")
+FONTS_DIR = os.path.join(PROJECT_ROOT, "backend", "fonts")
+os.makedirs(FONTS_DIR, exist_ok=True)
 
-for _pattern in ["tmp*.wav", "temp_crop_*.mp4", "temp_cinema_*.mp4", "temp_*.ass", "temp_sub*.vtt"]:
-    for _f in glob.glob(os.path.join(TEMP_DIR, _pattern)):
-        try:
-            os.remove(_f)
-        except Exception:
-            pass
+def cleanup_temp_files():
+    """Membersihkan sisa file temporary dari sesi sebelumnya."""
+    for _pattern in ["tmp*.wav", "temp_crop_*.mp4", "temp_cinema_*.mp4", "temp_cropcmd_*.txt", "temp_*.ass", "temp_sub*.vtt"]:
+        for _f in glob.glob(os.path.join(TEMP_DIR, _pattern)):
+            try:
+                os.remove(_f)
+            except Exception:
+                pass
 
 VERTICAL_WIDTH = 1080
 VERTICAL_HEIGHT = 1920
@@ -112,7 +137,9 @@ def get_ffprobe_binary():
         return sys_ffprobe
     ffmpeg_exe = get_ffmpeg_binary()
     if ffmpeg_exe and ffmpeg_exe != "ffmpeg":
-        probe_candidate = ffmpeg_exe.replace("ffmpeg", "ffprobe")
+        dir_name, base_name = os.path.split(ffmpeg_exe)
+        new_base = base_name.replace("ffmpeg", "ffprobe", 1)
+        probe_candidate = os.path.join(dir_name, new_base)
         if os.path.exists(probe_candidate):
             return probe_candidate
     return "ffprobe"
@@ -202,6 +229,27 @@ def format_ass_timestamp(seconds):
     mins = int((seconds % 3600) // 60)
     secs = seconds % 60
     return f"{hrs}:{mins:02d}:{secs:05.2f}"
+
+def parse_timestamp_to_seconds(val):
+    """Converts seconds (float/int) or timestamp strings (HH:MM:SS.mmm, MM:SS.mmm, MM:SS) to float seconds."""
+    if isinstance(val, (int, float)):
+        return max(0.0, float(val))
+    if isinstance(val, str):
+        val = val.strip().replace(",", ".")
+        if ":" in val:
+            parts = val.split(":")
+            try:
+                if len(parts) == 3:
+                    return max(0.0, float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2]))
+                elif len(parts) == 2:
+                    return max(0.0, float(parts[0]) * 60 + float(parts[1]))
+            except (ValueError, TypeError):
+                return 0.0
+        try:
+            return max(0.0, float(val))
+        except (ValueError, TypeError):
+            return 0.0
+    return 0.0
 
 # Auto-add NVIDIA CUDA DLLs if installed via pip (for Windows)
 if os.name == 'nt':

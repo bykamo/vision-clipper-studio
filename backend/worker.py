@@ -2,11 +2,20 @@ import argparse
 import json
 import os
 import sys
-from backend.downloader import get_video_file
+import time
+from backend.downloader import get_video_file, get_video_source_name
 from backend.transcriber import transcribe_video, build_transcript_text
 from backend.analyzer import build_viral_prompt, call_llm_api, extract_json_block
 from backend.renderer import extract_and_format_clip
-from backend.utils import log, DEFAULT_LLM_MODEL, DEFAULT_ENDPOINT, DEFAULT_API_KEY, DEFAULT_OUT_DIR, TEMP_DIR
+from backend.utils import (
+    log,
+    DEFAULT_LLM_MODEL,
+    DEFAULT_ENDPOINT,
+    DEFAULT_API_KEY,
+    DEFAULT_OUT_DIR,
+    TEMP_DIR,
+    parse_timestamp_to_seconds,
+)
 
 
 def _serialize_segments(segments):
@@ -45,7 +54,18 @@ def main():
     parser.add_argument("--model", type=str, default="groq", help="Transcription provider")
     parser.add_argument("--out-dir", type=str, default=DEFAULT_OUT_DIR, help="Output directory")
     parser.add_argument("--sub-style", type=str, default="tiktok_viral", choices=["tiktok_viral", "classic_karaoke", "minimalist", "word_pop", "no_subtitle", "none"], help="Subtitle style")
-    parser.add_argument("--framing-mode", type=str, default="smart_crop", choices=["smart_crop", "fit_blur"], help="Video layout framing mode")
+    parser.add_argument("--framing-mode", type=str, default="smart_crop", choices=["smart_crop", "fit_blur", "split_screen"], help="Video layout framing mode")
+    parser.add_argument("--sub-position", type=int, default=68, help="Subtitle vertical position percentage from top (30-85)")
+    parser.add_argument("--show-emoji", action="store_true", default=True, help="Auto-inject high-impact viral emojis to subtitles")
+    parser.add_argument("--no-emoji", action="store_false", dest="show_emoji", help="Disable auto emoji injection")
+    # Watermark flags
+    parser.add_argument("--watermark-enabled", action="store_true", default=True, help="Burn-in subtle glass-effect watermarks")
+    parser.add_argument("--no-watermark", action="store_false", dest="watermark_enabled", help="Disable watermarks")
+    parser.add_argument("--source-watermark", type=str, default="", help="Custom or auto source credit watermark text")
+    parser.add_argument("--account-watermark", type=str, default="", help="Custom clipper account handle or name")
+    # Language & translation flags
+    parser.add_argument("--source-lang", type=str, default="id", choices=["id", "en", "auto"], help="Source audio language (id, en, auto)")
+    parser.add_argument("--target-lang", type=str, default="id", choices=["id", "en", "none"], help="Target subtitle language (id, en, none)")
     # Phase-split flags
     parser.add_argument("--analyze-only", action="store_true", help="Only transcribe + LLM analyze, output JSON, no rendering")
     parser.add_argument("--clips-json", type=str, default=None, help="Path to analysis JSON file (skip transcribe+LLM)")
@@ -75,6 +95,9 @@ def main():
                 raise ValueError("Analysis file has invalid clip or transcript data.")
             os.makedirs(actual_out_dir, exist_ok=True)
 
+            resolved_source_wm = (args.source_watermark or analysis.get("source_name") or get_video_source_name(video_path) or "").strip()
+            resolved_account_wm = (args.account_watermark or "").strip()
+
             indices = _parse_render_indices(args.render_indices, len(clips))
             log(f"Render mode: rendering {len(indices)} selected clips from analysis.", job_id=job_id)
             log(f"Outputs will be saved to: {actual_out_dir}", job_id=job_id)
@@ -90,7 +113,12 @@ def main():
                         video_path, clip, idx, segments, actual_out_dir,
                         job_id=job_id,
                         sub_style=args.sub_style,
-                        framing_mode=args.framing_mode
+                        framing_mode=args.framing_mode,
+                        sub_position=args.sub_position,
+                        show_emoji=args.show_emoji,
+                        watermark_enabled=args.watermark_enabled,
+                        source_watermark=resolved_source_wm,
+                        account_watermark=resolved_account_wm
                     )
                 except Exception as e:
                     log(f"Failed to render clip {idx}: {e}", job_id=job_id)
@@ -115,7 +143,14 @@ def main():
         log(f"Memulai analisis video: {args.file}", job_id=job_id)
         video_path = get_video_file(args.file, job_id=job_id)
 
-        segments = transcribe_video(video_path, source_url=args.file, model_size=args.model, job_id=job_id)
+        segments = transcribe_video(
+            video_path,
+            source_url=args.file,
+            model_size=args.model,
+            source_lang=args.source_lang,
+            target_lang=args.target_lang,
+            job_id=job_id
+        )
         transcript_text = build_transcript_text(segments)
 
         prompt = build_viral_prompt(transcript_text, args.num_clips, mode=args.mode)
@@ -126,7 +161,10 @@ def main():
         for attempt in range(max_retries):
             try:
                 log(f"Mencari bagian video paling viral menggunakan AI (Percobaan ke-{attempt + 1}). Estimasi waktu: ~10-25 detik...", job_id=job_id)
-                llm_response = call_llm_api(prompt, DEFAULT_LLM_MODEL, DEFAULT_ENDPOINT, DEFAULT_API_KEY, job_id=job_id)
+                llm_endpoint = os.environ.get("ROUTER_API_ENDPOINT") or DEFAULT_ENDPOINT
+                llm_key = os.environ.get("ROUTER_API_KEY") or DEFAULT_API_KEY
+                llm_model = os.environ.get("ROUTER_LLM_MODEL") or DEFAULT_LLM_MODEL
+                llm_response = call_llm_api(prompt, llm_model, llm_endpoint, llm_key, job_id=job_id)
                 data = extract_json_block(llm_response, job_id=job_id)
                 clips = data.get("clips", [])
                 if clips:
@@ -152,8 +190,8 @@ def main():
         valid_clips = []
         for raw_clip in clips:
             try:
-                c_start = max(0.0, float(raw_clip.get("start", 0.0)))
-                c_end = float(raw_clip.get("end", 0.0))
+                c_start = parse_timestamp_to_seconds(raw_clip.get("start", 0.0))
+                c_end = parse_timestamp_to_seconds(raw_clip.get("end", 0.0))
                 if c_end <= c_start:
                     continue
                 # Minimal durasi 5 detik agar tidak menghasilkan glitch video
@@ -173,6 +211,9 @@ def main():
         safe_folder_name = "".join([c if c.isalnum() or c in [' ', '-', '_'] else '_' for c in video_basename]).strip()
         actual_out_dir = os.path.join(args.out_dir, safe_folder_name)
 
+        resolved_source_wm = (args.source_watermark or get_video_source_name(video_path) or get_video_source_name(args.file) or "").strip()
+        resolved_account_wm = (args.account_watermark or "").strip()
+
         # ── ANALYZE-ONLY: emit JSON result and exit ──
         if args.analyze_only:
             # Add index to each clip for frontend reference
@@ -183,6 +224,7 @@ def main():
             result = {
                 "status": "analyzed",
                 "video_path": video_path,
+                "source_name": resolved_source_wm,
                 "clips": clips,
                 "segments": _serialize_segments(segments),
                 "output_dir": actual_out_dir
@@ -207,7 +249,12 @@ def main():
                     video_path, clip, i, segments, actual_out_dir,
                     job_id=job_id,
                     sub_style=args.sub_style,
-                    framing_mode=args.framing_mode
+                    framing_mode=args.framing_mode,
+                    sub_position=args.sub_position,
+                    show_emoji=args.show_emoji,
+                    watermark_enabled=args.watermark_enabled,
+                    source_watermark=resolved_source_wm,
+                    account_watermark=resolved_account_wm
                 )
             except Exception as e:
                 log(f"Failed to render clip {i}: {e}", job_id=job_id)

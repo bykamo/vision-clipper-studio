@@ -4,7 +4,8 @@ import json
 from contextlib import contextmanager
 from typing import List, Dict, Any, Optional
 
-DB_PATH = os.path.join(os.getcwd(), "vision_clipper.db")
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(PROJECT_ROOT, "vision_clipper.db")
 
 def init_db():
     with get_db() as conn:

@@ -99,6 +99,82 @@ class TranscriberSnippetCompatibilityTest(unittest.TestCase):
         self.assertEqual(segments[0]["start"], 2.0)
         self.assertEqual(segments[0]["end"], 6.0)
 
+    @patch("youtube_transcript_api.YouTubeTranscriptApi")
+    def test_fetch_youtube_transcript_with_english_language(self, mock_api_cls):
+        mock_api = MagicMock()
+        mock_api_cls.return_value = mock_api
+        mock_list = MagicMock()
+        mock_api.list.return_value = mock_list
+
+        mock_obj = MagicMock()
+        mock_obj.fetch.return_value = [{"text": "Hello world", "start": 0.0, "duration": 3.0}]
+        mock_list.find_transcript.return_value = mock_obj
+
+        segments = fetch_youtube_transcript("dummy_en_vid", source_lang="en")
+        self.assertIsNotNone(segments)
+        self.assertEqual(segments[0]["text"], "Hello world")
+        mock_list.find_transcript.assert_called_with(['en', 'en-US', 'en-GB'])
+
+    @patch("requests.post")
+    @patch("backend.utils.get_groq_api_keys", return_value=["gsk_test1234567890"])
+    def test_transcribe_with_groq_language_payload(self, mock_keys, mock_post):
+        from backend.transcriber import transcribe_with_groq
+        import tempfile
+        import os
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "segments": [{"start": 0.0, "end": 2.0, "text": "Test"}],
+            "words": [{"word": "Test", "start": 0.0, "end": 2.0}]
+        }
+        mock_post.return_value = mock_resp
+
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            f.write(b"dummy audio")
+            temp_path = f.name
+
+        try:
+            # 1. Test language="en"
+            transcribe_with_groq(temp_path, language="en")
+            call_files = mock_post.call_args[1]["files"]
+            lang_entry = next((item for item in call_files if item[0] == "language"), None)
+            self.assertIsNotNone(lang_entry)
+            self.assertEqual(lang_entry[1][1], "en")
+
+            # 2. Test language="auto" (should NOT include language param to allow Whisper auto-detect)
+            transcribe_with_groq(temp_path, language="auto")
+            call_files_auto = mock_post.call_args[1]["files"]
+            lang_entry_auto = next((item for item in call_files_auto if item[0] == "language"), None)
+            self.assertIsNone(lang_entry_auto)
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+
+    @patch("backend.analyzer.call_llm_api")
+    def test_translate_segments_to_indonesian_preserves_boundaries_and_words(self, mock_call_llm):
+        from backend.transcriber import translate_segments_to_indonesian
+        mock_call_llm.return_value = '```json\n[{"id": 0, "text": "Halo semuanya"}, {"id": 1, "text": "Selamat datang kembali"}]\n```'
+
+        input_segments = [
+            {"start": 1.0, "end": 3.0, "text": "Hello everyone", "words": []},
+            {"start": 3.5, "end": 6.0, "text": "Welcome back", "words": []}
+        ]
+
+        result = translate_segments_to_indonesian(input_segments)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["text"], "Halo semuanya")
+        self.assertEqual(result[0]["start"], 1.0)
+        self.assertEqual(result[0]["end"], 3.0)
+        self.assertEqual(len(result[0]["words"]), 2)
+        self.assertEqual(result[0]["words"][0]["word"], "Halo")
+        self.assertAlmostEqual(result[0]["words"][0]["start"], 1.0)
+
+        self.assertEqual(result[1]["text"], "Selamat datang kembali")
+        self.assertEqual(result[1]["start"], 3.5)
+        self.assertEqual(result[1]["end"], 6.0)
+        self.assertEqual(len(result[1]["words"]), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

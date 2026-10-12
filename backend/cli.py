@@ -83,15 +83,8 @@ def check_and_prompt_ai_config():
             needs_config = True
             
     if needs_config:
-        print("[!] Konfigurasi AI LLM atau Groq API Key belum lengkap.")
-        if os.name == 'nt':
-            script_path = os.path.join(project_root, "scripts", "configure_ai.bat")
-            if os.path.exists(script_path):
-                subprocess.run([script_path], shell=True)
-        else:
-            script_path = os.path.join(project_root, "scripts", "configure_ai.sh")
-            if os.path.exists(script_path):
-                subprocess.run(["bash", script_path])
+        print("[INFO] Konfigurasi AI LLM atau Groq API Key belum lengkap.")
+        print("       Anda dapat menghubungkan dan mengatur AI langsung melalui Web Dashboard Studio (ikon ⚙️ Pengaturan AI).")
 
 def stop_server():
     """Stop the running background server."""

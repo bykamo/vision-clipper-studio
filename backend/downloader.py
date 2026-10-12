@@ -1,12 +1,34 @@
+import json
 import os
+import subprocess
 
-import cv2
 import yt_dlp
 
 from backend.utils import log
 
 
-TARGET_HEIGHT = 1080
+# Resolusi lebih tinggi = crop 9:16 lebih tajam (crop dari 1080p hanya 608px lebar lalu di-upscale,
+# crop dari 4K = 1215px lalu di-downscale). Batas atas bisa diatur via env VC_MAX_DOWNLOAD_HEIGHT
+# (default 1080p agar unduhan cepat dan hemat bandwidth, atau 1440/2160 jika butuh resolusi ekstra).
+PREFERRED_MIN_HEIGHT = 1080
+MIN_ACCEPTABLE_HEIGHT = 720
+
+
+def _max_download_height():
+    try:
+        value = int(os.environ.get("VC_MAX_DOWNLOAD_HEIGHT", "1080"))
+    except ValueError:
+        value = 1080
+    return max(PREFERRED_MIN_HEIGHT, value)
+
+
+def _build_format_selector(max_height):
+    """Prioritas: >=1080p (sampai max_height) -> >=720p -> progressive >=720p. Tidak pernah 360p."""
+    return (
+        f"bestvideo[height>={PREFERRED_MIN_HEIGHT}][height<={max_height}]+bestaudio"
+        f"/bestvideo[height>={MIN_ACCEPTABLE_HEIGHT}][height<={max_height}]+bestaudio"
+        f"/best[height>={MIN_ACCEPTABLE_HEIGHT}][height<={max_height}]"
+    )
 
 
 def _selected_video_format(info):
@@ -30,17 +52,26 @@ def _selected_video_height(info):
 
 
 def _probe_video_resolution(file_path):
-    cap = cv2.VideoCapture(file_path)
+    """Probe resolusi via ffprobe (OpenCV sering gagal membaca AV1/VP9 yang dipakai YouTube untuk 1440p/4K)."""
     try:
-        if not cap.isOpened():
+        from backend.utils import get_ffprobe_binary
+        cmd = [
+            get_ffprobe_binary(), "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height", "-of", "json", file_path,
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode != 0:
             return None, None
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+        streams = json.loads(res.stdout or "{}").get("streams", [])
+        if not streams:
+            return None, None
+        width = int(streams[0].get("width") or 0)
+        height = int(streams[0].get("height") or 0)
         if width <= 0 or height <= 0:
             return None, None
         return width, height
-    finally:
-        cap.release()
+    except Exception:
+        return None, None
 
 
 def _final_download_path(ydl, info):
@@ -143,96 +174,126 @@ def download_video_profesional(url: str, job_id=None) -> str:
             log(f"[AUTH] Menggunakan file cookies: {c_path}", job_id=job_id)
             break
 
-    # Require an actual 1080p stream; never silently accept a progressive 360p fallback.
+    # Ambil resolusi tertinggi yang tersedia (sampai VC_MAX_DOWNLOAD_HEIGHT, default 1080p).
+    # Never silently accept a progressive 360p fallback.
+    max_height = _max_download_height()
+    format_selector = _build_format_selector(max_height)
     download_strategies = [
         {
-            "name": "Full HD 1080p Stream (Web Embedded)",
-            "format": "bestvideo[height=1080]+bestaudio/best[height=1080]",
+            "name": "High-Res Stream (Web Embedded)",
+            "format": format_selector,
             "extractor_args": {"youtube": {"player_client": ["web_embedded"]}},
             "use_cookie": True
         },
         {
-            "name": "Full HD 1080p Stream (Android VR)",
-            "format": "bestvideo[height=1080]+bestaudio/best[height=1080]",
+            "name": "High-Res Stream (Android VR)",
+            "format": format_selector,
             "extractor_args": {"youtube": {"player_client": ["android_vr"]}},
             "use_cookie": True
         },
         {
-            "name": "Full HD 1080p Stream (Default Client)",
-            "format": "bestvideo[height=1080]+bestaudio/best[height=1080]",
+            "name": "High-Res Stream (Default Client)",
+            "format": format_selector,
             "extractor_args": {},
             "use_cookie": True
         }
     ]
 
     last_error = None
-    for strategy in download_strategies:
-        try:
-            log(f"Mencoba metode unduh: {strategy['name']}...", job_id=job_id)
-            ydl_opts = {
-                'format': strategy['format'],
-                'merge_output_format': 'mp4',
-                'outtmpl': os.path.join(download_dir, '%(title)s [%(id)s].%(ext)s'),
-                'restrictfilenames': True,
-                'noplaylist': True,
-                'writethumbnail': False,
-                'concurrent_fragment_downloads': 8,
-                'buffersize': 1024 * 1024 * 16,
-                'http_chunk_size': 10485760,
-                'extractor_args': strategy['extractor_args'],
-                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
-                'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
-                    'Accept-Language': 'en-US,en;q=0.9,id;q=0.8',
-                    'Referer': 'https://www.youtube.com/',
-                },
-                'progress_hooks': [ytdlp_progress_hook],
-                'logger': MyLogger(),
-            }
-            if strategy.get("use_cookie") and cookie_file:
-                ydl_opts['cookiefile'] = cookie_file
-            
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                selected_height = _selected_video_height(info)
-                if selected_height != TARGET_HEIGHT:
-                    raise RuntimeError(
-                        f"Metode hanya menyediakan {selected_height or 'resolusi tidak diketahui'}p, bukan 1080p."
+    # Round 1: semua metode wajib >=1080p. Round 2 (cadangan): terima >=720p dengan peringatan.
+    for min_required_height in (PREFERRED_MIN_HEIGHT, MIN_ACCEPTABLE_HEIGHT):
+        if min_required_height < PREFERRED_MIN_HEIGHT:
+            log(
+                f"Tidak ada metode yang menyediakan >= {PREFERRED_MIN_HEIGHT}p. "
+                f"Mencoba ulang dengan batas minimum {min_required_height}p...",
+                job_id=job_id
+            )
+        for strategy in download_strategies:
+            try:
+                log(f"Mencoba metode unduh: {strategy['name']} (min {min_required_height}p, maks {max_height}p)...", job_id=job_id)
+                ydl_opts = {
+                    'format': strategy['format'],
+                    'merge_output_format': 'mp4',
+                    'outtmpl': os.path.join(download_dir, '%(title)s [%(id)s].%(ext)s'),
+                    'restrictfilenames': True,
+                    'noplaylist': True,
+                    'writethumbnail': False,
+                    'concurrent_fragment_downloads': 8,
+                    'buffersize': 1024 * 1024 * 16,
+                    'http_chunk_size': 10485760,
+                    'extractor_args': strategy['extractor_args'],
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+                    'http_headers': {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+                        'Accept-Language': 'en-US,en;q=0.9,id;q=0.8',
+                        'Referer': 'https://www.youtube.com/',
+                    },
+                    'progress_hooks': [ytdlp_progress_hook],
+                    'logger': MyLogger(),
+                }
+                if strategy.get("use_cookie") and cookie_file:
+                    ydl_opts['cookiefile'] = cookie_file
+
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    selected_height = _selected_video_height(info)
+                    if selected_height is None or selected_height < min_required_height:
+                        raise RuntimeError(
+                            f"Metode hanya menyediakan {selected_height or 'resolusi tidak diketahui'}p, "
+                            f"di bawah minimum {min_required_height}p."
+                        )
+
+                    selected_format = _selected_video_format(info) or {}
+                    log(
+                        f"Stream terpilih: format {selected_format.get('format_id', '?')} "
+                        f"({selected_format.get('vcodec', '?')}) | "
+                        f"{selected_format.get('width', '?')}x{selected_height}. Memulai download...",
+                        job_id=job_id
                     )
+                    info = ydl.extract_info(url, download=True)
+                    final_filename = _final_download_path(ydl, info)
 
-                selected_format = _selected_video_format(info) or {}
-                log(
-                    f"Stream terpilih: format {selected_format.get('format_id', '?')} | "
-                    f"{selected_format.get('width', '?')}x{selected_height}. Memulai download...",
-                    job_id=job_id
-                )
-                info = ydl.extract_info(url, download=True)
-                final_filename = _final_download_path(ydl, info)
+                    width, height = _probe_video_resolution(final_filename)
+                    if height is None or height < min_required_height:
+                        try:
+                            os.remove(final_filename)
+                        except OSError:
+                            pass
+                        raise RuntimeError(
+                            f"Validasi file gagal: hasil download {width or '?'}x{height or '?'}, "
+                            f"di bawah minimum {min_required_height}p."
+                        )
 
-                width, height = _probe_video_resolution(final_filename)
-                if height != TARGET_HEIGHT or (width is not None and width < 1080):
+                    if height < PREFERRED_MIN_HEIGHT:
+                        log(
+                            f"⚠️ Sumber hanya {width}x{height}. Klip akan di-upscale dan bisa terlihat kurang tajam.",
+                            job_id=job_id
+                        )
+                    log(
+                        f"Download SUKSES! Resolusi terverifikasi {width}x{height}. "
+                        f"File tersimpan sebagai: {final_filename}",
+                        job_id=job_id
+                    )
                     try:
-                        os.remove(final_filename)
-                    except OSError:
+                        uploader_name = info.get("uploader") or info.get("channel") or info.get("creator") or ""
+                        with open(f"{final_filename}.meta.json", "w", encoding="utf-8") as mf:
+                            json.dump({
+                                "title": info.get("title", ""),
+                                "uploader": uploader_name,
+                                "channel": info.get("channel") or uploader_name,
+                                "source_url": url,
+                            }, mf, ensure_ascii=False)
+                    except Exception:
                         pass
-                    raise RuntimeError(
-                        f"Validasi file gagal: hasil download {width or '?'}x{height or '?'}, bukan 1920x1080."
-                    )
-
-                log(
-                    f"Download SUKSES! Resolusi terverifikasi {width}x{height}. "
-                    f"File tersimpan sebagai: {final_filename}",
-                    job_id=job_id
-                )
-                _ensure_browser_compatible_audio(final_filename, job_id=job_id)
-                return final_filename
-        except Exception as e:
-            last_error = e
-            log(f"Metode '{strategy['name']}' gagal ({str(e)[:180]}). Beralih ke metode cadangan...", job_id=job_id)
+                    _ensure_browser_compatible_audio(final_filename, job_id=job_id)
+                    return final_filename
+            except Exception as e:
+                last_error = e
+                log(f"Metode '{strategy['name']}' gagal ({str(e)[:180]}). Beralih ke metode cadangan...", job_id=job_id)
 
     message = (
-        "Gagal mendapatkan stream Full HD 1920x1080. Aplikasi tidak akan memakai fallback 360p. "
-        "Perbarui cookies.txt/yt-dlp atau pastikan video sumber memang menyediakan 1080p. "
+        f"Gagal mendapatkan stream video minimal {MIN_ACCEPTABLE_HEIGHT}p. Aplikasi tidak akan memakai fallback 360p. "
+        "Perbarui cookies.txt/yt-dlp atau pastikan video sumber memang menyediakan resolusi HD. "
         f"Error terakhir: {last_error}"
     )
     log(message, job_id=job_id)
@@ -252,3 +313,21 @@ def get_video_file(file_path: str, job_id=None) -> str:
         raise FileNotFoundError(f"Local file not found: {file_path}")
     
     return video_path
+
+
+def get_video_source_name(file_path_or_url: str) -> str:
+    """Mengambil nama uploader/channel dari metadata video yang terdownload atau file sumber."""
+    if not file_path_or_url:
+        return ""
+    meta_path = f"{file_path_or_url}.meta.json"
+    if os.path.exists(meta_path):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as mf:
+                data = json.load(mf)
+                name = data.get("uploader") or data.get("channel") or ""
+                if name:
+                    return str(name).strip()
+        except Exception:
+            pass
+    return ""
+
