@@ -96,6 +96,51 @@ interface ClipCandidate {
   previewed: boolean;
 }
 
+/* ─────────────────────────────────────────────────────────────
+   SIDEBAR UI PRIMITIVES — reusable building blocks for the
+   left-column menu (section labels, cards, preview tiles)
+   ───────────────────────────────────────────────────────────── */
+
+const SectionLabel: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  hint?: string;
+}> = ({ icon, label, hint }) => (
+  <div className="flex items-center gap-2.5 mb-2.5">
+    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex-shrink-0 shadow-xs">
+      {icon}
+    </span>
+    <div className="flex flex-col leading-none min-w-0">
+      <span className="text-[11px] font-bold text-slate-100 uppercase tracking-wider font-['Outfit'] truncate">
+        {label}
+      </span>
+      {hint && (
+        <span className="text-[9px] text-slate-500 mt-1 truncate">{hint}</span>
+      )}
+    </div>
+  </div>
+);
+
+const SidebarCard: React.FC<{
+  children: React.ReactNode;
+  className?: string;
+}> = ({ children, className = '' }) => (
+  <div
+    className={`rounded-2xl border border-slate-800/70 bg-slate-950/40 p-3 shadow-sm ${className}`}
+  >
+    {children}
+  </div>
+);
+
+/** Small check badge shown on the top-right of a selected tile */
+const ActiveCheck: React.FC<{ className?: string }> = ({ className = '' }) => (
+  <span
+    className={`absolute top-1.5 right-1.5 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md ring-2 ring-emerald-950/60 ${className}`}
+  >
+    <CheckIcon className="h-2.5 w-2.5 stroke-[3]" />
+  </span>
+);
+
 export const SimpleClipperDashboard: React.FC = () => {
   // Navigation Tabs (Modes)
   const [activeTab, setActiveTab] = useState<'hook' | 'affiliate'>('hook');
@@ -1223,7 +1268,11 @@ export const SimpleClipperDashboard: React.FC = () => {
     pillActive: 'bg-emerald-950/60 text-emerald-300 border-emerald-500/40 shadow-xs',
     outputBanner: 'bg-[#131820] border-slate-800',
     actionBtn: 'bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-xs',
-    footer: 'bg-[#0e1218] border-slate-800 text-slate-400'
+    // Sidebar tile states (shared across LAYOUT / SUBTITLE / option cards)
+    tileIdle: 'border-slate-800 bg-slate-950/50 hover:bg-slate-900/80 hover:border-slate-700',
+    tileActive: 'border-emerald-500/80 bg-gradient-to-b from-emerald-950/50 to-emerald-950/20 shadow-[0_0_0_1px_rgba(16,185,129,0.25),0_4px_14px_-4px_rgba(16,185,129,0.35)] ring-1 ring-emerald-500/30',
+    chipActive: 'bg-emerald-500/15 border-emerald-500/50 text-emerald-300',
+    chipIdle: 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
   };
 
   if (serverOffline) {
@@ -1365,15 +1414,16 @@ export const SimpleClipperDashboard: React.FC = () => {
 
           {/* 1. VIDEO SOURCE SECTION */}
           <div className="mb-4">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
-              <FolderIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
-              <span>VIDEO SOURCE</span>
-            </div>
+            <SectionLabel
+              icon={<FolderIcon className="h-4 w-4 stroke-[2]" />}
+              label="Video Source"
+              hint="File, YouTube URL, atau Folder Clips"
+            />
 
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">
-              File Video, YouTube URL, atau Folder Clips
-            </label>
-            <div className="flex items-center gap-1.5">
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 flex h-4 w-4 items-center justify-center text-slate-500">
+                <LinkIcon className="h-3.5 w-3.5 stroke-[2]" />
+              </span>
               <input
                 type="text"
                 value={videoPathInput}
@@ -1387,26 +1437,31 @@ export const SimpleClipperDashboard: React.FC = () => {
                     void handleLoadRenderedFolder(videoPathInput.trim());
                   }
                 }}
-                placeholder="/path/to/video.mp4 atau folder clips..."
-                className={`flex-1 rounded-xl border px-3 py-2 text-xs font-mono transition-all shadow-inner truncate ${themeClasses.input} ${sourceKind === 'render-folder' ? 'border-emerald-500/60 ring-1 ring-emerald-500/30' : ''}`}
+                placeholder="Tempel link YouTube atau path video..."
+                className={`w-full rounded-xl border py-2.5 pl-9 pr-3 text-xs font-mono transition-all shadow-inner truncate ${themeClasses.input} ${sourceKind === 'render-folder' ? 'border-emerald-500/60 ring-1 ring-emerald-500/30' : ''}`}
               />
+            </div>
+
+            <div className="grid grid-cols-2 gap-1.5 mt-2">
               <button
                 type="button"
                 onClick={handlePickNativeFile}
                 disabled={isPickingFile || isPickingFolder || isProcessing}
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-900/90 text-slate-400 hover:text-white hover:border-slate-700 transition-colors shadow-sm flex-shrink-0 disabled:opacity-50"
+                className="group flex items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900/90 px-2 py-2 text-slate-400 hover:text-white hover:border-slate-700 hover:bg-slate-800 transition-colors shadow-sm disabled:opacity-50"
                 title="Pilih File Video dari Komputer (Native File Explorer)"
               >
-                <VideoCameraIcon className={`h-4 w-4 stroke-[2] ${isPickingFile ? 'animate-pulse text-cyan-400' : ''}`} />
+                <VideoCameraIcon className={`h-4 w-4 stroke-[2] flex-shrink-0 ${isPickingFile ? 'animate-pulse text-cyan-400' : 'group-hover:text-cyan-400'}`} />
+                <span className="text-[10px] font-semibold truncate">File Video</span>
               </button>
               <button
                 type="button"
                 onClick={handlePickNativeFolder}
                 disabled={isPickingFile || isPickingFolder || isProcessing}
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-500/40 bg-emerald-950/40 text-emerald-400 hover:text-white hover:bg-emerald-900/50 hover:border-emerald-500/60 transition-colors shadow-sm flex-shrink-0 disabled:opacity-50"
+                className="group flex items-center justify-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-950/40 px-2 py-2 text-emerald-400 hover:text-white hover:bg-emerald-900/50 hover:border-emerald-500/60 transition-colors shadow-sm disabled:opacity-50"
                 title="Pilih Folder Hasil Render di clips (Native Folder Explorer)"
               >
-                <FolderOpenIcon className={`h-4 w-4 stroke-[2] ${isPickingFolder ? 'animate-pulse text-emerald-300' : ''}`} />
+                <FolderOpenIcon className={`h-4 w-4 stroke-[2] flex-shrink-0 ${isPickingFolder ? 'animate-pulse text-emerald-300' : ''}`} />
+                <span className="text-[10px] font-semibold truncate">Folder Render</span>
               </button>
             </div>
             {sourceKind === 'render-folder' && (
@@ -1428,16 +1483,18 @@ export const SimpleClipperDashboard: React.FC = () => {
           </div>
 
           {/* 2. SETTINGS SECTION */}
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider mb-2.5">
-            <AdjustmentsHorizontalIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
-            <span>SETTINGS</span>
-          </div>
+          <SectionLabel
+            icon={<AdjustmentsHorizontalIcon className="h-4 w-4 stroke-[2]" />}
+            label="Settings"
+            hint="Jumlah klip, bahasa & model AI"
+          />
 
           {/* Setting 1: Number of Clips SLIDER (1 to 10) */}
           <div className="mb-4">
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[11px] font-medium text-slate-300">
-                Number of Clips
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                <ScissorsIcon className="h-3.5 w-3.5 text-emerald-400 stroke-[2]" />
+                <span>Number of Clips</span>
               </label>
               <span className={`font-['Outfit'] font-extrabold text-[11px] px-2 py-0.5 rounded-md border transition-all duration-200 ${themeClasses.pillActive}`}>
                 {clipCount} Klip
@@ -1448,7 +1505,7 @@ export const SimpleClipperDashboard: React.FC = () => {
             <div className="relative flex items-center h-8 rounded-xl border border-slate-800/80 bg-slate-950/60 px-3 shadow-inner group select-none">
               <div className="relative w-full h-1.5 rounded-full bg-slate-800/90 overflow-hidden">
                 <div
-                  className="h-full transition-all duration-150 ease-out rounded-full bg-emerald-500"
+                  className="h-full transition-all duration-150 ease-out rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
                   style={{ width: `${((clipCount - 1) / 9) * 100}%` }}
                 />
               </div>
@@ -1480,17 +1537,17 @@ export const SimpleClipperDashboard: React.FC = () => {
               />
 
               <div
-                className="absolute pointer-events-none top-1/2 -translate-y-1/2 -translate-x-1/2 h-3.5 w-3.5 rounded-full border-2 border-white bg-slate-900 shadow-sm ring-2 ring-emerald-500/40 transition-all duration-150 ease-out group-hover:scale-110 z-20"
+                className="absolute pointer-events-none top-1/2 -translate-y-1/2 -translate-x-1/2 h-4 w-4 rounded-full border-2 border-white bg-emerald-500 shadow-md ring-2 ring-emerald-500/30 transition-all duration-150 ease-out group-hover:scale-110 z-20"
                 style={{ left: `calc(12px + (${((clipCount - 1) / 9)} * (100% - 24px)))` }}
               />
             </div>
           </div>
 
-          {/* Setting 2: AI Transcription Model */}
-          {/* LANGUAGE & TRANSLATION SECTION */}
-          <div className="mb-4 relative">
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">
-              Bahasa Audio & Subtitle
+          {/* Setting 2: LANGUAGE & TRANSLATION */}
+          <div className="mb-3 relative">
+            <label className="block text-[11px] font-semibold text-slate-400 mb-1.5 flex items-center gap-1.5">
+              <GlobeAltIcon className="h-3.5 w-3.5 text-sky-400 stroke-[2]" />
+              <span>Bahasa Audio & Subtitle</span>
             </label>
             <button
               type="button"
@@ -1538,8 +1595,9 @@ export const SimpleClipperDashboard: React.FC = () => {
           </div>
 
           <div className="mb-4 relative">
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">
-              AI Transcription Model
+            <label className="block text-[11px] font-semibold text-slate-400 mb-1.5 flex items-center gap-1.5">
+              <BoltIcon className="h-3.5 w-3.5 text-amber-400 stroke-[2]" />
+              <span>AI Transcription Model</span>
             </label>
             <button
               type="button"
@@ -1584,38 +1642,35 @@ export const SimpleClipperDashboard: React.FC = () => {
 
           {/* 3. VIDEO LAYOUT SECTION */}
           <div className="mb-4">
-            <div className="flex items-center mb-2">
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider">
-                <VideoCameraIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
-                <span>LAYOUT VIDEO</span>
-              </div>
-            </div>
+            <SectionLabel
+              icon={<VideoCameraIcon className="h-4 w-4 stroke-[2]" />}
+              label="Layout Video"
+              hint="Gaya framing 9:16"
+            />
 
             <div className="grid grid-cols-3 gap-1.5">
               {/* Option 1: 9:16 Smart Face Tracker */}
               <button
                 type="button"
                 onClick={() => setFramingMode('smart_crop')}
-                className={`flex flex-col items-start rounded-xl p-2 text-left transition-all border ${
-                  framingMode === 'smart_crop'
-                    ? `border-emerald-500 bg-emerald-950/30 shadow-xs ring-2 ring-emerald-500/20`
-                    : `border-slate-800 bg-slate-950/50 hover:bg-slate-900 hover:border-slate-700`
-                }`}
+                className={`${framingMode === 'smart_crop' ? themeClasses.tileActive : themeClasses.tileIdle} flex flex-col items-start rounded-xl p-2 text-left transition-all`}
               >
-                <div className="flex items-center justify-between w-full mb-1 px-0.5">
-                  <span className={`text-[9.5px] font-bold truncate ${framingMode === 'smart_crop' ? themeClasses.accentText : 'text-slate-200'}`}>
+                {framingMode === 'smart_crop' && <ActiveCheck />}
+                <div className="flex items-center justify-between w-full mb-1.5 px-0.5">
+                  <span className={`text-[9.5px] font-bold truncate ${framingMode === 'smart_crop' ? 'text-emerald-300' : 'text-slate-200'}`}>
                     Smart Follow
                   </span>
                 </div>
 
                 {/* Visual Preview Box */}
-                <div className="w-full h-10 rounded-lg bg-neutral-950 border border-neutral-800 flex items-center justify-center overflow-hidden px-1 shadow-inner relative select-none">
-                  <div className="w-4 h-6 rounded border border-emerald-500/60 bg-emerald-500/10 flex flex-col items-center justify-center gap-0.5 shadow-sm">
+                <div className="w-full h-11 rounded-lg bg-neutral-950 border border-neutral-800 flex items-center justify-center overflow-hidden px-1 shadow-inner relative select-none">
+                  <div className="w-5 h-8 rounded-md border border-emerald-500/60 bg-emerald-500/10 flex flex-col items-center justify-center gap-0.5 shadow-sm">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                    <span className="h-1 w-2 rounded-t-sm bg-emerald-500/60" />
+                    <span className="h-1.5 w-3 rounded-t-sm bg-emerald-500/60" />
                   </div>
+                  <div className="absolute top-1 left-1 h-2 w-2 rounded-full border border-emerald-400/60" />
                 </div>
-                <span className="mt-1 text-[8px] text-slate-400 px-0.5 leading-tight">
+                <span className="mt-1.5 text-[8px] text-slate-400 px-0.5 leading-tight">
                   AI 9:16 Follow
                 </span>
               </button>
@@ -1624,27 +1679,24 @@ export const SimpleClipperDashboard: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setFramingMode('fit_blur')}
-                className={`flex flex-col items-start rounded-xl p-2 text-left transition-all border ${
-                  framingMode === 'fit_blur'
-                    ? `border-emerald-500 bg-emerald-950/30 shadow-xs ring-2 ring-emerald-500/20`
-                    : `border-slate-800 bg-slate-950/50 hover:bg-slate-900 hover:border-slate-700`
-                }`}
+                className={`${framingMode === 'fit_blur' ? themeClasses.tileActive : themeClasses.tileIdle} flex flex-col items-start rounded-xl p-2 text-left transition-all`}
               >
-                <div className="flex items-center justify-between w-full mb-1 px-0.5">
-                  <span className={`text-[9.5px] font-bold truncate ${framingMode === 'fit_blur' ? themeClasses.accentText : 'text-slate-200'}`}>
+                {framingMode === 'fit_blur' && <ActiveCheck />}
+                <div className="flex items-center justify-between w-full mb-1.5 px-0.5">
+                  <span className={`text-[9.5px] font-bold truncate ${framingMode === 'fit_blur' ? 'text-emerald-300' : 'text-slate-200'}`}>
                     16:9 Fit Blur
                   </span>
                 </div>
 
                 {/* Visual Preview Box */}
-                <div className="w-full h-10 rounded-lg bg-neutral-950 border border-neutral-800 flex flex-col items-center justify-center overflow-hidden p-1 shadow-inner relative select-none">
+                <div className="w-full h-11 rounded-lg bg-neutral-950 border border-neutral-800 flex flex-col items-center justify-center overflow-hidden p-1 shadow-inner relative select-none">
                   <div className="absolute inset-0 bg-slate-700/30 backdrop-blur-xs" />
-                  <div className="relative w-full h-3.5 rounded border border-cyan-400/80 bg-slate-900 flex items-center justify-center gap-1 shadow-md">
-                    <span className="h-1 w-1 rounded-full bg-cyan-400" />
-                    <span className="h-1 w-1 rounded-full bg-amber-400" />
+                  <div className="relative w-full h-4 rounded border border-cyan-400/80 bg-slate-900 flex items-center justify-center gap-1 shadow-md">
+                    <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
                   </div>
                 </div>
-                <span className="mt-1 text-[8px] text-slate-400 px-0.5 leading-tight">
+                <span className="mt-1.5 text-[8px] text-slate-400 px-0.5 leading-tight">
                   Landscape Fit
                 </span>
               </button>
@@ -1653,29 +1705,26 @@ export const SimpleClipperDashboard: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setFramingMode('split_screen')}
-                className={`flex flex-col items-start rounded-xl p-2 text-left transition-all border ${
-                  framingMode === 'split_screen'
-                    ? `border-emerald-500 bg-emerald-950/30 shadow-xs ring-2 ring-emerald-500/20`
-                    : `border-slate-800 bg-slate-950/50 hover:bg-slate-900 hover:border-slate-700`
-                }`}
+                className={`${framingMode === 'split_screen' ? themeClasses.tileActive : themeClasses.tileIdle} flex flex-col items-start rounded-xl p-2 text-left transition-all`}
               >
-                <div className="flex items-center justify-between w-full mb-1 px-0.5">
-                  <span className={`text-[9.5px] font-bold truncate ${framingMode === 'split_screen' ? themeClasses.accentText : 'text-slate-200'}`}>
+                {framingMode === 'split_screen' && <ActiveCheck />}
+                <div className="flex items-center justify-between w-full mb-1.5 px-0.5">
+                  <span className={`text-[9.5px] font-bold truncate ${framingMode === 'split_screen' ? 'text-emerald-300' : 'text-slate-200'}`}>
                     Dual Stack
                   </span>
                 </div>
 
                 {/* Visual Preview Box */}
-                <div className="w-full h-10 rounded-lg bg-neutral-950 border border-neutral-800 flex flex-col items-center justify-between overflow-hidden p-0.5 shadow-inner relative select-none">
-                  <div className="w-full h-[15px] rounded-xs bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center">
+                <div className="w-full h-11 rounded-lg bg-neutral-950 border border-neutral-800 flex flex-col items-center justify-between overflow-hidden p-0.5 shadow-inner relative select-none">
+                  <div className="w-full h-[16px] rounded-xs bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center">
                     <span className="text-[6.5px] font-bold text-cyan-300 font-mono">HOST</span>
                   </div>
                   <div className="w-full h-px bg-neutral-700" />
-                  <div className="w-full h-[15px] rounded-xs bg-amber-950/80 border border-amber-500/50 flex items-center justify-center">
+                  <div className="w-full h-[16px] rounded-xs bg-amber-950/80 border border-amber-500/50 flex items-center justify-center">
                     <span className="text-[6.5px] font-bold text-amber-300 font-mono">GUEST</span>
                   </div>
                 </div>
-                <span className="mt-1 text-[8px] text-slate-400 px-0.5 leading-tight">
+                <span className="mt-1.5 text-[8px] text-slate-400 px-0.5 leading-tight">
                   Split 50:50
                 </span>
               </button>
@@ -1683,10 +1732,11 @@ export const SimpleClipperDashboard: React.FC = () => {
           </div>
 
           {/* 4. SUBTITLE STYLE SECTION */}
-          <div className="flex items-center gap-2 text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">
-            <PaintBrushIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
-            <span>SUBTITLE STYLE</span>
-          </div>
+          <SectionLabel
+            icon={<PaintBrushIcon className="h-4 w-4 stroke-[2]" />}
+            label="Subtitle Style"
+            hint="Pilih gaya caption"
+          />
 
           {/* Subtitle Style Cards Grid */}
           <div className="grid grid-cols-2 gap-2 mb-4">
@@ -1696,26 +1746,23 @@ export const SimpleClipperDashboard: React.FC = () => {
                 <button
                   key={preset.presetId}
                   onClick={() => handleSelectPreset(preset)}
-                  className={`flex flex-col items-start rounded-xl p-2 text-left transition-all border ${
-                    isSelected
-                      ? `border-emerald-500 bg-emerald-950/30 shadow-xs ring-2 ring-emerald-500/20`
-                      : `border-slate-800 bg-slate-950/50 hover:bg-slate-900 hover:border-slate-700`
-                  }`}
+                  className={`${isSelected ? themeClasses.tileActive : themeClasses.tileIdle} flex flex-col items-start rounded-xl p-2 text-left transition-all`}
                 >
+                  {isSelected && <ActiveCheck />}
                   {/* Card Title */}
-                  <div className="flex items-center justify-between w-full mb-1 px-0.5">
+                  <div className="flex items-center justify-between w-full mb-1.5 px-0.5">
                     <div className="flex items-center gap-1.5 truncate">
-                      <div className="flex h-4 w-4 items-center justify-center rounded bg-slate-900/90 border border-slate-800 flex-shrink-0">
+                      <div className={`flex h-5 w-5 items-center justify-center rounded-md border flex-shrink-0 ${isSelected ? 'bg-emerald-500/15 border-emerald-500/40' : 'bg-slate-900/90 border-slate-800'}`}>
                         {getPresetNotionIcon(preset.presetId)}
                       </div>
-                      <span className={`text-[10px] font-bold truncate ${isSelected ? themeClasses.accentText : 'text-slate-200'}`}>
+                      <span className={`text-[10px] font-bold truncate ${isSelected ? 'text-emerald-300' : 'text-slate-200'}`}>
                         {preset.name}
                       </span>
                     </div>
                   </div>
 
                   {/* Visual Preview Box */}
-                  <div className="w-full h-9 rounded-lg bg-neutral-950 border border-neutral-800 flex items-center justify-center overflow-hidden px-1 shadow-inner relative select-none">
+                  <div className="w-full h-10 rounded-lg bg-neutral-950 border border-neutral-800 flex items-center justify-center overflow-hidden px-1 shadow-inner relative select-none">
                     <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:8px_8px]" />
 
                     {preset.presetId === 'tiktok_viral' && (
@@ -1763,7 +1810,7 @@ export const SimpleClipperDashboard: React.FC = () => {
 
           {/* Subtitle Position & Auto-Emoji Options */}
           {selectedPresetId !== 'no_subtitle' && (
-            <div className="mb-4 rounded-xl border border-slate-800/80 bg-slate-950/40 p-2.5 flex flex-col gap-2.5">
+            <div className="mb-4 rounded-2xl border border-slate-800/70 bg-slate-950/40 p-3 flex flex-col gap-3">
               {/* Vertical Position Slider */}
               <div>
                 <div className="flex items-center justify-between text-[11px] mb-1">
@@ -1785,14 +1832,12 @@ export const SimpleClipperDashboard: React.FC = () => {
                   className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
                 />
                 {/* Quick position buttons */}
-                <div className="flex items-center justify-between gap-1 mt-1.5">
+                <div className="flex items-center justify-between gap-1 mt-2">
                   <button
                     type="button"
                     onClick={() => setSubPosition(50)}
-                    className={`flex-1 py-1 rounded-md text-[9px] font-medium border transition-colors ${
-                      subPosition === 50
-                        ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
-                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                    className={`flex-1 py-1.5 rounded-lg text-[9px] font-semibold border transition-colors ${
+                      subPosition === 50 ? themeClasses.chipActive : themeClasses.chipIdle
                     }`}
                   >
                     Tengah (50%)
@@ -1800,10 +1845,8 @@ export const SimpleClipperDashboard: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setSubPosition(68)}
-                    className={`flex-1 py-1 rounded-md text-[9px] font-medium border transition-colors ${
-                      subPosition === 68
-                        ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
-                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                    className={`flex-1 py-1.5 rounded-lg text-[9px] font-semibold border transition-colors ${
+                      subPosition === 68 ? themeClasses.chipActive : themeClasses.chipIdle
                     }`}
                   >
                     TikTok Safe (68%)
@@ -1811,10 +1854,8 @@ export const SimpleClipperDashboard: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setSubPosition(80)}
-                    className={`flex-1 py-1 rounded-md text-[9px] font-medium border transition-colors ${
-                      subPosition === 80
-                        ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
-                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                    className={`flex-1 py-1.5 rounded-lg text-[9px] font-semibold border transition-colors ${
+                      subPosition === 80 ? themeClasses.chipActive : themeClasses.chipIdle
                     }`}
                   >
                     Bawah (80%)
@@ -1853,13 +1894,20 @@ export const SimpleClipperDashboard: React.FC = () => {
           )}
 
           {/* GLASS WATERMARK SETTINGS CARD */}
-          <div className={`rounded-xl border ${themeClasses.card} p-3 space-y-2.5 shadow-lg`}>
+          <div className={`rounded-2xl border ${themeClasses.card} p-3 space-y-2.5 shadow-lg`}>
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <ShieldCheckIcon className="h-4 w-4 text-cyan-400" />
-                <span className="text-[11px] font-bold text-slate-200 uppercase tracking-wider font-['Outfit']">
-                  Glass Watermark (Top)
+              <div className="flex items-center gap-2.5">
+                <span className={`flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex-shrink-0 ${watermarkEnabled ? 'shadow-[0_0_0_1px_rgba(34,211,238,0.25)]' : ''}`}>
+                  <ShieldCheckIcon className="h-4 w-4 stroke-[2]" />
                 </span>
+                <div className="flex flex-col leading-none">
+                  <span className="text-[11px] font-bold text-slate-100 uppercase tracking-wider font-['Outfit']">
+                    Glass Watermark
+                  </span>
+                  <span className="text-[9px] text-slate-500 mt-1">
+                    Label kaca sumber & akun
+                  </span>
+                </div>
               </div>
               <button
                 type="button"
@@ -1958,7 +2006,7 @@ export const SimpleClipperDashboard: React.FC = () => {
         </aside>
 
         {/* ── COLUMN 2: CENTER WORKSPACE (iPHONE PREVIEW MOCKUP) ── */}
-        <section className="flex flex-col p-4 bg-[#090d13] overflow-hidden border-r border-slate-800/80">
+        <section className="flex flex-col p-3 sm:p-3.5 bg-[#090d13] overflow-hidden border-r border-slate-800/80">
           <PhonePreview
             framingMode={framingMode}
             selectedPresetId={selectedPresetId}
@@ -2563,23 +2611,6 @@ export const SimpleClipperDashboard: React.FC = () => {
 
       </div>
 
-      {/* ─────────────────────────────────────────────────────────────
-          3. BOTTOM FOOTER STATUS BAR
-         ───────────────────────────────────────────────────────────── */}
-      <footer className={`flex h-9 items-center justify-between border-t ${themeClasses.footer} px-5 text-xs z-20`}>
-        <div>
-          <span>VisionClipper Studio © 2026 — Built by </span>
-          <span className="font-semibold text-slate-200">kam2k-dev</span>
-        </div>
-
-        <button
-          onClick={() => setServerModalOpen(true)}
-          className="rounded border border-slate-800 bg-slate-900/80 px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-        >
-          Shut Down Server
-        </button>
-      </footer>
-
       {/* Generated Clips Detail Modal */}
       {showFolderModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150">
@@ -3156,6 +3187,10 @@ export const SimpleClipperDashboard: React.FC = () => {
         checkYouTubeStatus={checkYouTubeStatus}
         handleConnectYouTube={handleConnectYouTube}
         handleDisconnectYouTube={handleDisconnectYouTube}
+        onShutdown={() => {
+          setSettingsModalOpen(false);
+          setServerModalOpen(true);
+        }}
       />
 
       {/* ─────────────────────────────────────────────────────────────

@@ -42,9 +42,45 @@
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
   }
 
+  /* iOS 26 "Liquid Glass" transport */
+  .ios26-glass {
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0.045) 45%, rgba(255, 255, 255, 0.02) 100%);
+    backdrop-filter: blur(24px) saturate(180%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.30),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.06),
+      0 10px 30px rgba(0, 0, 0, 0.45);
+  }
+
+  .ios26-glass-btn {
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.05));
+    backdrop-filter: blur(12px) saturate(160%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    transition: background 180ms ease, transform 180ms ease;
+  }
+
+  .ios26-glass-btn:hover {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.20), rgba(255, 255, 255, 0.10));
+  }
+
+  .ios26-glass-btn:active {
+    transform: scale(0.94);
+  }
+
+  .ios26-play {
+    background: linear-gradient(180deg, #ff7a33, #ff5500 55%, #e04b00);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.45),
+      0 6px 18px rgba(255, 85, 0, 0.35);
+  }
+
   .ios-media-scrubber {
     --ios-scrubber-progress: 0%;
-    height: 14px;
+    height: 18px;
     appearance: none;
     -webkit-appearance: none;
     background: transparent;
@@ -52,24 +88,27 @@
   }
 
   .ios-media-scrubber::-webkit-slider-runnable-track {
-    height: 4px;
+    height: 6px;
     border-radius: 999px;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
     background: linear-gradient(
       to right,
-      rgba(255, 255, 255, 0.96) 0 var(--ios-scrubber-progress),
-      rgba(255, 255, 255, 0.16) var(--ios-scrubber-progress) 100%
+      rgba(255, 255, 255, 0.98) 0 var(--ios-scrubber-progress),
+      rgba(255, 255, 255, 0.14) var(--ios-scrubber-progress) 100%
     );
   }
 
   .ios-media-scrubber::-webkit-slider-thumb {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     margin-top: -4px;
     appearance: none;
     -webkit-appearance: none;
     border-radius: 999px;
-    background: #fff;
-    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+    background: linear-gradient(180deg, #fff, #e8e8ee);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      0 2px 8px rgba(0, 0, 0, 0.5);
     opacity: 0;
     transform: scale(0.75);
     transition: opacity 150ms ease, transform 150ms ease;
@@ -83,24 +122,27 @@
   }
 
   .ios-media-scrubber::-moz-range-track {
-    height: 4px;
+    height: 6px;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.16);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+    background: rgba(255, 255, 255, 0.14);
   }
 
   .ios-media-scrubber::-moz-range-progress {
-    height: 4px;
+    height: 6px;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.96);
+    background: rgba(255, 255, 255, 0.98);
   }
 
   .ios-media-scrubber::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     border: 0;
     border-radius: 999px;
-    background: #fff;
-    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+    background: linear-gradient(180deg, #fff, #e8e8ee);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      0 2px 8px rgba(0, 0, 0, 0.5);
   }
 
   .ios-media-scrubber:focus-visible {

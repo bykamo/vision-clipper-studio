@@ -15,7 +15,8 @@ import {
   Sparkles,
   ArrowUpRight,
   ShieldCheck,
-  Server
+  Server,
+  Power
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -82,6 +83,7 @@ interface StudioSettingsModalProps {
   checkYouTubeStatus: (refresh?: boolean) => void;
   handleConnectYouTube: () => void;
   handleDisconnectYouTube: () => void;
+  onShutdown: () => void;
 }
 
 export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
@@ -122,6 +124,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
   checkYouTubeStatus,
   handleConnectYouTube,
   handleDisconnectYouTube,
+  onShutdown,
 }) => {
   if (!open) return null;
 
@@ -312,7 +315,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
             </div>
 
             {/* Bottom Status Card in Sidebar */}
-            <div className="hidden md:block p-3 rounded-xl border border-slate-800/80 bg-[#131820] space-y-1.5 mt-4">
+            <div className="p-3 rounded-xl border border-slate-800/80 bg-[#131820] space-y-1.5 mt-4">
               <div className="flex items-center justify-between text-xs">
                 <span className="flex items-center gap-1.5 text-slate-300 font-medium">
                   <Server className="h-3.5 w-3.5 text-emerald-400" />
@@ -326,6 +329,17 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
               <p className="text-[11px] text-slate-400 leading-tight flex items-center gap-1">
                 <ShieldCheck className="h-3 w-3 text-emerald-400/80 flex-shrink-0" />
                 <span>Token & key tersimpan aman di lokal</span>
+              </p>
+              <button
+                type="button"
+                onClick={onShutdown}
+                className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900/80 px-2.5 py-1.5 text-[11px] font-medium text-slate-300 hover:bg-rose-950/50 hover:text-rose-300 hover:border-rose-500/40 transition-colors cursor-pointer"
+              >
+                <Power className="h-3.5 w-3.5" />
+                <span>Shut Down Server</span>
+              </button>
+              <p className="text-[10px] text-slate-500 text-center pt-1">
+                VisionClipper Studio © 2026 — Built by kam2k-dev
               </p>
             </div>
           </aside>

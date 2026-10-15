@@ -14,6 +14,7 @@ import {
   UserIcon as UserIconOutline,
   ShieldCheckIcon
 } from '@heroicons/react/24/outline';
+import { SiTiktok, SiInstagram, SiYoutubeshorts } from 'react-icons/si';
 import {
   PlayIcon,
   PauseIcon,
@@ -26,9 +27,7 @@ import {
   ChatBubbleOvalLeftEllipsisIcon as ChatBubbleOvalLeftEllipsisIconSolid,
   SpeakerWaveIcon,
   SpeakerXMarkIcon,
-  ViewfinderCircleIcon,
-  SparklesIcon,
-  UserIcon
+  ViewfinderCircleIcon
 } from '@heroicons/react/24/solid';
 
 export type SocialOverlayType = 'tiktok' | 'reels' | 'shorts' | 'none';
@@ -100,6 +99,39 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const animTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [scale, setScale] = useState<number>(0.62);
+
+  // Dynamically calculate scale factor to fit exactly within the available preview column stage
+  useEffect(() => {
+    const updateScale = () => {
+      if (!stageRef.current) return;
+      const rect = stageRef.current.getBoundingClientRect();
+      const availW = Math.max(100, rect.width - 8);
+      const availH = Math.max(100, rect.height - 8);
+      const sX = availW / 389;
+      const sY = availH / 800;
+      const nextScale = Math.min(sX, sY);
+      const clamped = Math.max(0.35, Math.min(1, Number(nextScale.toFixed(3))));
+      setScale(clamped);
+    };
+
+    updateScale();
+
+    const observer = new ResizeObserver(() => {
+      updateScale();
+    });
+
+    if (stageRef.current) {
+      observer.observe(stageRef.current);
+    }
+
+    window.addEventListener('resize', updateScale);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateScale);
+    };
+  }, []);
 
   // Check if source is a local playable video file path
   const isLocalFile = Boolean(videoSource && !videoSource.startsWith('http://') && !videoSource.startsWith('https://'));
@@ -310,10 +342,10 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     : '#fyp #podcast #viralkonten #tips';
 
   return (
-    <div className="flex flex-col h-full w-full rounded-2xl bg-[#10161f] border border-[#202b3a] p-4 shadow-xl overflow-hidden">
+    <div className="flex flex-col h-full w-full rounded-2xl bg-[#10161f] border border-[#202b3a] p-3 sm:p-3.5 shadow-xl overflow-hidden">
 
       {/* ── TOP HEADER OF PREVIEW + SOCIAL PLATFORM SWITCHER ── */}
-      <div className="flex items-center justify-between mb-3 px-1 gap-2">
+      <div className="flex items-center justify-between mb-1.5 px-1 gap-2 flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <ViewfinderCircleIcon className={`h-4 w-4 flex-shrink-0 ${isRenderedClip ? 'text-amber-400' : 'text-emerald-400'}`} />
           <div className="flex flex-col truncate">
@@ -332,40 +364,44 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
         <div className="flex items-center gap-1 flex-shrink-0">
           <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-900/90 border border-slate-800 shadow-inner">
             {[
-              { id: 'tiktok', label: 'TikTok', icon: '🎵' },
-              { id: 'reels', label: 'Reels', icon: '📸' },
-              { id: 'shorts', label: 'Shorts', icon: '🔴' },
-              { id: 'none', label: 'Off', icon: '🚫' }
-            ].map(p => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => changeOverlayMode(p.id as SocialOverlayType)}
-                className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-all ${
-                  overlayMode === p.id
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold shadow-xs'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-                }`}
-                title={`Preview tampilan ${p.label}`}
-              >
-                <span>{p.icon}</span>
-                <span className="hidden sm:inline text-[9.5px]">{p.label}</span>
-              </button>
-            ))}
+              { id: 'tiktok', label: 'TikTok', Icon: SiTiktok, color: 'text-white' },
+              { id: 'reels', label: 'Reels', Icon: SiInstagram, color: 'text-pink-400' },
+              { id: 'shorts', label: 'Shorts', Icon: SiYoutubeshorts, color: 'text-red-500' }
+            ].map(p => {
+              const isActive = overlayMode === p.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => changeOverlayMode(isActive ? 'none' : (p.id as SocialOverlayType))}
+                  className={`flex items-center justify-center w-6 h-6 rounded-md transition-all ${
+                    isActive
+                      ? 'bg-emerald-500/20 border border-emerald-500/40 shadow-xs'
+                      : 'opacity-45 hover:opacity-100 hover:bg-slate-800/60'
+                  }`}
+                  title={isActive ? `Matikan tampilan ${p.label}` : `Tampilkan overlay ${p.label}`}
+                  aria-label={isActive ? `Matikan tampilan ${p.label}` : `Tampilkan overlay ${p.label}`}
+                  aria-pressed={isActive}
+                >
+                  <p.Icon className={`w-3.5 h-3.5 ${isActive ? p.color : 'text-slate-300'}`} />
+                </button>
+              );
+            })}
           </div>
 
           <button
             type="button"
             onClick={() => setShowSafeZone(!showSafeZone)}
-            className={`flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-medium transition-all border ${
+            className={`flex items-center justify-center w-6 h-6 rounded-lg transition-all border ${
               showSafeZone
-                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-bold shadow-xs'
-                : 'bg-slate-900/90 border-slate-800 text-slate-400 hover:text-slate-200'
+                ? 'bg-amber-500/20 border-amber-500/40 shadow-xs'
+                : 'bg-slate-900/90 border-slate-800 hover:bg-slate-800/60'
             }`}
             title="Toggle TikTok 9:16 Safe Zone Overlay"
+            aria-label="Toggle TikTok 9:16 Safe Zone Overlay"
+            aria-pressed={showSafeZone}
           >
-            <ShieldCheckIcon className="w-3 h-3 text-amber-400" />
-            <span className="hidden md:inline text-[9.5px]">Safe Zone</span>
+            <ShieldCheckIcon className={`w-3.5 h-3.5 ${showSafeZone ? 'text-amber-400' : 'text-slate-500'}`} />
           </button>
         </div>
       </div>
@@ -374,46 +410,56 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
           CENTER STAGE: PHOTOREALISTIC WEBMOBILEFIRST iPHONE 17 PRO (2-LAYER COMPOSITE)
           - True 1:1 Apple Viewport Underneath (.iphone-screen: 354px × 771px)
           - Transparent Official iPhone 17 Pro Overlay (.iphone-frame-overlay: 389px × 800px)
-          - Scaled cleanly via CSS transform to fit desktop displays
+          - Dynamically auto-scaled to fit 100% of available column viewport
          ───────────────────────────────────────────────────────────── */}
-      <div className="flex flex-1 w-full items-center justify-center p-2 overflow-hidden relative select-none">
+      <div 
+        ref={stageRef}
+        className="flex flex-1 min-h-0 w-full items-center justify-center p-1 overflow-hidden relative select-none"
+      >
 
         {/* Subtle Ambient Radial Lighting Floor */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-white/[0.02] via-transparent to-transparent pointer-events-none -z-10" />
 
         {/* ─────────────────────────────────────────────────────────
-            1:1 PHOTOREALISTIC iPHONE 17 PRO SCALED CONTAINER (389px × 800px)
+            1:1 PHOTOREALISTIC iPHONE 17 PRO AUTO-SCALED WRAPPER
            ───────────────────────────────────────────────────────── */}
         <div 
-          className="relative shrink-0 flex items-center justify-center transition-transform duration-200 select-none"
+          className="relative shrink-0 flex items-center justify-center select-none"
           style={{
-            width: '389px',
-            height: '800px',
-            transform: 'scale(0.74)',
-            transformOrigin: 'center center'
+            width: `${Math.round(389 * scale)}px`,
+            height: `${Math.round(800 * scale)}px`,
           }}
         >
-          {/* ─────────────────────────────────────────────────────────
-              1. UNDERNEATH LAYER (.iphone-screen): Exact Apple Viewport
-              - 354px width × 771px height
-              - top: 14px, left: 18px
-              - border-radius: 46px
-              - overflow: hidden
-             ───────────────────────────────────────────────────────── */}
-          <div className="iphone-screen bg-[#07090e] absolute top-[14px] left-[18px] w-[354px] h-[771px] rounded-[46px] overflow-hidden shadow-2xl flex flex-col z-10">
+          <div
+            style={{
+              width: '389px',
+              height: '800px',
+              transform: `scale(${scale})`,
+              transformOrigin: '0 0'
+            }}
+            className="absolute top-0 left-0"
+          >
+            {/* ─────────────────────────────────────────────────────────
+                1. UNDERNEATH LAYER (.iphone-screen): Exact Apple Viewport
+                - 354px width × 771px height
+                - top: 14px, left: 18px
+                - border-radius: 46px
+                - overflow: hidden
+               ───────────────────────────────────────────────────────── */}
+            <div className="iphone-screen bg-[#07090e] absolute top-[14px] left-[17px] w-[356px] h-[772px] rounded-[46px] overflow-hidden shadow-2xl flex flex-col z-10">
 
-            {/* Front Screen Diagonal Glass Reflection Highlight */}
-            <div className="pointer-events-none absolute inset-0 z-20 bg-gradient-to-tr from-transparent via-white/[0.015] to-white/[0.04] rounded-[46px]" />
+              {/* Front Screen Diagonal Glass Reflection Highlight */}
+              <div className="pointer-events-none absolute inset-0 z-20 bg-gradient-to-tr from-transparent via-white/[0.015] to-white/[0.04] rounded-[46px]" />
 
-            {/* ── AUTHENTIC iOS STATUS BAR (Shows through transparent ears of PNG overlay) ── */}
-            <div className="absolute top-[8px] inset-x-0 h-[27px] px-6 z-25 flex items-center justify-between text-white pointer-events-none select-none">
-              
-              {/* Left Flank: Authentic iOS Time (9:41 SF Pro Style) */}
-              <div className="pl-1 flex items-center">
-                <span className="text-[12.5px] font-semibold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)] font-sans antialiased">
-                  9:41
-                </span>
-              </div>
+              {/* ── AUTHENTIC iOS STATUS BAR (Shows through transparent ears of PNG overlay) ── */}
+              <div className="absolute top-[8px] inset-x-0 h-[27px] px-6 z-25 flex items-center justify-between text-white pointer-events-none select-none">
+                
+                {/* Left Flank: Authentic iOS Time (9:41 SF Pro Style) */}
+                <div className="pl-1 flex items-center">
+                  <span className="text-[12.5px] font-semibold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)] font-sans antialiased">
+                    9:41
+                  </span>
+                </div>
 
               {/* Right Flank: Authentic iOS Cellular (4 Stadium Pills) + Battery */}
               <div className="flex items-center gap-1.5 pr-1">
@@ -472,7 +518,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       muted={isMuted}
                       className={`relative z-10 transition-all duration-300 ${
                         !isRenderedClip && framingMode === 'fit_blur'
-                          ? 'w-full h-auto max-h-[220px] object-contain shadow-2xl border-y border-white/10'
+                          ? 'w-full h-auto max-h-full object-contain'
                           : 'w-full h-full object-cover'
                       }`}
                       playsInline
@@ -513,105 +559,45 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       </div>
                     )}
 
-                    {/* Subtitle floating in safe area */}
-                    {!isRenderedClip && (
-                      <div
-                        className="absolute z-20 w-full px-3 flex justify-center pointer-events-none transition-all duration-200"
-                        style={{ top: `${subPosition}%` }}
-                      >
-                        {getSubtitleSample()}
-                      </div>
-                    )}
                   </div>
                 ) : (
-                  // ── EMPTY STATE GRAPHICS (NO SOURCE VIDEO SELECTED) ──
-                  framingMode === 'split_screen' ? (
-                    <div className="relative w-full h-full flex flex-col items-center justify-between bg-slate-950 overflow-hidden select-none">
-                      {/* Top Window: Host (50%) */}
-                      <div className="relative w-full h-1/2 bg-gradient-to-b from-[#0c1524] to-[#070b12] flex flex-col items-center justify-center border-b border-neutral-800 overflow-hidden">
-                        <div className="absolute top-8 left-2 flex items-center gap-1 bg-black/60 backdrop-blur-xs px-1.5 py-0.5 rounded border border-cyan-500/30 z-10">
-                          <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                          <span className="text-[7px] font-bold text-cyan-300 font-mono">HOST (Top 50%)</span>
-                        </div>
-                        <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-cyan-950 to-cyan-800 border border-cyan-400/40 flex items-center justify-center shadow-lg">
-                          <UserIcon className="h-8 w-8 text-cyan-300" />
-                        </div>
-                        <span className="text-[7.5px] font-mono text-cyan-300 font-bold mt-1">Host Anchor</span>
-                      </div>
-
-                      {/* Bottom Window: Guest (50%) */}
-                      <div className="relative w-full h-1/2 bg-gradient-to-b from-[#070b12] to-[#120d1c] flex flex-col items-center justify-center overflow-hidden">
-                        <div className="absolute top-2 left-2 flex items-center gap-1 bg-black/60 backdrop-blur-xs px-1.5 py-0.5 rounded border border-amber-500/30 z-10">
-                          <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
-                          <span className="text-[7px] font-bold text-amber-300 font-mono">GUEST (Bottom 50%)</span>
-                        </div>
-                        <div className="h-12 w-12 rounded-2xl bg-gradient-to-tr from-amber-950 to-amber-800 border border-amber-400/40 flex items-center justify-center shadow-lg">
-                          <UserIcon className="h-8 w-8 text-amber-300" />
-                        </div>
-                        <span className="text-[7.5px] font-mono text-amber-300 font-bold mt-1">Guest Anchor</span>
-                      </div>
-
-                      {/* Subtitle floating in safe area */}
-                      <div
-                        className="absolute z-20 w-full px-3 flex justify-center pointer-events-none transition-all duration-200"
-                        style={{ top: `${subPosition}%` }}
-                      >
-                        {getSubtitleSample()}
-                      </div>
-                    </div>
-                  ) : framingMode === 'fit_blur' ? (
-                    <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
-                      <div
-                        className="absolute inset-0 bg-cover bg-center filter blur-2xl scale-150 opacity-50"
-                        style={{
-                          backgroundImage: `radial-gradient(ellipse at 50% 35%, #0284c7 0%, #0f172a 60%, #030712 100%)`
-                        }}
+                  // ── EMPTY STATE: NO SOURCE VIDEO SELECTED ──
+                  <div className="relative w-full h-full flex flex-col items-center justify-center gap-3 px-6 text-center bg-[radial-gradient(ellipse_at_50%_38%,_#122032_0%,_#0a0f16_55%,_#05070a_100%)] select-none">
+                    <div className="relative">
+                      <div className="absolute inset-0 scale-150 rounded-full bg-emerald-500/20 blur-2xl" />
+                      <img
+                        src="/images/logo-icon-transparent.png"
+                        alt="VisionClipper Studio"
+                        draggable={false}
+                        className="relative h-16 w-16 object-contain opacity-90 drop-shadow-[0_4px_16px_rgba(16,185,129,0.35)]"
                       />
-                      <div className="relative z-10 w-full h-[152px] -mt-[10%] bg-[#0c131f] border-y border-cyan-500/30 flex flex-col items-center justify-center shadow-lg overflow-hidden">
-                        <div className="relative flex items-center gap-6 z-10">
-                          <div className="flex flex-col items-center">
-                            <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-cyan-950 to-cyan-800 border border-cyan-400/50 flex items-center justify-center shadow-lg">
-                              <UserIcon className="h-5 w-5 text-cyan-300" />
-                            </div>
-                            <span className="text-[7px] font-mono text-cyan-400 mt-1">Host</span>
-                          </div>
-                          <div className="flex flex-col items-center">
-                            <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-amber-950 to-amber-800 border border-amber-400/50 flex items-center justify-center shadow-lg">
-                              <UserIcon className="h-5 w-5 text-amber-300" />
-                            </div>
-                            <span className="text-[7px] font-mono text-amber-400 mt-1">Guest</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div
-                        className="absolute z-20 w-full px-3 flex justify-center pointer-events-none transition-all duration-200"
-                        style={{ top: `${subPosition}%` }}
-                      >
-                        {getSubtitleSample()}
-                      </div>
                     </div>
-                  ) : (
-                    // 9:16 Smart Crop Simulated Layout
-                    <div className="relative w-full h-full flex items-center justify-center bg-gradient-to-b from-[#0a101a] via-[#101b2b] to-[#060a10] overflow-hidden">
-                      <div className="absolute top-[24%] flex flex-col items-center">
-                        <div className="relative p-2 rounded-2xl border-2 border-emerald-400/60 bg-emerald-950/20 backdrop-blur-2xs shadow-[0_0_30px_rgba(16,185,129,0.2)]">
-                          <div className="relative h-24 w-20 rounded-xl bg-gradient-to-b from-slate-800 to-slate-900 flex flex-col items-center justify-center border border-slate-700/60 shadow-inner">
-                            <UserIcon className="h-12 w-12 text-emerald-300 drop-shadow-[0_2px_8px_rgba(16,185,129,0.4)]" />
-                          </div>
-                          <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-emerald-500 text-slate-950 px-2 py-0.5 rounded-full text-[7.5px] font-black uppercase tracking-wider font-['Outfit'] shadow-md flex items-center gap-1">
-                            <SparklesIcon className="h-2.5 w-2.5" />
-                            <span>Smart Follow</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div
-                        className="absolute z-20 w-full px-3 flex justify-center pointer-events-none transition-all duration-200"
-                        style={{ top: `${subPosition}%` }}
-                      >
-                        {getSubtitleSample()}
-                      </div>
+                    <div className="space-y-1">
+                      <p className="font-['Outfit',_sans-serif] text-[13px] font-bold tracking-wide text-white/90">
+                        Belum ada video
+                      </p>
+                      <p className="max-w-[195px] text-[9.5px] leading-relaxed text-slate-400">
+                        Pilih video sumber atau folder klip di panel kiri untuk melihat preview di sini.
+                      </p>
                     </div>
-                  )
+                    <span className="px-2 py-0.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 text-[8px] font-bold uppercase tracking-wider font-mono text-emerald-300">
+                      {framingMode === 'smart_crop'
+                        ? 'Smart Follow · 9:16'
+                        : framingMode === 'fit_blur'
+                          ? '16:9 Fit Blur'
+                          : 'Dual Stack · 50:50'}
+                    </span>
+                  </div>
+                )}
+
+                {/* ── SUBTITLE STYLE PREVIEW (always visible so users can preview the selected style) ── */}
+                {!isRenderedClip && selectedPresetId !== 'no_subtitle' && (
+                  <div
+                    className="absolute z-20 w-full px-3 flex justify-center pointer-events-none transition-all duration-200"
+                    style={{ top: `${subPosition}%` }}
+                  >
+                    {getSubtitleSample()}
+                  </div>
                 )}
 
                 {/* ── 1. TIKTOK SOCIAL MEDIA UI OVERLAY ── */}
@@ -953,11 +939,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         <span>♫ Audio asli • {displayAccount}</span>
                       </div>
                     </div>
-
-                    {/* Bottom Home Indicator */}
-                    <div className="absolute inset-x-0 bottom-0.5 flex justify-center pointer-events-none">
-                      <div className="w-20 h-0.5 bg-white/70 rounded-full" />
-                    </div>
                   </div>
                 )}
 
@@ -1030,11 +1011,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         {displayCaption}
                       </p>
                     </div>
-
-                    {/* Bottom Home Indicator */}
-                    <div className="absolute inset-x-0 bottom-0.5 flex justify-center pointer-events-none">
-                      <div className="w-20 h-0.5 bg-white/70 rounded-full" />
-                    </div>
                   </div>
                 )}
 
@@ -1071,8 +1047,8 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                   </div>
                 )}
 
-                {/* Video Scrubber Bar on Phone Screen */}
-                <div className="absolute bottom-0 inset-x-0 h-1 bg-white/20 z-30 pointer-events-none">
+                {/* Video Scrubber Bar on Phone Screen (no track — it drew a stray line under the home swipe) */}
+                <div className="absolute bottom-0 inset-x-0 h-1 z-30 pointer-events-none">
                   <div 
                     className="h-full bg-emerald-500 transition-all duration-100"
                     style={{ width: `${playbackProgress}%` }}
@@ -1085,7 +1061,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                   AUTHENTIC iOS HOME INDICATOR BAR
                   - White rounded bar at bottom center
                  ───────────────────────────────────────────────────── */}
-              <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 h-[3.5px] w-28 rounded-full bg-white/70 shadow-sm pointer-events-none z-40" />
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 h-[3.5px] w-28 rounded-full bg-white/70 shadow-sm pointer-events-none z-40" />
 
             </div>
 
@@ -1110,13 +1086,15 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
         </div>
 
+      </div>
+
       {/* ── STUDIO TRANSPORT BAR ── */}
-      <div className="w-full max-w-[480px] bg-[#14161C] border border-white/[0.08] rounded-xl px-3.5 py-2.5 flex items-center gap-3 shadow-lg select-none mb-1">
+      <div className="ios26-glass w-full max-w-[480px] px-3.5 py-2 flex items-center gap-3 select-none flex-shrink-0 mt-1">
         {/* Primary Transport Play/Pause */}
         <button
           type="button"
           onClick={togglePlay}
-          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-[#FF5500] hover:bg-[#E04B00] text-white shadow-sm transition active:scale-95"
+          className="ios26-play flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-white transition active:scale-95"
           aria-label={isPlaying ? 'Jeda preview' : 'Putar preview'}
           title={isPlaying ? 'Jeda preview' : 'Putar preview'}
         >
@@ -1150,7 +1128,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
           <button
             type="button"
             onClick={toggleMute}
-            className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.08] bg-[#1A1D24] text-white/70 hover:text-white transition"
+            className="ios26-glass-btn flex h-7 w-7 items-center justify-center text-white/70 hover:text-white"
             title={isMuted ? 'Nyalakan suara' : 'Matikan suara'}
           >
             {isMuted ? <SpeakerXMarkIcon className="h-3.5 w-3.5 text-rose-400" /> : <SpeakerWaveIcon className="h-3.5 w-3.5" />}
@@ -1159,7 +1137,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
           <button
             type="button"
             onClick={handleRateChange}
-            className="h-7 min-w-8 rounded-lg border border-white/[0.08] bg-[#1A1D24] px-1.5 text-[10.5px] font-mono font-semibold text-white/80 hover:text-white transition"
+            className="ios26-glass-btn h-7 min-w-8 px-1.5 text-[10.5px] font-mono font-semibold text-white/80 hover:text-white"
             title="Kecepatan pemutaran"
           >
             {playbackRate}x
