@@ -16,9 +16,9 @@ import glob
 import sys
 import tempfile
 
-def load_env():
+def load_env(custom_root=None):
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(script_dir)
+    project_root = custom_root or os.path.dirname(script_dir)
     
     candidates = [
         os.path.join(project_root, ".env"),
@@ -33,7 +33,7 @@ def load_env():
                     if line and not line.startswith("#"):
                         parts = line.split("=", 1)
                         if len(parts) == 2:
-                            os.environ[parts[0].strip()] = parts[1].strip()
+                            os.environ[parts[0].strip()] = parts[1].strip().strip("'\"")
             break
 
 load_env()
@@ -82,7 +82,7 @@ os.makedirs(FONTS_DIR, exist_ok=True)
 
 def cleanup_temp_files():
     """Membersihkan sisa file temporary dari sesi sebelumnya."""
-    for _pattern in ["tmp*.wav", "temp_crop_*.mp4", "temp_cinema_*.mp4", "temp_cropcmd_*.txt", "temp_*.ass", "temp_sub*.vtt"]:
+    for _pattern in ["tmp*.wav", "temp_crop_*.mp4", "temp_cinema_*.mp4", "temp_cropcmd_*.txt", "temp_*.ass", "temp_sub*.vtt", "temp_*.mp3"]:
         for _f in glob.glob(os.path.join(TEMP_DIR, _pattern)):
             try:
                 os.remove(_f)

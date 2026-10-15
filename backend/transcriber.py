@@ -169,27 +169,36 @@ def fetch_ytdlp_subs(url, source_lang="id", job_id=None):
             return None
             
         segments = []
-        for caption in webvtt.read(vtt_file):
-            # Parse webvtt timestamp: HH:MM:SS.mmm
-            def parse_vtt_time(time_str):
-                parts = time_str.replace(',', '.').split(':')
-                return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
-                
-            start = parse_vtt_time(caption.start)
-            end = parse_vtt_time(caption.end)
-            text = caption.text.replace('\n', ' ')
-            
-            segments.append({
-                "start": start,
-                "end": end,
-                "text": text,
-                "words": split_segment_into_words(text, start, end)
-            })
-            
         try:
-            os.remove(vtt_file)
-        except Exception:
-            pass
+            for caption in webvtt.read(vtt_file):
+                # Parse webvtt timestamp: HH:MM:SS.mmm or MM:SS.mmm
+                def parse_vtt_time(time_str):
+                    parts = time_str.replace(',', '.').split(':')
+                    try:
+                        if len(parts) == 3:
+                            return max(0.0, float(parts[0]) * 3600 + float(parts[1]) * 60 + float(parts[2]))
+                        elif len(parts) == 2:
+                            return max(0.0, float(parts[0]) * 60 + float(parts[1]))
+                    except (ValueError, TypeError):
+                        return 0.0
+                    return 0.0
+                    
+                start = parse_vtt_time(caption.start)
+                end = parse_vtt_time(caption.end)
+                text = caption.text.replace('\n', ' ')
+                
+                segments.append({
+                    "start": start,
+                    "end": end,
+                    "text": text,
+                    "words": split_segment_into_words(text, start, end)
+                })
+        finally:
+            if vtt_file and os.path.exists(vtt_file):
+                try:
+                    os.remove(vtt_file)
+                except Exception:
+                    pass
         
         if segments:
             log("Berhasil mendapatkan subtitle via yt-dlp!", job_id=job_id)

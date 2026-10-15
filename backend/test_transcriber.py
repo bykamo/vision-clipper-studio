@@ -175,6 +175,39 @@ class TranscriberSnippetCompatibilityTest(unittest.TestCase):
         self.assertEqual(result[1]["end"], 6.0)
         self.assertEqual(len(result[1]["words"]), 3)
 
+    @patch("uuid.uuid4")
+    @patch("yt_dlp.YoutubeDL")
+    @patch("webvtt.read")
+    @patch("os.listdir")
+    def test_fetch_ytdlp_subs_supports_two_part_and_three_part_vtt_timestamps(self, mock_listdir, mock_webvtt_read, mock_ytdlp, mock_uuid):
+        from backend.transcriber import fetch_ytdlp_subs
+        mock_uuid.return_value.hex = "12345678abcdef"
+        mock_listdir.return_value = ["temp_sub_12345678.en.vtt"]
+
+        class DummyCaption:
+            def __init__(self, start, end, text):
+                self.start = start
+                self.end = end
+                self.text = text
+
+        # Test both 2-part (MM:SS.mmm) and 3-part (HH:MM:SS.mmm) timestamps
+        mock_webvtt_read.return_value = [
+            DummyCaption(start="04:15.200", end="04:18.500", text="Two-part MM:SS format"),
+            DummyCaption(start="01:02:03.400", end="01:02:06.000", text="Three-part HH:MM:SS format")
+        ]
+
+        segments = fetch_ytdlp_subs("https://youtube.com/watch?v=dummy", source_lang="en")
+        self.assertIsNotNone(segments)
+        self.assertEqual(len(segments), 2)
+
+        # 04:15.200 = 4 * 60 + 15.2 = 255.2
+        self.assertAlmostEqual(segments[0]["start"], 255.2, places=2)
+        self.assertAlmostEqual(segments[0]["end"], 258.5, places=2)
+
+        # 01:02:03.400 = 3600 + 120 + 3.4 = 3723.4
+        self.assertAlmostEqual(segments[1]["start"], 3723.4, places=2)
+        self.assertAlmostEqual(segments[1]["end"], 3726.0, places=2)
+
 
 if __name__ == "__main__":
     unittest.main()

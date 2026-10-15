@@ -141,11 +141,22 @@ def start_server():
     print()
 
     # Find python executable for windowless/detached execution
-    python_dir = os.path.dirname(sys.executable)
-    pythonw = os.path.join(python_dir, "pythonw.exe")
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    venv_python = os.path.join(project_root, ".venv", "bin", "python")
+    venv_python_win = os.path.join(project_root, ".venv", "Scripts", "pythonw.exe")
+    venv_python_win_py = os.path.join(project_root, ".venv", "Scripts", "python.exe")
 
-    if not os.path.exists(pythonw):
-        pythonw = sys.executable
+    if os.path.exists(venv_python):
+        pythonw = venv_python
+    elif os.path.exists(venv_python_win):
+        pythonw = venv_python_win
+    elif os.path.exists(venv_python_win_py):
+        pythonw = venv_python_win_py
+    else:
+        python_dir = os.path.dirname(sys.executable)
+        pythonw = os.path.join(python_dir, "pythonw.exe")
+        if not os.path.exists(pythonw):
+            pythonw = sys.executable
 
     # The background server script
     server_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bg_server.py")

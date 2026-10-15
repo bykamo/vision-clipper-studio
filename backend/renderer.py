@@ -213,8 +213,8 @@ def _calc_margin_v(sub_position=68):
 
 def _build_watermark_ass_section(clip_start, clip_end, source_watermark="", account_watermark=""):
     """Mengembalikan (styles_str, dialogues_list) untuk watermark glass badge (Dark Smoked Glass)."""
-    clean_src = (source_watermark or "").strip().replace("{", "").replace("}", "").replace("\n", " ")
-    clean_acc = (account_watermark or "").strip().replace("{", "").replace("}", "").replace("\n", " ")
+    clean_src = (source_watermark or "").strip().replace("\\", "＼").replace("{", "｛").replace("}", "｝").replace("\n", " ")
+    clean_acc = (account_watermark or "").strip().replace("\\", "＼").replace("{", "｛").replace("}", "｝").replace("\n", " ")
     if clean_acc and not clean_acc.startswith("@"):
         clean_acc = f"@{clean_acc}"
 
@@ -584,9 +584,12 @@ def apply_split_screen(video_path, start_time, end_time, output_path, anchors=No
     clip_dur = end_time - start_time
 
     # Determine probe size
-    temp_clip = VideoFileClip(video_path)
-    width, height = temp_clip.size
-    temp_clip.close()
+    try:
+        width, height, _ = _probe_video_stream(video_path)
+    except Exception:
+        temp_clip = VideoFileClip(video_path)
+        width, height = temp_clip.size
+        temp_clip.close()
 
     target_crop_w = int(height * 0.54) # 1:1 roughly or 9:8 ratio for 960h
     if target_crop_w % 2 != 0: target_crop_w -= 1

@@ -4,7 +4,7 @@ import os
 import sys
 import time
 from backend.downloader import get_video_file, get_video_source_name
-from backend.transcriber import transcribe_video, build_transcript_text
+from backend.transcriber import transcribe_video, build_transcript_text, get_media_duration
 from backend.analyzer import build_viral_prompt, call_llm_api, extract_json_block
 from backend.renderer import extract_and_format_clip
 from backend.utils import (
@@ -187,11 +187,15 @@ def main():
             raise RuntimeError(err_msg)
 
         # ── VALIDASI & BOUNDARY CLAMPING KANDIDAT KLIP ──
+        total_video_dur = get_media_duration(video_path)
         valid_clips = []
         for raw_clip in clips:
             try:
                 c_start = parse_timestamp_to_seconds(raw_clip.get("start", 0.0))
                 c_end = parse_timestamp_to_seconds(raw_clip.get("end", 0.0))
+                if total_video_dur > 0:
+                    c_end = min(total_video_dur, c_end)
+                    c_start = min(total_video_dur, c_start)
                 if c_end <= c_start:
                     continue
                 # Minimal durasi 5 detik agar tidak menghasilkan glitch video
@@ -231,6 +235,9 @@ def main():
             }
             # Print with marker so SSE parser can detect it
             print(f"[ANALYSIS_RESULT]{json.dumps(result)}", flush=True)
+            if job_id:
+                from backend.database import update_job_status
+                update_job_status(job_id, "completed")
             os._exit(0)
 
         os.makedirs(actual_out_dir, exist_ok=True)

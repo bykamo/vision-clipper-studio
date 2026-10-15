@@ -18,6 +18,26 @@
 }
 
 @layer components {
+  /* 1:1 Photorealistic iPhone 17 Pro 2-Layer Composite */
+  .iphone-screen {
+    width: 354px;
+    height: 771px;
+    position: absolute;
+    top: 14px;
+    left: 18px;
+    border-radius: 46px;
+    overflow: hidden;
+  }
+
+  .iphone-frame-overlay {
+    width: 389px;
+    height: 800px;
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 30;
+  }
+
   .ios-playback-controls {
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
   }

@@ -23,9 +23,12 @@ def _max_download_height():
 
 
 def _build_format_selector(max_height):
-    """Prioritas: >=1080p (sampai max_height) -> >=720p -> progressive >=720p. Tidak pernah 360p."""
+    """Prioritas: H.264 (avc1) >=1080p -> format lain >=1080p -> H.264 >=720p -> format lain >=720p. Menghindari AV1 yang sering di-throttle."""
     return (
-        f"bestvideo[height>={PREFERRED_MIN_HEIGHT}][height<={max_height}]+bestaudio"
+        f"bestvideo[height>={PREFERRED_MIN_HEIGHT}][height<={max_height}][vcodec^=avc1]+bestaudio[acodec^=mp4a]"
+        f"/bestvideo[height>={PREFERRED_MIN_HEIGHT}][height<={max_height}][vcodec^=avc1]+bestaudio"
+        f"/bestvideo[height>={PREFERRED_MIN_HEIGHT}][height<={max_height}]+bestaudio"
+        f"/bestvideo[height>={MIN_ACCEPTABLE_HEIGHT}][height<={max_height}][vcodec^=avc1]+bestaudio"
         f"/bestvideo[height>={MIN_ACCEPTABLE_HEIGHT}][height<={max_height}]+bestaudio"
         f"/best[height>={MIN_ACCEPTABLE_HEIGHT}][height<={max_height}]"
     )
@@ -114,11 +117,39 @@ def _ensure_browser_compatible_audio(video_path: str, job_id=None):
     except Exception as e:
         log(f"Info verifikasi audio: {e}", job_id=job_id)
 
+def find_existing_downloaded_video(url: str, download_dir: str):
+    """Cek apakah video YouTube ini sudah pernah diunduh dan tersimpan di folder downloads."""
+    import re
+    match = re.search(r'(?:v=|\/|live\/)([0-9A-Za-z_-]{11})', url)
+    if not match:
+        return None
+    video_id = match.group(1)
+    if not os.path.exists(download_dir):
+        return None
+
+    marker = f"[{video_id}]"
+    for fname in os.listdir(download_dir):
+        if fname.endswith(".mp4") and marker in fname and not fname.endswith(".part"):
+            full_path = os.path.abspath(os.path.join(download_dir, fname))
+            if os.path.isfile(full_path) and os.path.getsize(full_path) > 1024 * 1024:
+                w, h = _probe_video_resolution(full_path)
+                if h and h >= MIN_ACCEPTABLE_HEIGHT:
+                    return full_path
+    return None
+
 def download_video_profesional(url: str, job_id=None) -> str:
     log(f"Memulai Download URL (Mode Profesional): {url}", job_id=job_id)
     
     download_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "downloads")
     os.makedirs(download_dir, exist_ok=True)
+
+    # Cek apakah file video sudah pernah diunduh secara komplit
+    existing_file = find_existing_downloaded_video(url, download_dir)
+    if existing_file:
+        w, h = _probe_video_resolution(existing_file)
+        log(f"[CACHE] Video sudah terunduh sebelumnya di folder downloads ({w}x{h}): {os.path.basename(existing_file)}. Menggunakan file lokal...", job_id=job_id)
+        _ensure_browser_compatible_audio(existing_file, job_id=job_id)
+        return existing_file
     
     import time
     last_update_time = [0.0]
@@ -130,22 +161,46 @@ def download_video_profesional(url: str, job_id=None) -> str:
                 last_update_time[0] = now
                 total = d.get('total_bytes') or d.get('total_bytes_estimate')
                 downloaded = d.get('downloaded_bytes', 0)
-                eta = d.get('eta')
                 speed = d.get('speed')
-                if total:
+                eta = d.get('eta')
+                frag_idx = d.get('fragment_index')
+                frag_cnt = d.get('fragment_count')
+                
+                percent = None
+                if total and total > 0:
                     percent = (downloaded / total) * 100
-                    speed_mb = (speed / 1024 / 1024) if speed else 0
-                    if eta is not None:
-                        try:
-                            eta_int = int(eta)
-                            m, s = divmod(eta_int, 60)
-                            h, m = divmod(m, 60)
-                            eta_str = f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
-                        except (ValueError, TypeError):
-                            eta_str = "--:--"
-                    else:
+                elif frag_cnt and frag_idx is not None and frag_cnt > 0:
+                    percent = (frag_idx / frag_cnt) * 100
+                elif d.get('_percent_str'):
+                    try:
+                        percent = float(d['_percent_str'].replace('%', '').strip())
+                    except Exception:
+                        percent = None
+
+                speed_mb = (speed / 1024 / 1024) if speed else 0
+                if not speed_mb and d.get('_speed_str'):
+                    try:
+                        raw_spd = d['_speed_str'].replace('iB/s', '').replace('B/s', '').strip()
+                        if 'M' in d['_speed_str']:
+                            speed_mb = float(raw_spd.replace('M', ''))
+                        elif 'K' in d['_speed_str']:
+                            speed_mb = float(raw_spd.replace('K', '')) / 1024
+                    except Exception:
+                        pass
+
+                eta_str = d.get('_eta_str') or "--:--"
+                if eta_str == "--:--" and eta is not None:
+                    try:
+                        eta_int = int(eta)
+                        m, s = divmod(eta_int, 60)
+                        h, m = divmod(m, 60)
+                        eta_str = f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
+                    except (ValueError, TypeError):
                         eta_str = "--:--"
-                    log(f"Progress Download: {percent:.1f}% | Kecepatan: {speed_mb:.2f} MB/s | Sisa Waktu (ETA): {eta_str}", job_id=job_id)
+
+                frag_info = f" [Frag {frag_idx}/{frag_cnt}]" if frag_cnt else ""
+                pct_str = f"{percent:.1f}%" if percent is not None else "..."
+                log(f"Progress Download: {pct_str}{frag_info} | Kecepatan: {speed_mb:.2f} MB/s | Sisa Waktu (ETA): {eta_str}", job_id=job_id)
         elif d['status'] == 'finished':
             log("Progress Download: 100.0% | Selesai mengunduh file video.", job_id=job_id)
 
@@ -182,7 +237,7 @@ def download_video_profesional(url: str, job_id=None) -> str:
         {
             "name": "High-Res Stream (Web Embedded)",
             "format": format_selector,
-            "extractor_args": {"youtube": {"player_client": ["web_embedded"]}},
+            "extractor_args": {"youtube": {"player_client": ["web_embedded", "web"]}},
             "use_cookie": True
         },
         {
@@ -192,10 +247,22 @@ def download_video_profesional(url: str, job_id=None) -> str:
             "use_cookie": True
         },
         {
+            "name": "High-Res Stream (iOS / Web Client)",
+            "format": format_selector,
+            "extractor_args": {"youtube": {"player_client": ["ios", "web"]}},
+            "use_cookie": True
+        },
+        {
             "name": "High-Res Stream (Default Client)",
             "format": format_selector,
             "extractor_args": {},
             "use_cookie": True
+        },
+        {
+            "name": "High-Res Stream (Anonymous Fallback / Tanpa Cookie)",
+            "format": format_selector,
+            "extractor_args": {"youtube": {"player_client": ["web_embedded", "web"]}},
+            "use_cookie": False
         }
     ]
 
@@ -211,6 +278,8 @@ def download_video_profesional(url: str, job_id=None) -> str:
         for strategy in download_strategies:
             try:
                 log(f"Mencoba metode unduh: {strategy['name']} (min {min_required_height}p, maks {max_height}p)...", job_id=job_id)
+                from backend.utils import get_ffmpeg_binary
+                ffmpeg_bin = get_ffmpeg_binary()
                 ydl_opts = {
                     'format': strategy['format'],
                     'merge_output_format': 'mp4',
@@ -218,9 +287,14 @@ def download_video_profesional(url: str, job_id=None) -> str:
                     'restrictfilenames': True,
                     'noplaylist': True,
                     'writethumbnail': False,
-                    'concurrent_fragment_downloads': 8,
-                    'buffersize': 1024 * 1024 * 16,
-                    'http_chunk_size': 10485760,
+                    'continuedl': True,
+                    'skip_unavailable_fragments': True,
+                    'concurrent_fragment_downloads': 1,
+                    'socket_timeout': 20,
+                    'retries': 10,
+                    'fragment_retries': 10,
+                    'file_access_retries': 5,
+                    'ffmpeg_location': ffmpeg_bin,
                     'extractor_args': strategy['extractor_args'],
                     'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
                     'http_headers': {
@@ -235,24 +309,11 @@ def download_video_profesional(url: str, job_id=None) -> str:
                     ydl_opts['cookiefile'] = cookie_file
 
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                    selected_height = _selected_video_height(info)
-                    if selected_height is None or selected_height < min_required_height:
-                        raise RuntimeError(
-                            f"Metode hanya menyediakan {selected_height or 'resolusi tidak diketahui'}p, "
-                            f"di bawah minimum {min_required_height}p."
-                        )
-
-                    selected_format = _selected_video_format(info) or {}
-                    log(
-                        f"Stream terpilih: format {selected_format.get('format_id', '?')} "
-                        f"({selected_format.get('vcodec', '?')}) | "
-                        f"{selected_format.get('width', '?')}x{selected_height}. Memulai download...",
-                        job_id=job_id
-                    )
                     info = ydl.extract_info(url, download=True)
-                    final_filename = _final_download_path(ydl, info)
+                    if not info:
+                        raise RuntimeError("yt-dlp tidak mengembalikan informasi video.")
 
+                    final_filename = _final_download_path(ydl, info)
                     width, height = _probe_video_resolution(final_filename)
                     if height is None or height < min_required_height:
                         try:

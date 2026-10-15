@@ -243,6 +243,43 @@ class LocalApiSecurityTest(unittest.TestCase):
         self.assertNotIn("changeOrigin: true", vite_config)
         self.assertIn("--host=127.0.0.1", package_data["scripts"]["dev"])
 
+    def test_open_folder_rejects_files_and_requires_directory(self):
+        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
+            f.write(b"regular file, not a directory")
+            temp_file_path = f.name
+
+        try:
+            with TestClient(app) as client:
+                self.assertEqual(client.get("/api/session").status_code, 204)
+                # Opening a regular file instead of directory must return 400
+                res = client.post("/api/open-folder", json={"path": temp_file_path})
+                self.assertEqual(res.status_code, 400)
+                self.assertIn("Path harus berupa direktori", res.json().get("error", ""))
+        finally:
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
+
+    def test_worker_slot_stale_reservation_expires(self):
+        import time
+        from backend.main import _WORKER_LOCK, _worker_is_active, _reserve_worker_slot, _release_worker_slot
+        import backend.main as main_mod
+
+        # Bersihkan job aktif
+        with _WORKER_LOCK:
+            main_mod._ACTIVE_JOB = None
+
+        job_id = _reserve_worker_slot()
+        self.assertTrue(_worker_is_active())
+
+        # Simulasikan slot reservasi yang hang (process=None) lebih dari 15 detik lalu
+        with _WORKER_LOCK:
+            main_mod._ACTIVE_JOB["reserved_at"] = time.time() - 20
+
+        # Harus terdeteksi expired dan di-reset
+        self.assertFalse(_worker_is_active())
+        with _WORKER_LOCK:
+            self.assertIsNone(main_mod._ACTIVE_JOB)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -28,13 +28,51 @@ from backend.config_wizard import (
 app = FastAPI()
 
 # Local CSRF / Host validation & Local Session Token
-SESSION_TOKEN = secrets.token_hex(32)
+SESSION_TOKEN_FILE = os.path.join(os.path.expanduser("~"), ".visionclipper_session_token")
+
+def _get_or_create_session_token() -> str:
+    if os.path.exists(SESSION_TOKEN_FILE):
+        try:
+            with open(SESSION_TOKEN_FILE, "r", encoding="utf-8") as f:
+                token = f.read().strip()
+                if len(token) == 64 and all(c in "0123456789abcdefABCDEF" for c in token):
+                    return token
+        except Exception:
+            pass
+    token = secrets.token_hex(32)
+    try:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        fd = os.open(SESSION_TOKEN_FILE, flags, 0o600)
+        with open(fd, "w", encoding="utf-8") as f:
+            f.write(token)
+    except Exception:
+        pass
+    return token
+
+SESSION_TOKEN = _get_or_create_session_token()
+
 ALLOWED_HOSTS = {
-    "localhost", "127.0.0.1", "[::1]",
-    "localhost:3000", "127.0.0.1:3000", "[::1]:3000",
-    "localhost:5050", "127.0.0.1:5050", "[::1]:5050",
+    "localhost", "127.0.0.1", "[::1]", "0.0.0.0",
+    "localhost:3000", "127.0.0.1:3000", "[::1]:3000", "0.0.0.0:3000",
+    "localhost:5050", "127.0.0.1:5050", "[::1]:5050", "0.0.0.0:5050",
     "testserver"
 }
+
+def _is_allowed_host(host: str) -> bool:
+    if not host:
+        return True
+    host_clean = host.strip().lower()
+    if host_clean in ALLOWED_HOSTS:
+        return True
+    hostname = host_clean.split(":")[0]
+    if hostname in {"localhost", "127.0.0.1", "0.0.0.0", "::1", "testserver"}:
+        return True
+    if hostname.startswith("192.168.") or hostname.startswith("10.") or hostname.startswith("127."):
+        return True
+    if re.match(r"^172\.(1[6-9]|2[0-9]|3[0-1])\.", hostname):
+        return True
+    return False
+
 SESSION_EXEMPT_PATHS = {"/api/session", "/api/social/youtube/callback"}
 SESSION_PROTECTED_PATHS = {"/stream", "/cancel", "/shutdown"}
 
@@ -42,8 +80,10 @@ SESSION_PROTECTED_PATHS = {"/stream", "/cancel", "/shutdown"}
 async def security_middleware(request: Request, call_next):
     # 1. Validate Host header to protect against DNS rebinding
     host_header = request.headers.get("host", "").strip().lower()
-    if host_header and host_header not in ALLOWED_HOSTS:
-        return JSONResponse(status_code=403, content={"error": "Forbidden: Invalid Host header"})
+    if host_header and not _is_allowed_host(host_header):
+        from backend.utils import log
+        log(f"[SECURITY 403] Host '{host_header}' is not allowed for path {request.url.path}")
+        return JSONResponse(status_code=403, content={"error": f"Forbidden: Invalid Host header ({host_header})"})
 
     # 2. Require the browser session cookie for every local API/control endpoint.
     path = request.url.path
@@ -51,6 +91,8 @@ async def security_middleware(request: Request, call_next):
     if session_required and path not in SESSION_EXEMPT_PATHS:
         session_token = request.cookies.get("vc_session_token", "")
         if not session_token or not secrets.compare_digest(session_token, SESSION_TOKEN):
+            from backend.utils import log
+            log(f"[SECURITY 403] Invalid session token for path '{path}'")
             return JSONResponse(status_code=403, content={"error": "Forbidden: Invalid local session"})
 
     # 3. Validate Origin/Referer when supplied on mutating actions.
@@ -63,7 +105,9 @@ async def security_middleware(request: Request, call_next):
             try:
                 parsed = urlparse(origin)
                 netloc = parsed.netloc.lower()
-                if netloc not in ALLOWED_HOSTS:
+                if not _is_allowed_host(netloc):
+                    from backend.utils import log
+                    log(f"[SECURITY 403] Origin '{origin}' is not allowed for path {path}")
                     return JSONResponse(status_code=403, content={"error": "Forbidden: Invalid Origin header"})
             except Exception:
                 return JSONResponse(status_code=403, content={"error": "Forbidden: Malformed Origin header"})
@@ -71,7 +115,9 @@ async def security_middleware(request: Request, call_next):
             try:
                 parsed = urlparse(referer)
                 netloc = parsed.netloc.lower()
-                if netloc not in ALLOWED_HOSTS:
+                if not _is_allowed_host(netloc):
+                    from backend.utils import log
+                    log(f"[SECURITY 403] Referer '{referer}' is not allowed for path {path}")
                     return JSONResponse(status_code=403, content={"error": "Forbidden: Invalid Referer header"})
             except Exception:
                 return JSONResponse(status_code=403, content={"error": "Forbidden: Malformed Referer header"})
@@ -125,6 +171,10 @@ def _worker_is_active():
             return False
         process = _ACTIVE_JOB.get("process")
         if process is None:
+            # Check for stale reservation (timeout after 15 seconds)
+            if _time.time() - _ACTIVE_JOB.get("reserved_at", 0) > 15:
+                _ACTIVE_JOB = None
+                return False
             return True  # Slot reserved, process launching
         if process.poll() is None:
             return True
@@ -138,10 +188,15 @@ def _reserve_worker_slot() -> str:
         global _ACTIVE_JOB
         if _ACTIVE_JOB is not None:
             process = _ACTIVE_JOB.get("process")
-            if process is None or process.poll() is None:
+            if process is None:
+                if _time.time() - _ACTIVE_JOB.get("reserved_at", 0) > 15:
+                    _ACTIVE_JOB = None
+                else:
+                    raise RuntimeError("A worker is already processing a request")
+            elif process.poll() is None:
                 raise RuntimeError("A worker is already processing a request")
         job_id = str(uuid.uuid4())
-        _ACTIVE_JOB = {"job_id": job_id, "process": None}
+        _ACTIVE_JOB = {"job_id": job_id, "process": None, "reserved_at": _time.time()}
         return job_id
 
 
@@ -571,6 +626,9 @@ async def open_folder(request: Request):
 
     if not _is_path_safe_and_allowed(real_path, must_exist=True):
         return JSONResponse(status_code=403, content={"error": "Access to path is forbidden"})
+
+    if not os.path.isdir(real_path):
+        return JSONResponse(status_code=400, content={"error": "Path harus berupa direktori"})
 
     if os.path.exists(real_path):
         try:
@@ -1168,7 +1226,7 @@ async def api_test_groq_connection(request: Request):
 
 
 # Serve static files from frontend directory (production dist or root)
-app.mount("/", StaticFiles(directory=SERVE_DIR), name="static")
+app.mount("/", StaticFiles(directory=SERVE_DIR, html=True), name="static")
 
 if __name__ == '__main__':
     import uvicorn

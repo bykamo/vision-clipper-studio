@@ -234,12 +234,12 @@ def extract_json_block(raw_text, job_id=None):
     
     fence_match = re.search(r'```(?:json)?\s*(.*?)\s*```', text, re.DOTALL)
     if fence_match:
-        text = fence_match.group(1)
-    else:
-        start_idx = text.find('{')
-        end_idx = text.rfind('}')
-        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
-            text = text[start_idx:end_idx+1]
+        text = fence_match.group(1).strip()
+    
+    start_idx = text.find('{')
+    end_idx = text.rfind('}')
+    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+        text = text[start_idx:end_idx+1]
             
     text = re.sub(r',\s*([\]}])', r'\1', text)
         

@@ -263,8 +263,11 @@ def test_groq_connection(groq_key: str = None, project_root: str = None) -> dict
     if not selected_key or selected_key.startswith("gsk_xxxx"):
         return {"ok": False, "error": "Groq API Key belum diisi."}
 
-    # If comma-separated, pick first key to test
-    first_key = [k.strip() for k in selected_key.split(",") if k.strip()][0]
+    # If comma-separated, pick first valid key to test
+    valid_keys = [k.strip() for k in selected_key.split(",") if k.strip() and not k.strip().startswith("gsk_xxxx")]
+    if not valid_keys:
+        return {"ok": False, "error": "Groq API Key belum diisi atau format tidak valid."}
+    first_key = valid_keys[0]
 
     headers = {"Authorization": f"Bearer {first_key}"}
     try:

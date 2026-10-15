@@ -364,6 +364,40 @@ class WorkflowSelfCheck(unittest.TestCase):
             self.assertEqual(call_kwargs.get("source_lang"), "en")
             self.assertEqual(call_kwargs.get("target_lang"), "id")
 
+    def test_extract_json_block_with_conversational_intro_inside_fence(self):
+        from backend.analyzer import extract_json_block
+        raw = "```json\nHere is your JSON response:\n{\"clips\": [{\"start\": 1.0, \"end\": 10.0, \"title\": \"Test\"}]}\nHope this helps!\n```"
+        parsed = extract_json_block(raw)
+        self.assertIn("clips", parsed)
+        self.assertEqual(len(parsed["clips"]), 1)
+        self.assertEqual(parsed["clips"][0]["title"], "Test")
+
+    def test_build_watermark_ass_section_sanitizes_backslashes(self):
+        from backend.renderer import _build_watermark_ass_section
+        styles, dialogues = _build_watermark_ass_section(
+            0.0, 10.0,
+            source_watermark="Channel\\Name\\NNewLine",
+            account_watermark="@user\\hSpace"
+        )
+        self.assertEqual(len(dialogues), 2)
+        # Backslash harus diganti dengan karakter fullwidth ＼
+        for d in dialogues:
+            self.assertNotIn("\\N", d)
+            self.assertNotIn("\\h", d)
+            self.assertIn("＼", d)
+
+    def test_load_env_strips_quotes(self):
+        from backend.utils import load_env
+        with tempfile.TemporaryDirectory() as temp_dir:
+            test_env_path = os.path.join(temp_dir, ".env")
+            with open(test_env_path, "w", encoding="utf-8") as f:
+                f.write('TEST_QUOTED_VAR="my_secret_token_123"\nTEST_SINGLE_QUOTED=\'another_secret\'\n')
+
+            load_env(custom_root=temp_dir)
+
+            self.assertEqual(os.environ.get("TEST_QUOTED_VAR"), "my_secret_token_123")
+            self.assertEqual(os.environ.get("TEST_SINGLE_QUOTED"), "another_secret")
+
 
 if __name__ == "__main__":
     unittest.main()

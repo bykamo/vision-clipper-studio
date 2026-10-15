@@ -113,6 +113,7 @@ export const SimpleClipperDashboard: React.FC = () => {
   const [resolvedVideoPath, setResolvedVideoPath] = useState<string>('');
   const [previewClipRange, setPreviewClipRange] = useState<{ start: number; end: number } | null>(null);
   const [previewOutputClip, setPreviewOutputClip] = useState<{ path: string; title: string; id: string } | null>(null);
+  const [activeClipMeta, setActiveClipMeta] = useState<{ title?: string; caption?: string; hashtags?: string[] } | null>(null);
 
   // Settings State
   const [clipCount, setClipCount] = useState<number>(4);
@@ -745,6 +746,11 @@ export const SimpleClipperDashboard: React.FC = () => {
   const previewCandidate = (clip: ClipCandidate) => {
     setPreviewOutputClip(null);
     setPreviewClipRange({ start: clip.start, end: clip.end });
+    setActiveClipMeta({
+      title: clip.title_options?.[0],
+      caption: clip.caption,
+      hashtags: clip.hashtags
+    });
     setClipCandidates(prev => prev.map(candidate =>
       candidate.index === clip.index ? { ...candidate, previewed: true } : candidate
     ));
@@ -763,11 +769,16 @@ export const SimpleClipperDashboard: React.FC = () => {
         title: clip.title || `Clip #${clip.id}`,
         id: clip.id
       });
+      setActiveClipMeta({
+        title: clip.title,
+        caption: clip.caption,
+        hashtags: clip.hashtags
+      });
     }
   };
 
   // Start Real Processing via SSE — Phase 1: Analyze Only
-  const handleStartProcessing = () => {
+  const handleStartProcessing = async () => {
     if (sourceKind === 'render-folder') {
       showToast('Hasil Render Sudah Siap', 'Pilih file video baru jika ingin menjalankan analisis.', 'info');
       return;
@@ -834,6 +845,12 @@ export const SimpleClipperDashboard: React.FC = () => {
     } else if (languageMode === 'auto') {
       sourceLang = 'auto';
       targetLang = 'id';
+    }
+
+    try {
+      await fetch('/api/session', { credentials: 'include' });
+    } catch {
+      // Proceed with request
     }
 
     const streamUrl = `/api/analyze?mode=${encodeURIComponent(activeTab)}&source=${encodeURIComponent(source)}&num_clips=${encodeURIComponent(clipCount)}&whisper_model=${encodeURIComponent(transcriptionModel)}&source_lang=${encodeURIComponent(sourceLang)}&target_lang=${encodeURIComponent(targetLang)}`;
@@ -1947,8 +1964,11 @@ export const SimpleClipperDashboard: React.FC = () => {
             selectedPresetId={selectedPresetId}
             videoSource={previewOutputClip ? previewOutputClip.path : (resolvedVideoPath || videoPathInput)}
             previewClip={previewOutputClip ? null : previewClipRange}
-            clipTitle={previewOutputClip ? previewOutputClip.title : undefined}
+            clipTitle={previewOutputClip ? previewOutputClip.title : activeClipMeta?.title}
+            clipCaption={activeClipMeta?.caption}
+            clipHashtags={activeClipMeta?.hashtags}
             isRenderedClip={Boolean(previewOutputClip)}
+            isProcessing={isProcessing}
             subPosition={subPosition}
             showEmoji={showEmoji}
             watermarkEnabled={watermarkEnabled}
