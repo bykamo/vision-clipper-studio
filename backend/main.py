@@ -884,8 +884,8 @@ async def analyze(request: Request, mode: str = "", source: str = "", num_clips:
         return JSONResponse(status_code=400, content={"error": "Source parameter is empty"})
     if mode and mode not in {"hook", "affiliate"}:
         return JSONResponse(status_code=400, content={"error": "Invalid mode"})
-    if whisper_model not in {"groq", "youtube"}:
-        return JSONResponse(status_code=400, content={"error": "Invalid transcription model"})
+    if whisper_model not in {"groq"}:
+        return JSONResponse(status_code=400, content={"error": "Invalid transcription model. Hanya 'groq' yang didukung."})
     if source_lang not in {"id", "en", "auto"}:
         return JSONResponse(status_code=400, content={"error": "Invalid source language"})
     if target_lang not in {"id", "en", "none"}:

@@ -162,8 +162,8 @@ export const SimpleClipperDashboard: React.FC = () => {
 
   // Settings State
   const [clipCount, setClipCount] = useState<number>(4);
-  const [transcriptionModel, setTranscriptionModel] = useState<string>('groq');
-  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  // Groq Whisper Cloud adalah satu-satunya model transkripsi (pilihan utama/default).
+  const transcriptionModel = 'groq';
   const [languageMode, setLanguageMode] = useState<string>('id');
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
   const [selectedPresetId, setSelectedPresetId] = useState<string>('tiktok_viral');
@@ -874,7 +874,7 @@ export const SimpleClipperDashboard: React.FC = () => {
 
     setLogs([
       `[${startTimestamp}] [SYSTEM] Inisialisasi ${activeTab.toUpperCase()} CLIPPER ENGINE...`,
-      `[${startTimestamp}] [SYSTEM] Model AI: ${transcriptionModel} | Bahasa: ${langLabel} | Subtitle Style: ${selectedPresetId}`,
+      `[${startTimestamp}] [SYSTEM] Model AI: Groq Whisper Cloud | Bahasa: ${langLabel} | Subtitle Style: ${selectedPresetId}`,
       `[${startTimestamp}] [SYSTEM] Sumber video: ${source}`,
       `[${startTimestamp}] [SYSTEM] Memulai proses transkripsi & analisis AI (tanpa render)...`
     ]);
@@ -1486,7 +1486,7 @@ export const SimpleClipperDashboard: React.FC = () => {
           <SectionLabel
             icon={<AdjustmentsHorizontalIcon className="h-4 w-4 stroke-[2]" />}
             label="Settings"
-            hint="Jumlah klip, bahasa & model AI"
+            hint="Jumlah klip & bahasa audio"
           />
 
           {/* Setting 1: Number of Clips SLIDER (1 to 10) */}
@@ -1582,52 +1582,6 @@ export const SimpleClipperDashboard: React.FC = () => {
                     }}
                     className={`flex w-full flex-col rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
                       languageMode === item.id
-                        ? `${themeClasses.pillActive} font-semibold`
-                        : 'text-slate-300 hover:bg-slate-800'
-                    }`}
-                  >
-                    <span className="font-semibold text-[11px]">{item.label}</span>
-                    <span className="text-[9px] text-slate-400">{item.desc}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="mb-4 relative">
-            <label className="block text-[11px] font-semibold text-slate-400 mb-1.5 flex items-center gap-1.5">
-              <BoltIcon className="h-3.5 w-3.5 text-amber-400 stroke-[2]" />
-              <span>AI Transcription Model</span>
-            </label>
-            <button
-              type="button"
-              onClick={() => setModelDropdownOpen(!modelDropdownOpen)}
-              className="flex w-full items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-left text-xs font-medium text-slate-200 hover:border-slate-700 transition-all shadow-inner"
-            >
-              <div className="flex items-center gap-2 truncate">
-                <BoltIcon className="h-3.5 w-3.5 stroke-[2] text-amber-400 flex-shrink-0" />
-                <span className="truncate text-[11px]">
-                  {transcriptionModel === 'groq' && 'Groq Whisper Cloud (~3 detik)'}
-                  {transcriptionModel === 'youtube' && 'YouTube Transcript (Instant 0s)'}
-                </span>
-              </div>
-              <ChevronDownIcon className={`h-3.5 w-3.5 stroke-[2] text-slate-400 transition-transform ${modelDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {modelDropdownOpen && (
-              <div className="absolute top-full left-0 right-0 mt-1 z-30 rounded-xl border border-slate-800 bg-slate-900 p-1 shadow-2xl backdrop-blur-md">
-                {[
-                  { id: 'groq', label: 'Groq Whisper Cloud (~3 detik)', desc: 'Rekomendasi Utama' },
-                  { id: 'youtube', label: 'YouTube Transcript (Instant 0 Detik)', desc: 'Khusus video YouTube' }
-                ].map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      setTranscriptionModel(item.id);
-                      setModelDropdownOpen(false);
-                    }}
-                    className={`flex w-full flex-col rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
-                      transcriptionModel === item.id
                         ? `${themeClasses.pillActive} font-semibold`
                         : 'text-slate-300 hover:bg-slate-800'
                     }`}
@@ -2076,7 +2030,7 @@ export const SimpleClipperDashboard: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-slate-800/60 text-[10px] text-slate-500 font-mono flex-shrink-0">
-                  <span>Model: {transcriptionModel === 'groq' ? 'Groq Whisper Cloud' : 'YouTube Transcript'} | Lang: {languageMode === 'en_to_id' ? 'EN ➔ ID' : languageMode.toUpperCase()}</span>
+                  <span>Model: Groq Whisper Cloud | Lang: {languageMode === 'en_to_id' ? 'EN ➔ ID' : languageMode.toUpperCase()}</span>
                   <span>Target: {clipCount} Klip</span>
                 </div>
               </div>

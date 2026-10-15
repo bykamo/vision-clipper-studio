@@ -500,47 +500,6 @@ def transcribe_video(video_path, source_url=None, model_size="groq", source_lang
     cache_dir = os.path.join(PROJECT_ROOT, "downloads", "transcripts")
     os.makedirs(cache_dir, exist_ok=True)
 
-    if model_size == "youtube":
-        if not is_youtube_url:
-            raise ValueError("Model transkripsi YouTube dipilih, tetapi video sumber bukan video YouTube.")
-            
-        if not video_id:
-            raise ValueError("Gagal mengekstrak ID video YouTube dari URL.")
-            
-        cache_path = os.path.join(cache_dir, f"{video_id}_{lang_tag}_youtube.json")
-        legacy_cache_path = os.path.join(cache_dir, f"{video_id}_youtube.json") if source_lang == "id" and target_lang == "id" else None
-        
-        target_cache = cache_path if os.path.exists(cache_path) else (legacy_cache_path if legacy_cache_path and os.path.exists(legacy_cache_path) else None)
-        if target_cache:
-            log(f"Memuat transkrip dari cache lokal: {target_cache}", job_id=job_id)
-            try:
-                with open(target_cache, "r", encoding="utf-8") as f:
-                    segments = json.load(f)
-                return segments
-            except Exception as e:
-                log(f"Gagal memuat cache transkrip: {e}, melakukan fetch ulang...", job_id=job_id)
-                
-        # Step 1: InnerTube API
-        segments = fetch_youtube_transcript(video_id, source_lang=source_lang, job_id=job_id)
-        if not segments:
-            # Step 2: yt-dlp Subs
-            segments = fetch_ytdlp_subs(source_url, source_lang=source_lang, job_id=job_id)
-            
-        if not segments:
-            raise RuntimeError(f"Gagal mendapatkan transkrip/subtitle ({source_lang}) dari YouTube.")
-
-        # Translate to Indonesian if requested
-        if target_lang == "id" and source_lang in ["en", "auto"]:
-            segments = translate_segments_to_indonesian(segments, job_id=job_id)
-
-        try:
-            with open(cache_path, "w", encoding="utf-8") as f:
-                json.dump(segments, f, indent=2, ensure_ascii=False)
-            log(f"Transkrip disimpan ke cache lokal: {cache_path}", job_id=job_id)
-        except Exception as e:
-            log(f"Gagal menyimpan cache transkrip: {e}", job_id=job_id)
-        return segments
-
     # Groq Cloud Whisper (Default & Ultra Cepat dengan Retry & Cache Lokal)
     if is_youtube_url and video_id:
         cache_path = os.path.join(cache_dir, f"{video_id}_{lang_tag}_groq.json")

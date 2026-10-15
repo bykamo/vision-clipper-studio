@@ -51,7 +51,7 @@ def main():
     parser.add_argument("--num-clips", type=int, default=5, help="Number of clips")
     parser.add_argument("--mode", type=str, default="hook", choices=["hook", "affiliate"], help="Analysis mode")
     parser.add_argument("--job-id", type=int, default=None, help="Job ID for DB logging")
-    parser.add_argument("--model", type=str, default="groq", help="Transcription provider")
+    parser.add_argument("--model", type=str, default="groq", choices=["groq"], help="Transcription provider (Groq Whisper Cloud)")
     parser.add_argument("--out-dir", type=str, default=DEFAULT_OUT_DIR, help="Output directory")
     parser.add_argument("--sub-style", type=str, default="tiktok_viral", choices=["tiktok_viral", "classic_karaoke", "minimalist", "word_pop", "no_subtitle", "none"], help="Subtitle style")
     parser.add_argument("--framing-mode", type=str, default="smart_crop", choices=["smart_crop", "fit_blur", "split_screen"], help="Video layout framing mode")
