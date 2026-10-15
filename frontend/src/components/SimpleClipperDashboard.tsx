@@ -1407,10 +1407,10 @@ export const SimpleClipperDashboard: React.FC = () => {
       {/* ─────────────────────────────────────────────────────────────
           2. MAIN CONTENT: 3-COLUMN WORKSPACE
          ───────────────────────────────────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-[310px_minmax(340px,1fr)_minmax(420px,1.25fr)] xl:grid-cols-[320px_minmax(360px,0.95fr)_minmax(500px,1.3fr)]">
+      <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-3 gap-3 p-3">
 
         {/* ── COLUMN 1: LEFT SIDEBAR (SETTINGS & CONTROLS) ── */}
-        <aside className={`flex flex-col border-r ${themeClasses.sidebar} p-4 overflow-y-auto scrollbar-thin`}>
+        <aside className={`flex min-h-0 flex-col rounded-2xl border ${themeClasses.sidebar} p-3.5 overflow-y-auto scrollbar-thin`}>
 
           {/* 1. VIDEO SOURCE SECTION */}
           <div className="mb-4">
@@ -1960,7 +1960,7 @@ export const SimpleClipperDashboard: React.FC = () => {
         </aside>
 
         {/* ── COLUMN 2: CENTER WORKSPACE (iPHONE PREVIEW MOCKUP) ── */}
-        <section className="flex flex-col p-3 sm:p-3.5 bg-[#090d13] overflow-hidden border-r border-slate-800/80">
+        <section className="flex min-h-0 flex-col rounded-2xl border border-slate-800/80 bg-[#090d13] p-3 sm:p-3.5 overflow-hidden">
           <PhonePreview
             framingMode={framingMode}
             selectedPresetId={selectedPresetId}
@@ -1980,7 +1980,7 @@ export const SimpleClipperDashboard: React.FC = () => {
         </section>
 
         {/* ── COLUMN 3: RIGHT WORKSPACE (60% WORKSPACE / 40% PERMANENT LOG) ── */}
-        <main className="flex flex-col h-full overflow-hidden p-3.5 gap-3 bg-[#0b0f15]">
+        <main className="flex min-h-0 flex-col h-full rounded-2xl border border-slate-800/80 bg-[#0b0f15] overflow-hidden p-3.5 gap-3">
 
           {/* ── TOP SECTION: 60% WORKSPACE (CLIP PREVIEW / OUTPUT / STATUS) ── */}
           <div className="flex-[6] min-h-0 flex flex-col overflow-hidden">
