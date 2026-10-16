@@ -23,6 +23,7 @@ from backend.config_wizard import (
     save_ai_config,
     test_ai_connection,
     test_groq_connection,
+    fetch_available_models,
 )
 
 app = FastAPI()
@@ -1211,6 +1212,24 @@ async def api_test_ai_connection(request: Request):
     except Exception as e:
         return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
 
+
+@app.post("/api/ai-config/models")
+async def api_fetch_available_models(request: Request):
+    """Auto-detect available models from the provider endpoint (GET {base}/models)."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+
+    try:
+        result = await asyncio.to_thread(
+            fetch_available_models,
+            endpoint=data.get("endpoint"),
+            api_key=data.get("api_key"),
+        )
+        return JSONResponse(result)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
 
 @app.post("/api/ai-config/test-groq")
 async def api_test_groq_connection(request: Request):

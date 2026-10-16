@@ -177,12 +177,13 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 
 # ── LLM fallback pool ──
 # Models tried in order after the configured primary model fails. These are
-# verified to work on the default 9Router/kamodev gateway. Override with the
+# verified available on the tiprouter.my.id gateway (see GET /v1/models for
+# the authoritative list for the current API key). Override with the
 # ROUTER_FALLBACK_MODELS env var (comma-separated).
 DEFAULT_FALLBACK_MODELS = [
-    "tip/gemini-3.8-flash",
-    "freemax",
-    "tip/mimo-v2.6.flash",
+    "gemini-3.8-flash",
+    "deepseek-v4.1-flash",
+    "claude-haiku-5.5",
 ]
 
 # Errors that mean "this model/request will never succeed" -> skip immediately.

@@ -63,6 +63,11 @@ interface StudioSettingsModalProps {
   setAiEndpointInput: (val: string) => void;
   aiModelInput: string;
   setAiModelInput: (val: string) => void;
+  handleFetchModels: () => void;
+  aiModelsLoading: boolean;
+  aiModelsError: string | null;
+  aiModelsOpen: boolean;
+  aiModels: string[];
   aiApiKeyInput: string;
   setAiApiKeyInput: (val: string) => void;
   aiGroqKeyInput: string;
@@ -104,6 +109,11 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
   setAiEndpointInput,
   aiModelInput,
   setAiModelInput,
+  handleFetchModels,
+  aiModelsLoading,
+  aiModelsError,
+  aiModelsOpen,
+  aiModels,
   aiApiKeyInput,
   setAiApiKeyInput,
   aiGroqKeyInput,
@@ -501,17 +511,72 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                         <Label htmlFor="ai-model">Nama Model LLM</Label>
                         <span className="text-[11px] text-slate-500">Transkrip & Scoring</span>
                       </div>
-                      <Input
-                        id="ai-model"
-                        type="text"
-                        value={aiModelInput}
-                        onChange={(e) => {
-                          setAiModelInput(e.target.value);
-                          setAiTestResult(null);
-                        }}
-                        placeholder="google/gemini-2.0-flash-exp:free"
-                        className="font-mono text-xs"
-                      />
+                      <div className="flex items-center gap-1.5">
+                        <Input
+                          id="ai-model"
+                          type="text"
+                          value={aiModelInput}
+                          onChange={(e) => {
+                            setAiModelInput(e.target.value);
+                            setAiTestResult(null);
+                          }}
+                          placeholder="google/gemini-2.0-flash-exp:free"
+                          className="font-mono text-xs flex-1 min-w-0"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleFetchModels}
+                          disabled={aiModelsLoading || !aiEndpointInput.trim()}
+                          className="flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-2 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/20 transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                          title="Deteksi otomatis model yang tersedia dari endpoint (pakai API key yang sama)"
+                        >
+                          <RefreshCw className={`h-3.5 w-3.5 ${aiModelsLoading ? 'animate-spin' : ''}`} />
+                          <span>{aiModelsLoading ? 'Cek...' : 'Auto'}</span>
+                        </button>
+                      </div>
+
+                      {/* Auto-detected model list */}
+                      {aiModelsError && (
+                        <p className="text-[11px] text-red-400 flex items-center gap-1">
+                          <XCircle className="h-3 w-3 flex-shrink-0" />
+                          {aiModelsError}
+                        </p>
+                      )}
+                      {aiModelsOpen && aiModels.length > 0 && (
+                        <div className="rounded-lg border border-slate-700/80 bg-[#0b0f14] max-h-44 overflow-y-auto scrollbar-thin shadow-lg">
+                          <div className="px-2.5 py-1.5 border-b border-slate-800/80 flex items-center justify-between sticky top-0 bg-[#0b0f14]">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              {aiModels.length} model tersedia
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setAiModelsOpen(false)}
+                              className="text-[10px] text-slate-500 hover:text-slate-300"
+                            >
+                              Tutup
+                            </button>
+                          </div>
+                          {aiModels.map((m) => (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => {
+                                setAiModelInput(m);
+                                setAiTestResult(null);
+                                setAiModelsOpen(false);
+                              }}
+                              className={`w-full text-left px-2.5 py-1.5 font-mono text-[11px] transition-colors flex items-center justify-between gap-2 ${
+                                aiModelInput === m
+                                  ? 'bg-emerald-500/10 text-emerald-300'
+                                  : 'text-slate-300 hover:bg-slate-800/70'
+                              }`}
+                            >
+                              <span className="truncate">{m}</span>
+                              {aiModelInput === m && <Check className="h-3 w-3 flex-shrink-0" />}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <p className="text-[11px] text-slate-500">
                         Model yang digunakan untuk menganalisis transkrip audio & scoring hook.
                       </p>

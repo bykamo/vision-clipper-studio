@@ -321,6 +321,10 @@ export const SimpleClipperDashboard: React.FC = () => {
   const [aiGroqKeyInput, setAiGroqKeyInput] = useState<string>('');
   const [aiTestResult, setAiTestResult] = useState<{ ok: boolean; message?: string; error?: string; reply?: string } | null>(null);
   const [aiGroqTestResult, setAiGroqTestResult] = useState<{ ok: boolean; message?: string; error?: string } | null>(null);
+  const [aiModels, setAiModels] = useState<string[]>([]);
+  const [aiModelsLoading, setAiModelsLoading] = useState(false);
+  const [aiModelsError, setAiModelsError] = useState<string | null>(null);
+  const [aiModelsOpen, setAiModelsOpen] = useState(false);
 
   const fetchAiConfig = async () => {
     try {
@@ -376,12 +380,45 @@ export const SimpleClipperDashboard: React.FC = () => {
   const handleSelectProvider = (providerKey: string) => {
     setAiSelectedProvider(providerKey);
     setAiTestResult(null);
+    setAiModels([]);
+    setAiModelsError(null);
+    setAiModelsOpen(false);
     if (aiConfig?.presets && aiConfig.presets[providerKey]) {
       const preset = aiConfig.presets[providerKey];
       if (providerKey !== 'custom') {
         setAiEndpointInput(preset.endpoint);
         setAiModelInput(preset.default_model);
       }
+    }
+  };
+
+  /** Auto-detect models from the provider endpoint using the same API key. */
+  const handleFetchModels = async () => {
+    setAiModelsLoading(true);
+    setAiModelsError(null);
+    setAiModelsOpen(false);
+    try {
+      const res = await fetch('/api/ai-config/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          endpoint: aiEndpointInput.trim(),
+          api_key: aiApiKeyInput.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.ok && Array.isArray(data.models) && data.models.length > 0) {
+        setAiModels(data.models);
+        setAiModelsOpen(true);
+      } else {
+        setAiModels([]);
+        setAiModelsError(data.error || 'Gagal mengambil daftar model.');
+      }
+    } catch (e: any) {
+      setAiModels([]);
+      setAiModelsError(e.message || 'Gagal menghubungi backend.');
+    } finally {
+      setAiModelsLoading(false);
     }
   };
 
@@ -2953,6 +2990,11 @@ export const SimpleClipperDashboard: React.FC = () => {
         setAiEndpointInput={setAiEndpointInput}
         aiModelInput={aiModelInput}
         setAiModelInput={setAiModelInput}
+        handleFetchModels={handleFetchModels}
+        aiModelsLoading={aiModelsLoading}
+        aiModelsError={aiModelsError}
+        aiModelsOpen={aiModelsOpen}
+        aiModels={aiModels}
         aiApiKeyInput={aiApiKeyInput}
         setAiApiKeyInput={setAiApiKeyInput}
         aiGroqKeyInput={aiGroqKeyInput}

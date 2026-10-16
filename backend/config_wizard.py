@@ -249,6 +249,64 @@ def test_ai_connection(endpoint: str = None, api_key: str = None, model: str = N
         return {"ok": False, "error": f"Gagal menghubungi server AI: {str(e)[:250]}"}
 
 
+def fetch_available_models(endpoint: str = None, api_key: str = None, project_root: str = None) -> dict:
+    """Auto-detect models offered by the provider endpoint via GET {base}/models.
+
+    Uses the same endpoint + API key as the LLM engine. The models URL is
+    derived from the chat-completions endpoint by stripping the
+    '/chat/completions' suffix and appending '/models'.
+    """
+    import requests
+
+    env_path = _get_env_path(project_root)
+    current_values = dotenv_values(env_path) if os.path.exists(env_path) else {}
+
+    selected_endpoint = (
+        endpoint if endpoint is not None
+        else current_values.get("ROUTER_API_ENDPOINT", "") or os.environ.get("ROUTER_API_ENDPOINT", "")
+    ).strip()
+    selected_key = (api_key or "").strip()
+    if not selected_key:
+        selected_key = current_values.get("ROUTER_API_KEY", "") or os.environ.get("ROUTER_API_KEY", "")
+
+    if not selected_endpoint:
+        return {"ok": False, "error": "Endpoint URL belum diisi."}
+    if not selected_key or selected_key.startswith("sk-xxxx"):
+        return {"ok": False, "error": "LLM API Key belum diisi."}
+
+    base = selected_endpoint.rstrip("/")
+    if base.endswith("/chat/completions"):
+        base = base[: -len("/chat/completions")]
+    models_url = f"{base}/models"
+
+    try:
+        resp = requests.get(models_url, headers={"Authorization": f"Bearer {selected_key}"}, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        items = data.get("data", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
+        models = []
+        for item in items:
+            mid = item.get("id") if isinstance(item, dict) else item
+            if mid:
+                models.append(str(mid))
+        models = sorted(set(models))
+        if not models:
+            return {"ok": False, "error": "Endpoint tidak mengembalikan daftar model."}
+        return {"ok": True, "models": models, "count": len(models)}
+    except requests.Timeout:
+        return {"ok": False, "error": "Timeout: server tidak merespons dalam 15 detik."}
+    except requests.HTTPError as e:
+        status_code = e.response.status_code if e.response else 0
+        err_msg = ""
+        try:
+            err_json = e.response.json()
+            err_msg = err_json.get("error", {}).get("message", "") or str(err_json)
+        except Exception:
+            err_msg = e.response.text[:250] if e.response else str(e)
+        return {"ok": False, "error": f"HTTP {status_code}: {err_msg}"}
+    except Exception as e:
+        return {"ok": False, "error": f"Gagal mengambil daftar model: {str(e)[:250]}"}
+
 def test_groq_connection(groq_key: str = None, project_root: str = None) -> dict:
     """Test Groq API key validity using the Groq models endpoint."""
     import requests
