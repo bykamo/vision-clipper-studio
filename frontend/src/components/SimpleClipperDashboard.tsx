@@ -1865,19 +1865,37 @@ export const SimpleClipperDashboard: React.FC = () => {
           <div className="flex-[6] min-h-0 flex flex-col overflow-hidden">
             <div className={`rounded-2xl border border-slate-800/80 ${themeClasses.card} flex flex-col h-full overflow-hidden`}>
 
+            {/* PERSISTENT TERMINAL HEADER (all phases) */}
+            <div className="flex h-8 items-center justify-between px-3.5 border-b border-slate-800/80 bg-[#161b22] flex-shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f56]" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]" />
+                  <span className={`h-2.5 w-2.5 rounded-full ${isProcessing ? 'bg-[#27c93f] animate-pulse' : 'bg-[#27c93f]'}`} />
+                </div>
+                <span className="font-mono text-[11px] font-bold text-slate-400 tracking-wider">
+                  {phase === 'complete' ? 'OUTPUT CLIPS' : 'CLIP PREVIEW'}
+                </span>
+              </div>
+              {phase === 'complete' && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    {generatedClips.length > 0 ? `${generatedClips.length} Klip Dihasilkan` : 'Folder Siap'}
+                  </span>
+                  <button
+                    onClick={() => resetWorkflow(true)}
+                    className="flex items-center gap-1 text-[10px] font-mono text-slate-400 hover:text-white bg-slate-800/60 px-2 py-0.5 rounded border border-slate-700 transition-colors"
+                  >
+                    <ArrowPathIcon className="h-3 w-3 stroke-[2]" />
+                    <span>Baru</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* 1. CONFIG PHASE: Standby Clip Preview */}
             {phase === 'config' && (
               <div className="flex flex-col h-full overflow-hidden">
-                <div className="flex h-8 items-center gap-2.5 px-3.5 border-b border-slate-800/80 bg-[#161b22] flex-shrink-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f56]" />
-                    <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]" />
-                    <span className="h-2.5 w-2.5 rounded-full bg-[#27c93f]" />
-                  </div>
-                  <span className="font-mono text-[11px] font-bold text-slate-400 tracking-wider">
-                    CLIP PREVIEW
-                  </span>
-                </div>
                 <div className="flex flex-1 flex-col items-center justify-center p-4 py-6 text-center text-slate-500">
                   <FolderArrowDownIcon className="h-10 w-10 stroke-[1.5] mb-2.5 opacity-30 text-emerald-400" />
                   <p className="text-xs font-semibold text-slate-300">Belum ada klip yang di-generate</p>
@@ -2101,28 +2119,6 @@ export const SimpleClipperDashboard: React.FC = () => {
             {/* 5. COMPLETE PHASE: Output Clips */}
             {phase === 'complete' && (
               <div className={`${themeClasses.card} p-3.5 flex flex-col h-full overflow-hidden`}>
-                {/* Header */}
-                <div className="flex items-center justify-between mb-2.5 border-b border-slate-800/80 pb-2 flex-shrink-0">
-                  <div className="flex items-center gap-2">
-                    <FolderArrowDownIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
-                    <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                      OUTPUT CLIPS
-                    </h2>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-slate-400 font-medium">
-                      {generatedClips.length > 0 ? `${generatedClips.length} Klip Dihasilkan` : 'Folder Siap'}
-                    </span>
-                    <button
-                      onClick={() => resetWorkflow(true)}
-                      className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-white transition-colors"
-                    >
-                      <ArrowPathIcon className="h-3 w-3 stroke-[2]" />
-                      <span>Baru</span>
-                    </button>
-                  </div>
-                </div>
-
                 {/* Output Dir Banner */}
                 {outputDir && (
                   <div className={`flex items-center justify-between gap-2 rounded-xl border ${themeClasses.outputBanner} p-2.5 shadow-lg bg-[#161d26] mb-2 flex-shrink-0 overflow-hidden`}>
