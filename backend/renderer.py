@@ -49,6 +49,27 @@ PROFILE_CASCADE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 
 YUNET_MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "face_detection_yunet_2023mar.onnx")
 YOLO_MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "yolov8n.pt")
 
+# ── SUBTITLE SAFE ZONE (video 9:16 = 1080x1920) ──
+# Horizontal margin per side so subtitle text never touches the frame edge or
+# collides with TikTok/Reels UI (right action rail, left text column).
+# 120px ≈ 11% of the 1080px width per side -> text confined to the middle 78%.
+SAFE_MARGIN_H = 120
+# Vertical safe band (percent of height). Keeps text clear of the top header
+# tabs (~12%) and the bottom caption + navigation bar (~20%).
+SAFE_TOP_PCT = 12.0
+SAFE_BOTTOM_PCT = 20.0
+# WrapStyle 0 = smart word wrapping. Long lines wrap onto a second line inside
+# the margins instead of overflowing past the frame edge (WrapStyle 1/2 clip).
+SAFE_WRAP_STYLE = 0
+
+# Per-style character budgets derived from the safe width (1080 - 2*120 = 840px)
+# and each font's approximate average glyph width (~0.62 * font size).
+STYLE_CHUNK_LIMITS = {
+    "tiktok_viral": {"max_words": 2, "max_chars": 12},
+    "classic_karaoke": {"max_words": 3, "max_chars": 12},
+    "minimalist": {"max_words": 4, "max_chars": 16},
+}
+
 def _escape_ass_text(text: str) -> str:
     """Escape ASS/SSA control characters and strip raw newlines."""
     if not text:
@@ -355,11 +376,20 @@ def _format_ass_word(text, base_color="&HFFFFFF&", alpha_hide=False, uppercase=F
     return _EMOJI_PATTERN.sub(_replace_emoji, text)
 
 def _calc_margin_v(sub_position=68):
-    """Konversi posisi persentase dari atas layar (30-85%) ke nilai ASS MarginV (dari bawah)."""
+    """Konversi posisi persentase dari atas layar ke nilai ASS MarginV (dari bawah).
+
+    Posisi di-clamp ke SAFE ZONE vertikal: subtitle tidak boleh masuk ke area
+    header atas (SAFE_TOP_PCT) maupun area caption/navigation bawah
+    (SAFE_BOTTOM_PCT). Karena style memakai Alignment 2 (bottom-anchored),
+    ``pos`` merepresentasikan tepi BAWAH blok subtitle.
+    """
     try:
-        pos = max(25.0, min(85.0, float(sub_position)))
+        pos = float(sub_position)
     except (ValueError, TypeError):
         pos = 68.0
+    min_pos = SAFE_TOP_PCT          # jangan sampai blok naik ke area header
+    max_pos = 100.0 - SAFE_BOTTOM_PCT  # jangan sampai turun ke area caption/nav
+    pos = max(min_pos, min(max_pos, pos))
     return int(1920 * ((100.0 - pos) / 100.0))
 
 def _build_watermark_ass_section(clip_start, clip_end, source_watermark="", account_watermark=""):
@@ -466,24 +496,40 @@ def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, sub_sty
 
 
 def _chunk_words(words, max_words=2, max_chars=14, uppercase=False):
-    """Split sanitized words into display chunks (compact for mobile screens)."""
-    chunks, current_chunk = [], []
+    """Split sanitized words into display chunks that fit the 9:16 safe width.
+
+    The character budget is enforced BEFORE a word is added, so a chunk can
+    never exceed ``max_chars`` (except when a single word is itself longer).
+    Previously the limit was checked after appending, which produced over-long
+    lines that spilled past the left/right safe-zone margins.
+    """
+    chunks, current_chunk, current_len = [], [], 0
     for word_info in words:
         text = word_info["word"].strip()
         if uppercase:
             text = text.upper()
-        if not text: continue
-        current_chunk.append({"word": text, "start": word_info["start"], "end": word_info["end"]})
-        if len(current_chunk) >= max_words or sum(len(w["word"]) for w in current_chunk) > max_chars or text[-1] in ".?!,":
+        if not text:
+            continue
+        # +1 accounts for the joining space when the chunk already has content.
+        projected = current_len + len(text) + (1 if current_chunk else 0)
+        if current_chunk and (len(current_chunk) >= max_words or projected > max_chars):
             chunks.append(current_chunk)
-            current_chunk = []
-    if current_chunk: chunks.append(current_chunk)
+            current_chunk, current_len = [], 0
+            projected = len(text)
+        current_chunk.append({"word": text, "start": word_info["start"], "end": word_info["end"]})
+        current_len = projected
+        # A sentence terminator naturally closes the current chunk.
+        if text[-1] in ".?!,":
+            chunks.append(current_chunk)
+            current_chunk, current_len = [], 0
+    if current_chunk:
+        chunks.append(current_chunk)
     return chunks
 
 
 def _generate_tiktok_viral_style(words, out_ass_path, clip_start, clip_end, margin_v=600, extra_styles="", extra_dialogues=None):
     """🎬 TikTok Viral: Plus Jakarta Sans Bold + Outline Tipis Modern + Highlight Kuning Pop."""
-    styles_block = f"Style: ViralStyle,Plus Jakarta Sans,84,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3.5,2,2,100,100,{margin_v},1\n"
+    styles_block = f"Style: ViralStyle,Plus Jakarta Sans,84,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3.5,2,2,{SAFE_MARGIN_H},{SAFE_MARGIN_H},{margin_v},1\n"
     if extra_styles:
         styles_block += f"{extra_styles}\n"
 
@@ -491,7 +537,7 @@ def _generate_tiktok_viral_style(words, out_ass_path, clip_start, clip_end, marg
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
-WrapStyle: 1
+WrapStyle: {SAFE_WRAP_STYLE}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
@@ -499,7 +545,8 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    chunks = _chunk_words(words, max_words=2, max_chars=14, uppercase=False)
+    limits = STYLE_CHUNK_LIMITS["tiktok_viral"]
+    chunks = _chunk_words(words, max_words=limits["max_words"], max_chars=limits["max_chars"], uppercase=False)
     
     with open(out_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header)
@@ -527,7 +574,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 def _generate_classic_karaoke_style(words, out_ass_path, clip_start, clip_end, margin_v=580, extra_styles="", extra_dialogues=None):
     """🎤 Classic Karaoke: Teks natural case dengan sapuan highlight Electric Cyan / Mint per kata sesuai preview."""
-    styles_block = f"Style: KaraokeStyle,Montserrat,84,&H00FFFFFF,&H000000FF,&H00000000,&HB0000000,-1,0,0,0,100,100,0,0,1,8,4,2,80,80,{margin_v},1\n"
+    styles_block = f"Style: KaraokeStyle,Montserrat,84,&H00FFFFFF,&H000000FF,&H00000000,&HB0000000,-1,0,0,0,100,100,0,0,1,8,4,2,{SAFE_MARGIN_H},{SAFE_MARGIN_H},{margin_v},1\n"
     if extra_styles:
         styles_block += f"{extra_styles}\n"
 
@@ -535,7 +582,7 @@ def _generate_classic_karaoke_style(words, out_ass_path, clip_start, clip_end, m
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
-WrapStyle: 1
+WrapStyle: {SAFE_WRAP_STYLE}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
@@ -543,8 +590,9 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    # 2-3 words per chunk for readable karaoke phrasing
-    chunks = _chunk_words(words, max_words=3, max_chars=18, uppercase=False)
+    # 2-3 words per chunk for readable karaoke phrasing (kept inside the safe width)
+    limits = STYLE_CHUNK_LIMITS["classic_karaoke"]
+    chunks = _chunk_words(words, max_words=limits["max_words"], max_chars=limits["max_chars"], uppercase=False)
     
     with open(out_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header)
@@ -574,7 +622,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 def _generate_minimalist_style(words, out_ass_path, clip_start, clip_end, margin_v=560, extra_styles="", extra_dialogues=None):
     """✨ Minimalist: Teks putih bersih statis, elegan dan tidak mengganggu konten podcast."""
-    styles_block = f"Style: MinimalStyle,Plus Jakarta Sans,74,&H00FFFFFF,&H000000FF,&H00151515,&HAA000000,-1,0,0,0,100,100,0,0,1,5,3,2,100,100,{margin_v},1\n"
+    styles_block = f"Style: MinimalStyle,Plus Jakarta Sans,74,&H00FFFFFF,&H000000FF,&H00151515,&HAA000000,-1,0,0,0,100,100,0,0,1,5,3,2,{SAFE_MARGIN_H},{SAFE_MARGIN_H},{margin_v},1\n"
     if extra_styles:
         styles_block += f"{extra_styles}\n"
 
@@ -582,7 +630,7 @@ def _generate_minimalist_style(words, out_ass_path, clip_start, clip_end, margin
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
-WrapStyle: 1
+WrapStyle: {SAFE_WRAP_STYLE}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
@@ -590,8 +638,9 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    # 3-4 words per line for clean readability
-    chunks = _chunk_words(words, max_words=4, max_chars=22, uppercase=False)
+    # 3-4 words per line for clean readability (kept inside the safe width)
+    limits = STYLE_CHUNK_LIMITS["minimalist"]
+    chunks = _chunk_words(words, max_words=limits["max_words"], max_chars=limits["max_chars"], uppercase=False)
     
     with open(out_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header)
@@ -607,7 +656,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 def _generate_word_pop_style(words, out_ass_path, clip_start, clip_end, margin_v=960, extra_styles="", extra_dialogues=None):
     """⚡ Word Pop (Reels): Menampilkan 1 kata besar per saat di posisi tengah."""
-    styles_block = f"Style: WordPopStyle,Impact,108,&H00FFFFFF,&H000000FF,&H00000000,&HAA000000,-1,0,0,0,100,100,0,0,1,12,6,2,60,60,{margin_v},1\n"
+    styles_block = f"Style: WordPopStyle,Impact,108,&H00FFFFFF,&H000000FF,&H00000000,&HAA000000,-1,0,0,0,100,100,0,0,1,12,6,2,{SAFE_MARGIN_H},{SAFE_MARGIN_H},{margin_v},1\n"
     if extra_styles:
         styles_block += f"{extra_styles}\n"
 
@@ -615,7 +664,7 @@ def _generate_word_pop_style(words, out_ass_path, clip_start, clip_end, margin_v
 ScriptType: v4.00+
 PlayResX: 1080
 PlayResY: 1920
-WrapStyle: 1
+WrapStyle: {SAFE_WRAP_STYLE}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
@@ -623,6 +672,10 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
+    # Safe usable width and an approximate per-glyph width for Impact (bold).
+    usable_w = 1080 - 2 * SAFE_MARGIN_H
+    glyph_ratio = 0.60
+    base_fs = 108
     with open(out_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header)
         if extra_dialogues:
@@ -635,8 +688,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             # Emoji harus lewat _format_ass_word agar dibungkus font Noto Emoji
             # (menulis teks mentah akan menghasilkan kotak kosong / tofu).
             text = _format_ass_word(w["word"], base_color="&HFFFFFF&", uppercase=True)
+            # Auto-shrink long single words so they never spill past the safe width.
+            word_len = max(1, len(w["word"].strip()))
+            fit_fs = int(usable_w / (glyph_ratio * word_len))
+            fs = max(44, min(base_fs, fit_fs))
             # Dynamic punchy scale effect on entry
-            f.write(f"Dialogue: 0,{start_ass},{end_ass},WordPopStyle,,0,0,0,,{{\\t(0,60,\\fscx110\\fscy110)}}{{\\t(60,120,\\fscx100\\fscy100)}}{text}\n")
+            f.write(f"Dialogue: 0,{start_ass},{end_ass},WordPopStyle,,0,0,0,,{{\\fs{fs}}}{{\\t(0,60,\\fscx110\\fscy110)}}{{\\t(60,120,\\fscx100\\fscy100)}}{text}\n")
 
 def detect_speaker_anchors(video_path, start_time, end_time, width, height, target_width):
     """

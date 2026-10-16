@@ -102,6 +102,10 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const animTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
+  // Tracks whether the current mute state was forced by the browser autoplay
+  // policy (not an explicit user choice). When true, the first user gesture
+  // should restore sound instead of toggling playback.
+  const autoplayMutedRef = useRef(false);
   const [scale, setScale] = useState<number>(0.62);
 
   // Dynamically calculate scale factor to fit exactly within the available preview column stage
@@ -147,40 +151,46 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     }, 600);
   };
 
+  // Attempts to start playback with sound. If the browser blocks audible
+  // autoplay (no user gesture yet), it falls back to muted playback and marks
+  // the mute as "forced" so the next user gesture can restore sound.
+  const startPlayback = (video: HTMLVideoElement, withSound: boolean) => {
+    video.muted = withSound ? false : true;
+    if (withSound) video.volume = 1;
+    return video.play()
+      .then(() => {
+        setIsPlaying(true);
+        if (withSound) {
+          setIsMuted(false);
+          autoplayMutedRef.current = false;
+        }
+        return true;
+      })
+      .catch(() => {
+        if (withSound) {
+          // Browser blocked audible autoplay -> retry muted.
+          video.muted = true;
+          autoplayMutedRef.current = true;
+          setIsMuted(true);
+          return video.play()
+            .then(() => { setIsPlaying(true); return true; })
+            .catch(() => { setIsPlaying(false); return false; });
+        }
+        setIsPlaying(false);
+        return false;
+      });
+  };
+
   // Auto-seek and loop within clip range when previewClip is set or when switching to rendered clip
   useEffect(() => {
     if (!videoRef.current || !videoStreamUrl) return;
 
     if (isRenderedClip) {
       videoRef.current.currentTime = 0;
-      videoRef.current.muted = isMuted;
-      videoRef.current.volume = 1;
-      void videoRef.current.play()
-        .then(() => setIsPlaying(true))
-        .catch(() => {
-          if (videoRef.current) {
-            videoRef.current.muted = true;
-            setIsMuted(true);
-            void videoRef.current.play()
-              .then(() => setIsPlaying(true))
-              .catch(() => setIsPlaying(false));
-          }
-        });
+      void startPlayback(videoRef.current, !isMuted);
     } else if (previewClip) {
       videoRef.current.currentTime = previewClip.start;
-      videoRef.current.muted = isMuted;
-      videoRef.current.volume = 1;
-      void videoRef.current.play()
-        .then(() => setIsPlaying(true))
-        .catch(() => {
-          if (videoRef.current) {
-            videoRef.current.muted = true;
-            setIsMuted(true);
-            void videoRef.current.play()
-              .then(() => setIsPlaying(true))
-              .catch(() => setIsPlaying(false));
-          }
-        });
+      void startPlayback(videoRef.current, !isMuted);
     }
   }, [previewClip?.start, previewClip?.end, videoStreamUrl, isRenderedClip]);
 
@@ -203,6 +213,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     setHasLoadedMetadata(false);
     setMediaError(false);
     setIsPlaying(false);
+    autoplayMutedRef.current = false;
   }, [videoStreamUrl]);
 
   const handleLoadedMetadata = () => {
@@ -210,7 +221,8 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
       setDuration(videoRef.current.duration || 0);
       setHasLoadedMetadata(true);
       setMediaError(false);
-      videoRef.current.muted = isMuted;
+      // Respect any browser-forced autoplay mute; otherwise sync with user state.
+      videoRef.current.muted = autoplayMutedRef.current ? true : isMuted;
       videoRef.current.volume = 1;
       if (isRenderedClip) {
         videoRef.current.currentTime = 0;
@@ -242,16 +254,35 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     setShowPlayPulse(true);
     setTimeout(() => setShowPlayPulse(false), 500);
 
+    // Already playing but silent only because of the autoplay policy:
+    // this user gesture should simply restore sound, not pause.
+    if (!video.paused && autoplayMutedRef.current) {
+      video.muted = false;
+      video.volume = 1.0;
+      autoplayMutedRef.current = false;
+      setIsMuted(false);
+      triggerAnimation('play');
+      return;
+    }
+
     if (video.paused) {
+      // A click/keypress is a user gesture, so browsers allow audible playback.
+      // If the mute was only forced by the autoplay policy, try to restore sound.
+      const wantSound = !isMuted || autoplayMutedRef.current;
       try {
-        video.muted = isMuted;
-        if (!isMuted) video.volume = 1.0;
+        video.muted = !wantSound;
+        if (wantSound) {
+          video.volume = 1.0;
+          autoplayMutedRef.current = false;
+        }
         await video.play();
+        setIsMuted(!wantSound);
         setIsPlaying(true);
         triggerAnimation('play');
       } catch {
         try {
           video.muted = true;
+          autoplayMutedRef.current = true;
           setIsMuted(true);
           await video.play();
           setIsPlaying(true);
@@ -296,6 +327,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     videoRef.current.muted = nextMuted;
     if (!nextMuted) {
       videoRef.current.volume = 1.0;
+      autoplayMutedRef.current = false;
     }
     setIsMuted(nextMuted);
   };
@@ -599,6 +631,16 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       </div>
                     )}
 
+                    {/* Tap-for-Sound hint: shown while playing muted (browser autoplay policy) */}
+                    {isPlaying && isMuted && !isProcessing && (
+                      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+                        <div className="flex items-center gap-1.5 rounded-full border border-white/20 bg-black/70 px-3 py-1.5 text-white shadow-lg backdrop-blur-md animate-pulse">
+                          <SpeakerXMarkIcon className="h-3.5 w-3.5 text-amber-300" />
+                          <span className="text-[10px] font-semibold tracking-wide">Ketuk untuk nyalakan suara</span>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Processing Overlay */}
                     {isProcessing && (
                       <div className="absolute inset-0 bg-black/80 z-40 flex flex-col items-center justify-center gap-3 text-center p-4">
@@ -644,10 +686,12 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                 )}
 
                 {/* ── SUBTITLE STYLE PREVIEW (always visible so users can preview the selected style) ── */}
+                {/* Mirrors the backend safe zone: bottom-anchored at subPosition% with
+                    ~11% horizontal margins so text never touches the frame edge. */}
                 {!isRenderedClip && selectedPresetId !== 'no_subtitle' && (
                   <div
-                    className="absolute z-20 w-full px-3 flex justify-center pointer-events-none transition-all duration-200"
-                    style={{ top: `${subPosition}%` }}
+                    className="absolute z-20 inset-x-0 px-[11%] flex justify-center pointer-events-none transition-all duration-200"
+                    style={{ bottom: `${Math.max(4, 100 - subPosition)}%` }}
                   >
                     {getSubtitleSample()}
                   </div>
@@ -1090,7 +1134,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
                 {/* SAFE ZONE OVERLAY GUIDE */}
                 {showSafeZone && (
-                  <div className="absolute inset-x-2 top-11 bottom-14 border-2 border-dashed border-amber-400/80 rounded-2xl pointer-events-none z-30 flex flex-col justify-between p-2">
+                  <div className="absolute inset-x-[11%] top-[12%] bottom-[20%] border-2 border-dashed border-amber-400/80 rounded-2xl pointer-events-none z-30 flex flex-col justify-between p-2">
                     <div className="bg-amber-500 text-black font-mono font-bold text-[8px] px-1.5 py-0.5 rounded self-start shadow-xs">
                       TIKTOK SAFE ZONE (9:16)
                     </div>

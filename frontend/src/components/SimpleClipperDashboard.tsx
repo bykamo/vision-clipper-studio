@@ -6,17 +6,12 @@ import {
   FolderOpenIcon,
   FolderArrowDownIcon,
   AdjustmentsHorizontalIcon,
-  BoltIcon,
-  PaintBrushIcon,
   XMarkIcon,
-  ChevronDownIcon,
   DocumentTextIcon,
   DocumentDuplicateIcon,
   CheckIcon,
   FireIcon,
-  MicrophoneIcon,
   ChatBubbleBottomCenterTextIcon,
-  EyeSlashIcon,
   VideoCameraIcon,
   SparklesIcon,
   ArrowLeftIcon,
@@ -38,7 +33,12 @@ import {
   ServerIcon,
   CpuChipIcon,
   EyeIcon,
-  ShieldCheckIcon
+  ShieldCheckIcon,
+  Square3Stack3DIcon,
+  LanguageIcon,
+  PhotoIcon,
+  SwatchIcon,
+  CloudArrowDownIcon
 } from '@heroicons/react/24/outline';
 import {
   StopIcon as StopIconSolid,
@@ -101,34 +101,61 @@ interface ClipCandidate {
    left-column menu (section labels, cards, preview tiles)
    ───────────────────────────────────────────────────────────── */
 
-const SectionLabel: React.FC<{
+/** Numbered step card with a vertical timeline connector (new sidebar layout) */
+const StepCard: React.FC<{
+  step: number;
   icon: React.ReactNode;
-  label: string;
+  title: string;
   hint?: string;
-}> = ({ icon, label, hint }) => (
-  <div className="flex items-center gap-2.5 mb-2.5">
-    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex-shrink-0 shadow-xs">
-      {icon}
+  right?: React.ReactNode;
+  isLast?: boolean;
+  children: React.ReactNode;
+}> = ({ step, icon, title, hint, right, isLast, children }) => (
+  <div className="relative pl-9">
+    {!isLast && (
+      <span
+        className="absolute left-[13px] top-8 -bottom-2 w-px bg-gradient-to-b from-emerald-500/40 to-slate-800/40"
+        aria-hidden
+      />
+    )}
+    <span className="absolute left-0 top-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-emerald-500/40 bg-[#0b0f14] text-emerald-300 font-['Outfit'] font-extrabold text-[11px] shadow-[0_0_0_3px_rgba(16,185,129,0.08)]">
+      {step}
     </span>
-    <div className="flex flex-col leading-none min-w-0">
-      <span className="text-[11px] font-bold text-slate-100 uppercase tracking-wider font-['Outfit'] truncate">
-        {label}
-      </span>
-      {hint && (
-        <span className="text-[9px] text-slate-500 mt-1 truncate">{hint}</span>
-      )}
+    <div className="pb-3.5">
+      <div className="flex items-center gap-1.5 mb-2 min-h-[20px]" title={hint}>
+        <span className="text-emerald-400 flex-shrink-0">{icon}</span>
+        <span className="text-[10.5px] font-bold text-slate-100 uppercase tracking-wider font-['Outfit'] truncate">
+          {title}
+        </span>
+        {right && <div className="ml-auto flex-shrink-0">{right}</div>}
+      </div>
+      {children}
     </div>
   </div>
 );
 
-const SidebarCard: React.FC<{
-  children: React.ReactNode;
-  className?: string;
-}> = ({ children, className = '' }) => (
-  <div
-    className={`rounded-2xl border border-slate-800/70 bg-slate-950/40 p-3 shadow-sm ${className}`}
-  >
-    {children}
+/** 1..10 number pill picker (replaces the +/- stepper) */
+const NumberPills: React.FC<{ value: number; onChange: (n: number) => void }> = ({ value, onChange }) => (
+  <div className="flex items-center gap-1">
+    {Array.from({ length: 10 }).map((_, i) => {
+      const n = i + 1;
+      const active = n === value;
+      return (
+        <button
+          key={n}
+          type="button"
+          onClick={() => onChange(n)}
+          aria-pressed={active}
+          className={`flex-1 h-6 rounded-md text-[10px] font-bold font-['Outfit'] border transition-all ${
+            active
+              ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-sm'
+              : 'bg-slate-950/60 text-slate-400 border-slate-800 hover:text-slate-200 hover:border-slate-700'
+          }`}
+        >
+          {n}
+        </button>
+      );
+    })}
   </div>
 );
 
@@ -139,6 +166,64 @@ const ActiveCheck: React.FC<{ className?: string }> = ({ className = '' }) => (
   >
     <CheckIcon className="h-2.5 w-2.5 stroke-[3]" />
   </span>
+);
+
+/** Compact labelled switch row used in the control rail */
+const CompactToggle: React.FC<{
+  icon?: React.ReactNode;
+  label: string;
+  checked: boolean;
+  onChange: () => void;
+  accent?: 'emerald' | 'cyan';
+  title?: string;
+}> = ({ icon, label, checked, onChange, accent = 'emerald', title }) => (
+  <div className="flex items-center justify-between rounded-lg border border-slate-800/70 bg-slate-950/40 px-2 py-1.5">
+    <span className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-300 min-w-0">
+      {icon}
+      <span className="truncate">{label}</span>
+    </span>
+    <button
+      type="button"
+      onClick={onChange}
+      role="switch"
+      aria-checked={checked}
+      title={title}
+      className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+        checked ? (accent === 'cyan' ? 'bg-cyan-500' : 'bg-emerald-500') : 'bg-slate-800'
+      }`}
+    >
+      <span
+        className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+          checked ? 'translate-x-3' : 'translate-x-0'
+        }`}
+      />
+    </button>
+  </div>
+);
+
+/** Ultra-compact pill switch (used in section headers) */
+const MiniSwitch: React.FC<{
+  checked: boolean;
+  onChange: () => void;
+  accent?: 'emerald' | 'cyan';
+  title?: string;
+}> = ({ checked, onChange, accent = 'emerald', title }) => (
+  <button
+    type="button"
+    onClick={onChange}
+    role="switch"
+    aria-checked={checked}
+    title={title}
+    className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+      checked ? (accent === 'cyan' ? 'bg-cyan-500' : 'bg-emerald-500') : 'bg-slate-800'
+    }`}
+  >
+    <span
+      className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+        checked ? 'translate-x-3' : 'translate-x-0'
+      }`}
+    />
+  </button>
 );
 
 export const SimpleClipperDashboard: React.FC = () => {
@@ -165,7 +250,6 @@ export const SimpleClipperDashboard: React.FC = () => {
   // Groq Whisper Cloud adalah satu-satunya model transkripsi (pilihan utama/default).
   const transcriptionModel = 'groq';
   const [languageMode, setLanguageMode] = useState<string>('id');
-  const [langDropdownOpen, setLangDropdownOpen] = useState(false);
   // Default = tanpa subtitle. Gaya caption dipilih lewat check/uncheck pada kartu.
   const [selectedPresetId, setSelectedPresetId] = useState<string>('no_subtitle');
   const [framingMode, setFramingMode] = useState<FramingMode>('smart_crop');
@@ -1238,25 +1322,6 @@ export const SimpleClipperDashboard: React.FC = () => {
     setTimeout(() => setCopiedLogs(false), 1500);
   };
 
-  // Notion-style icon resolver for Subtitle presets
-  const getPresetNotionIcon = (presetId: string) => {
-    switch (presetId) {
-      case 'tiktok_viral':
-        return <FireIcon className="h-3.5 w-3.5 stroke-[2] text-amber-400" />;
-      case 'classic_karaoke':
-        return <MicrophoneIcon className="h-3.5 w-3.5 stroke-[2] text-cyan-400" />;
-      case 'minimalist':
-        return <SparklesIcon className="h-3.5 w-3.5 stroke-[2] text-emerald-400" />;
-      case 'word_pop':
-        return <BoltIcon className="h-3.5 w-3.5 stroke-[2] text-yellow-400" />;
-      case 'no_subtitle':
-      case 'none':
-        return <EyeSlashIcon className="h-3.5 w-3.5 stroke-[2] text-rose-400" />;
-      default:
-        return <FireIcon className="h-3.5 w-3.5 stroke-[2] text-amber-400" />;
-    }
-  };
-
   // Obsidian Slate Dark Theme Styling
   const themeClasses = {
     bg: 'bg-[#0b0f14]',
@@ -1413,16 +1478,17 @@ export const SimpleClipperDashboard: React.FC = () => {
         {/* ── COLUMN 1: LEFT SIDEBAR (SETTINGS & CONTROLS) ── */}
         <aside className={`flex min-h-0 flex-col rounded-2xl border ${themeClasses.sidebar} p-3.5 overflow-y-auto scrollbar-thin`}>
 
-          {/* 1. VIDEO SOURCE SECTION */}
-          <div className="mb-4">
-            <SectionLabel
-              icon={<FolderIcon className="h-4 w-4 stroke-[2]" />}
-              label="Video Source"
-              hint="File, YouTube URL, atau Folder Clips"
-            />
+          {/* ═══ WORKFLOW STEPPER (numbered vertical timeline) ═══ */}
 
+          {/* STEP 01 — SUMBER VIDEO */}
+          <StepCard
+            step={1}
+            icon={<CloudArrowDownIcon className="h-4 w-4 stroke-[2]" />}
+            title="Sumber Video"
+            hint="File, YouTube URL, atau Folder Clips"
+          >
             <div className="relative">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 flex h-4 w-4 items-center justify-center text-slate-500">
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 flex h-4 w-4 items-center justify-center text-slate-500">
                 <LinkIcon className="h-3.5 w-3.5 stroke-[2]" />
               </span>
               <input
@@ -1439,37 +1505,38 @@ export const SimpleClipperDashboard: React.FC = () => {
                   }
                 }}
                 placeholder="Tempel link YouTube atau path video..."
-                className={`w-full rounded-xl border py-2.5 pl-9 pr-3 text-xs font-mono transition-all shadow-inner truncate ${themeClasses.input} ${sourceKind === 'render-folder' ? 'border-emerald-500/60 ring-1 ring-emerald-500/30' : ''}`}
+                className={`w-full rounded-lg border py-1.5 pl-8 pr-2.5 text-[11px] font-mono transition-all shadow-inner truncate ${themeClasses.input} ${sourceKind === 'render-folder' ? 'border-emerald-500/60 ring-1 ring-emerald-500/30' : ''}`}
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-1.5 mt-2">
+            <div className="grid grid-cols-2 gap-1.5 mt-1.5">
               <button
                 type="button"
                 onClick={handlePickNativeFile}
                 disabled={isPickingFile || isPickingFolder || isProcessing}
-                className="group flex items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-900/90 px-2 py-2 text-slate-400 hover:text-white hover:border-slate-700 hover:bg-slate-800 transition-colors shadow-sm disabled:opacity-50"
+                className="group flex items-center justify-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900/90 px-2 py-1.5 text-slate-400 hover:text-white hover:border-slate-700 hover:bg-slate-800 transition-colors disabled:opacity-50"
                 title="Pilih File Video dari Komputer (Native File Explorer)"
               >
-                <VideoCameraIcon className={`h-4 w-4 stroke-[2] flex-shrink-0 ${isPickingFile ? 'animate-pulse text-cyan-400' : 'group-hover:text-cyan-400'}`} />
+                <VideoCameraIcon className={`h-3.5 w-3.5 stroke-[2] flex-shrink-0 ${isPickingFile ? 'animate-pulse text-cyan-400' : 'group-hover:text-cyan-400'}`} />
                 <span className="text-[10px] font-semibold truncate">File Video</span>
               </button>
               <button
                 type="button"
                 onClick={handlePickNativeFolder}
                 disabled={isPickingFile || isPickingFolder || isProcessing}
-                className="group flex items-center justify-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-950/40 px-2 py-2 text-emerald-400 hover:text-white hover:bg-emerald-900/50 hover:border-emerald-500/60 transition-colors shadow-sm disabled:opacity-50"
+                className="group flex items-center justify-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-950/40 px-2 py-1.5 text-emerald-400 hover:text-white hover:bg-emerald-900/50 hover:border-emerald-500/60 transition-colors disabled:opacity-50"
                 title="Pilih Folder Hasil Render di clips (Native Folder Explorer)"
               >
-                <FolderOpenIcon className={`h-4 w-4 stroke-[2] flex-shrink-0 ${isPickingFolder ? 'animate-pulse text-emerald-300' : ''}`} />
+                <FolderOpenIcon className={`h-3.5 w-3.5 stroke-[2] flex-shrink-0 ${isPickingFolder ? 'animate-pulse text-emerald-300' : ''}`} />
                 <span className="text-[10px] font-semibold truncate">Folder Render</span>
               </button>
             </div>
+
             {sourceKind === 'render-folder' && (
-              <div className="mt-2 flex items-center justify-between text-[10px] font-semibold text-emerald-300 bg-emerald-950/50 border border-emerald-500/30 rounded-xl px-3 py-1.5 shadow-xs">
+              <div className="mt-1.5 flex items-center justify-between text-[10px] font-semibold text-emerald-300 bg-emerald-950/50 border border-emerald-500/30 rounded-lg px-2.5 py-1 shadow-xs">
                 <div className="flex items-center gap-1.5 truncate mr-2">
                   <CheckCircleIcon className="h-3.5 w-3.5 flex-shrink-0 text-emerald-400" />
-                  <span className="truncate">Folder render aktif ({generatedClips.length} klip) — Mode upload aktif</span>
+                  <span className="truncate">Folder render aktif ({generatedClips.length} klip)</span>
                 </div>
                 <button
                   type="button"
@@ -1481,444 +1548,234 @@ export const SimpleClipperDashboard: React.FC = () => {
                 </button>
               </div>
             )}
-          </div>
+          </StepCard>
 
-          {/* 2. SETTINGS SECTION */}
-          <SectionLabel
-            icon={<AdjustmentsHorizontalIcon className="h-4 w-4 stroke-[2]" />}
-            label="Settings"
+          {/* STEP 02 — JUMLAH & BAHASA */}
+          <StepCard
+            step={2}
+            icon={<Square3Stack3DIcon className="h-4 w-4 stroke-[2]" />}
+            title="Output Klip"
             hint="Jumlah klip & bahasa audio"
-          />
-
-          {/* Setting 1: Number of Clips SLIDER (1 to 10) */}
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+          >
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="flex items-center gap-1.5 text-[10.5px] font-semibold text-slate-400">
                 <ScissorsIcon className="h-3.5 w-3.5 text-emerald-400 stroke-[2]" />
-                <span>Number of Clips</span>
-              </label>
-              <span className={`font-['Outfit'] font-extrabold text-[11px] px-2 py-0.5 rounded-md border transition-all duration-200 ${themeClasses.pillActive}`}>
-                {clipCount} Klip
+                <span>Jumlah Klip</span>
+              </span>
+              <span className="font-['Outfit'] font-extrabold text-[11px] px-1.5 py-0.5 rounded-md border bg-emerald-950/60 text-emerald-300 border-emerald-500/40">
+                {clipCount}
               </span>
             </div>
+            <NumberPills value={clipCount} onChange={setClipCount} />
 
-            {/* Smooth Custom Minimalist Slider */}
-            <div className="relative flex items-center h-8 rounded-xl border border-slate-800/80 bg-slate-950/60 px-3 shadow-inner group select-none">
-              <div className="relative w-full h-1.5 rounded-full bg-slate-800/90 overflow-hidden">
-                <div
-                  className="h-full transition-all duration-150 ease-out rounded-full bg-gradient-to-r from-emerald-500 to-teal-400"
-                  style={{ width: `${((clipCount - 1) / 9) * 100}%` }}
-                />
-              </div>
-
-              {/* 10 Step Dots */}
-              <div className="absolute inset-x-3 pointer-events-none flex justify-between items-center z-5">
-                {Array.from({ length: 10 }).map((_, idx) => {
-                  const val = idx + 1;
-                  const isPassed = val <= clipCount;
-                  return (
-                    <span
-                      key={val}
-                      className={`h-1.5 w-1.5 rounded-full transition-colors ${
-                        isPassed ? 'bg-emerald-300' : 'bg-slate-700'
-                      }`}
-                    />
-                  );
-                })}
-              </div>
-
-              <input
-                type="range"
-                min={1}
-                max={10}
-                step={1}
-                value={clipCount}
-                onChange={(e) => setClipCount(parseInt(e.target.value, 10))}
-                className="absolute inset-x-3 w-[calc(100%-24px)] h-6 opacity-0 cursor-pointer z-10"
-              />
-
-              <div
-                className="absolute pointer-events-none top-1/2 -translate-y-1/2 -translate-x-1/2 h-4 w-4 rounded-full border-2 border-white bg-emerald-500 shadow-md ring-2 ring-emerald-500/30 transition-all duration-150 ease-out group-hover:scale-110 z-20"
-                style={{ left: `calc(12px + (${((clipCount - 1) / 9)} * (100% - 24px)))` }}
-              />
+            <div className="mt-2 mb-1.5 flex items-center gap-1.5 text-[10.5px] font-semibold text-slate-400">
+              <LanguageIcon className="h-3.5 w-3.5 text-sky-400 stroke-[2]" />
+              <span>Bahasa Audio &amp; Subtitle</span>
             </div>
-          </div>
-
-          {/* Setting 2: LANGUAGE & TRANSLATION */}
-          <div className="mb-3 relative">
-            <label className="block text-[11px] font-semibold text-slate-400 mb-1.5 flex items-center gap-1.5">
-              <GlobeAltIcon className="h-3.5 w-3.5 text-sky-400 stroke-[2]" />
-              <span>Bahasa Audio & Subtitle</span>
-            </label>
-            <button
-              type="button"
-              onClick={() => setLangDropdownOpen(!langDropdownOpen)}
-              className="flex w-full items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-left text-xs font-medium text-slate-200 hover:border-slate-700 transition-all shadow-inner"
-            >
-              <div className="flex items-center gap-2 truncate">
-                <GlobeAltIcon className="h-3.5 w-3.5 stroke-[2] text-sky-400 flex-shrink-0" />
-                <span className="truncate text-[11px]">
-                  {languageMode === 'id' && '🇮🇩 Bahasa Indonesia (Asli)'}
-                  {languageMode === 'en_to_id' && '🇬🇧 English ➔ 🇮🇩 Terjemahkan ke Indo'}
-                  {languageMode === 'en' && '🇬🇧 English (Asli / Original)'}
-                  {languageMode === 'auto' && '🌐 Auto-Detect ➔ 🇮🇩 Terjemahkan ke Indo'}
-                </span>
-              </div>
-              <ChevronDownIcon className={`h-3.5 w-3.5 stroke-[2] text-slate-400 transition-transform ${langDropdownOpen ? 'rotate-180' : ''}`} />
-            </button>
-
-            {langDropdownOpen && (
-              <div className="absolute top-full left-0 right-0 mt-1 z-30 rounded-xl border border-slate-800 bg-slate-900 p-1 shadow-2xl backdrop-blur-md">
-                {[
-                  { id: 'id', label: '🇮🇩 Bahasa Indonesia (Asli)', desc: 'Audio & subtitle bahasa Indonesia' },
-                  { id: 'en_to_id', label: '🇬🇧 English ➔ 🇮🇩 Terjemahkan ke Indo', desc: 'Subtitle & klip otomatis ke bahasa Indonesia' },
-                  { id: 'en', label: '🇬🇧 English (Asli / Original)', desc: 'Audio & subtitle bahasa Inggris tanpa terjemahan' },
-                  { id: 'auto', label: '🌐 Auto-Detect ➔ 🇮🇩 Terjemahkan ke Indo', desc: 'Deteksi otomatis bahasa audio' }
-                ].map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      setLanguageMode(item.id);
-                      setLangDropdownOpen(false);
-                    }}
-                    className={`flex w-full flex-col rounded-lg px-2.5 py-1.5 text-left text-xs transition-colors ${
-                      languageMode === item.id
-                        ? `${themeClasses.pillActive} font-semibold`
-                        : 'text-slate-300 hover:bg-slate-800'
-                    }`}
-                  >
-                    <span className="font-semibold text-[11px]">{item.label}</span>
-                    <span className="text-[9px] text-slate-400">{item.desc}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* 3. VIDEO LAYOUT SECTION */}
-          <div className="mb-4">
-            <SectionLabel
-              icon={<VideoCameraIcon className="h-4 w-4 stroke-[2]" />}
-              label="Layout Video"
-              hint="Gaya framing 9:16"
-            />
-
-            <div className="grid grid-cols-3 gap-1.5">
-              {/* Option 1: 9:16 Smart Face Tracker */}
-              <button
-                type="button"
-                onClick={() => setFramingMode('smart_crop')}
-                className={`${framingMode === 'smart_crop' ? themeClasses.tileActive : themeClasses.tileIdle} flex flex-col items-start rounded-xl p-2 text-left transition-all`}
-              >
-                {framingMode === 'smart_crop' && <ActiveCheck />}
-                <div className="flex items-center justify-between w-full mb-1.5 px-0.5">
-                  <span className={`text-[9.5px] font-bold truncate ${framingMode === 'smart_crop' ? 'text-emerald-300' : 'text-slate-200'}`}>
-                    Smart Follow
-                  </span>
-                </div>
-
-                {/* Visual Preview Box */}
-                <div className="w-full h-11 rounded-lg bg-neutral-950 border border-neutral-800 flex items-center justify-center overflow-hidden px-1 shadow-inner relative select-none">
-                  <div className="w-5 h-8 rounded-md border border-emerald-500/60 bg-emerald-500/10 flex flex-col items-center justify-center gap-0.5 shadow-sm">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                    <span className="h-1.5 w-3 rounded-t-sm bg-emerald-500/60" />
-                  </div>
-                  <div className="absolute top-1 left-1 h-2 w-2 rounded-full border border-emerald-400/60" />
-                </div>
-                <span className="mt-1.5 text-[8px] text-slate-400 px-0.5 leading-tight">
-                  AI 9:16 Follow
-                </span>
-              </button>
-
-              {/* Option 2: 16:9 Fit Blur */}
-              <button
-                type="button"
-                onClick={() => setFramingMode('fit_blur')}
-                className={`${framingMode === 'fit_blur' ? themeClasses.tileActive : themeClasses.tileIdle} flex flex-col items-start rounded-xl p-2 text-left transition-all`}
-              >
-                {framingMode === 'fit_blur' && <ActiveCheck />}
-                <div className="flex items-center justify-between w-full mb-1.5 px-0.5">
-                  <span className={`text-[9.5px] font-bold truncate ${framingMode === 'fit_blur' ? 'text-emerald-300' : 'text-slate-200'}`}>
-                    16:9 Fit Blur
-                  </span>
-                </div>
-
-                {/* Visual Preview Box */}
-                <div className="w-full h-11 rounded-lg bg-neutral-950 border border-neutral-800 flex flex-col items-center justify-center overflow-hidden p-1 shadow-inner relative select-none">
-                  <div className="absolute inset-0 bg-slate-700/30 backdrop-blur-xs" />
-                  <div className="relative w-full h-4 rounded border border-cyan-400/80 bg-slate-900 flex items-center justify-center gap-1 shadow-md">
-                    <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
-                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-                  </div>
-                </div>
-                <span className="mt-1.5 text-[8px] text-slate-400 px-0.5 leading-tight">
-                  Landscape Fit
-                </span>
-              </button>
-
-              {/* Option 3: Dual Stack Split-Screen */}
-              <button
-                type="button"
-                onClick={() => setFramingMode('split_screen')}
-                className={`${framingMode === 'split_screen' ? themeClasses.tileActive : themeClasses.tileIdle} flex flex-col items-start rounded-xl p-2 text-left transition-all`}
-              >
-                {framingMode === 'split_screen' && <ActiveCheck />}
-                <div className="flex items-center justify-between w-full mb-1.5 px-0.5">
-                  <span className={`text-[9.5px] font-bold truncate ${framingMode === 'split_screen' ? 'text-emerald-300' : 'text-slate-200'}`}>
-                    Dual Stack
-                  </span>
-                </div>
-
-                {/* Visual Preview Box */}
-                <div className="w-full h-11 rounded-lg bg-neutral-950 border border-neutral-800 flex flex-col items-center justify-between overflow-hidden p-0.5 shadow-inner relative select-none">
-                  <div className="w-full h-[16px] rounded-xs bg-cyan-950/80 border border-cyan-500/50 flex items-center justify-center">
-                    <span className="text-[6.5px] font-bold text-cyan-300 font-mono">HOST</span>
-                  </div>
-                  <div className="w-full h-px bg-neutral-700" />
-                  <div className="w-full h-[16px] rounded-xs bg-amber-950/80 border border-amber-500/50 flex items-center justify-center">
-                    <span className="text-[6.5px] font-bold text-amber-300 font-mono">GUEST</span>
-                  </div>
-                </div>
-                <span className="mt-1.5 text-[8px] text-slate-400 px-0.5 leading-tight">
-                  Split 50:50
-                </span>
-              </button>
-            </div>
-          </div>
-
-          {/* 4. SUBTITLE STYLE SECTION */}
-          <SectionLabel
-            icon={<PaintBrushIcon className="h-4 w-4 stroke-[2]" />}
-            label="Subtitle Style"
-            hint="Klik untuk pakai, klik lagi untuk lepas"
-          />
-
-          {/* Subtitle Style Cards Grid — klik untuk pilih, klik lagi untuk lepas */}
-          <div className="grid grid-cols-2 gap-2 mb-4">
-            {SUBTITLE_PRESETS.map((preset) => {
-              const isSelected = selectedPresetId === preset.presetId;
-              return (
+            <div className="grid grid-cols-2 gap-1.5">
+              {[
+                { id: 'id', label: '🇮🇩 Indonesia' },
+                { id: 'en_to_id', label: '🇬🇧→🇮🇩 Terjemah' },
+                { id: 'en', label: '🇬🇧 English' },
+                { id: 'auto', label: '🌐 Auto → 🇮🇩' },
+              ].map((o) => (
                 <button
-                  key={preset.presetId}
-                  onClick={() => handleSelectPreset(preset)}
-                  role="checkbox"
-                  aria-checked={isSelected}
-                  className={`${isSelected ? themeClasses.tileActive : themeClasses.tileIdle} relative flex flex-col items-start rounded-xl p-2 text-left transition-all`}
+                  key={o.id}
+                  type="button"
+                  onClick={() => setLanguageMode(o.id)}
+                  className={`h-7 rounded-lg border text-[10px] font-semibold transition-colors truncate px-1 ${
+                    languageMode === o.id ? themeClasses.chipActive : themeClasses.chipIdle
+                  }`}
+                  title={o.label}
                 >
-                  {/* Card Title */}
-                  <div className="flex items-center justify-between w-full mb-1.5 px-0.5">
-                    <div className="flex items-center gap-1.5 truncate">
-                      <div className={`flex h-5 w-5 items-center justify-center rounded-md border flex-shrink-0 ${isSelected ? 'bg-emerald-500/15 border-emerald-500/40' : 'bg-slate-900/90 border-slate-800'}`}>
-                        {getPresetNotionIcon(preset.presetId)}
-                      </div>
-                      <span className={`text-[10px] font-bold truncate ${isSelected ? 'text-emerald-300' : 'text-slate-200'}`}>
-                        {preset.name}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Visual Preview Box */}
-                  <div className="w-full h-10 rounded-lg bg-neutral-950 border border-neutral-800 flex items-center justify-center overflow-hidden px-1 shadow-inner relative select-none">
-                    <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:8px_8px]" />
-
-                    {preset.presetId === 'tiktok_viral' && (
-                      <div className="relative font-['Montserrat'] font-black uppercase text-[9px] tracking-tight leading-none text-center">
-                        <span className="text-white drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">CONTOH </span>
-                        <span className="text-yellow-400 bg-black/80 px-1 py-0.5 rounded font-black scale-105 inline-block drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] border border-yellow-400/30">
-                          VIRAL
-                        </span>
-                        <span className="text-white drop-shadow-[0_1px_2px_rgba(0,0,0,1)]"> ✨</span>
-                      </div>
-                    )}
-
-                    {preset.presetId === 'classic_karaoke' && (
-                      <div className="relative font-['Montserrat'] font-bold text-[9px] tracking-tight leading-none text-center">
-                        <span className="text-cyan-300 font-extrabold drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">Contoh </span>
-                        <span className="text-white drop-shadow-[0_1px_2px_rgba(0,0,0,1)]">Subtitle</span>
-                      </div>
-                    )}
-
-                    {preset.presetId === 'minimalist' && (
-                      <div className="relative font-sans font-medium text-[9px] text-white tracking-wide leading-none text-center drop-shadow-sm">
-                        <span>Contoh teks subtitle</span>
-                      </div>
-                    )}
-
-                    {preset.presetId === 'word_pop' && (
-                      <div className="relative font-['Impact'] font-black uppercase text-[10px] text-yellow-300 tracking-wider leading-none text-center drop-shadow-[0_2px_4px_rgba(0,0,0,1)] scale-110">
-                        <span>SUBTITLE!</span>
-                      </div>
-                    )}
-                  </div>
+                  {o.label}
                 </button>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          </StepCard>
 
-          {/* Subtitle Position & Auto-Emoji Options */}
-          {selectedPresetId !== 'no_subtitle' && (
-            <div className="mb-4 rounded-2xl border border-slate-800/70 bg-slate-950/40 p-3 flex flex-col gap-3">
-              {/* Vertical Position Slider */}
-              <div>
-                <div className="flex items-center justify-between text-[11px] mb-1">
-                  <span className="font-semibold text-slate-300 flex items-center gap-1.5">
-                    <AdjustmentsHorizontalIcon className="h-3.5 w-3.5 text-emerald-400" />
-                    <span>Posisi Vertikal Subtitle</span>
-                  </span>
-                  <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-emerald-400 font-bold">
+          {/* STEP 03 — FRAMING / LAYOUT */}
+          <StepCard
+            step={3}
+            icon={<PhotoIcon className="h-4 w-4 stroke-[2]" />}
+            title="Framing 9:16"
+            hint="Gaya framing video"
+          >
+            <div className="grid grid-cols-3 gap-1.5">
+              {[
+                {
+                  id: 'smart_crop' as FramingMode,
+                  label: 'Smart',
+                  sub: '9:16',
+                  glyph: <div className="h-6 w-[13px] rounded-[3px] border border-emerald-400/70 bg-emerald-500/15" />,
+                },
+                {
+                  id: 'fit_blur' as FramingMode,
+                  label: 'Fit Blur',
+                  sub: '16:9',
+                  glyph: <div className="h-[15px] w-7 rounded-[3px] border border-cyan-400/70 bg-cyan-500/10" />,
+                },
+                {
+                  id: 'split_screen' as FramingMode,
+                  label: 'Dual',
+                  sub: '50:50',
+                  glyph: (
+                    <div className="flex flex-col gap-[2px]">
+                      <div className="h-[9px] w-6 rounded-[2px] bg-cyan-500/30 border border-cyan-500/60" />
+                      <div className="h-[9px] w-6 rounded-[2px] bg-amber-500/30 border border-amber-500/60" />
+                    </div>
+                  ),
+                },
+              ].map((o) => {
+                const isActive = framingMode === o.id;
+                return (
+                  <button
+                    key={o.id}
+                    type="button"
+                    onClick={() => setFramingMode(o.id)}
+                    title={o.label}
+                    className={`${isActive ? themeClasses.tileActive : themeClasses.tileIdle} relative flex flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 transition-all`}
+                  >
+                    {isActive && <ActiveCheck />}
+                    <span className="flex h-6 items-center justify-center">{o.glyph}</span>
+                    <span className={`text-[9px] font-bold leading-none ${isActive ? 'text-emerald-300' : 'text-slate-200'}`}>
+                      {o.label}
+                    </span>
+                    <span className="text-[7.5px] text-slate-500 font-mono leading-none">{o.sub}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </StepCard>
+
+          {/* STEP 04 — CAPTION / SUBTITLE */}
+          <StepCard
+            step={4}
+            icon={<SwatchIcon className="h-4 w-4 stroke-[2]" />}
+            title="Gaya Caption"
+            hint="Klik untuk pakai, klik lagi untuk lepas"
+          >
+            <div className="grid grid-cols-2 gap-1.5">
+              {SUBTITLE_PRESETS.map((preset) => {
+                const isSelected = selectedPresetId === preset.presetId;
+                return (
+                  <button
+                    key={preset.presetId}
+                    onClick={() => handleSelectPreset(preset)}
+                    role="checkbox"
+                    aria-checked={isSelected}
+                    className={`${isSelected ? themeClasses.tileActive : themeClasses.tileIdle} flex items-center gap-2 rounded-lg px-2 py-1.5 transition-all`}
+                  >
+                    <span
+                      className="h-3 w-3 rounded-full flex-shrink-0 border border-white/20"
+                      style={{ backgroundColor: preset.highlightColor }}
+                    />
+                    <span className={`text-[10px] font-bold truncate ${isSelected ? 'text-emerald-300' : 'text-slate-200'}`}>
+                      {preset.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {selectedPresetId !== 'no_subtitle' && (
+              <div className="mt-1.5 flex flex-col gap-1.5">
+                <div className="flex items-center gap-2 rounded-lg border border-slate-800/70 bg-slate-950/40 px-2 py-1.5">
+                  <AdjustmentsHorizontalIcon className="h-3.5 w-3.5 text-emerald-400 flex-shrink-0" />
+                  <input
+                    type="range"
+                    min="35"
+                    max="80"
+                    step="1"
+                    value={subPosition}
+                    onChange={(e) => setSubPosition(Number(e.target.value))}
+                    className="flex-1 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                    title="Area aman 35–80% agar tidak tertutup UI TikTok"
+                  />
+                  <span className="w-9 text-right font-mono text-[10px] text-emerald-400 font-bold">
                     {subPosition}%
                   </span>
                 </div>
-                <input
-                  type="range"
-                  min="35"
-                  max="85"
-                  step="1"
-                  value={subPosition}
-                  onChange={(e) => setSubPosition(Number(e.target.value))}
-                  className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                <div className="flex items-center gap-1">
+                  {[
+                    { v: 50, l: 'Tengah' },
+                    { v: 68, l: 'TikTok' },
+                    { v: 80, l: 'Bawah' },
+                  ].map((b) => (
+                    <button
+                      key={b.v}
+                      type="button"
+                      onClick={() => setSubPosition(b.v)}
+                      className={`flex-1 py-1 rounded-md text-[9px] font-semibold border transition-colors ${
+                        subPosition === b.v ? themeClasses.chipActive : themeClasses.chipIdle
+                      }`}
+                    >
+                      {b.l}
+                    </button>
+                  ))}
+                </div>
+
+                <CompactToggle
+                  icon={<SparklesIcon className="h-3.5 w-3.5 text-yellow-400" />}
+                  label="Auto-Emoji Hook"
+                  checked={showEmoji}
+                  onChange={() => setShowEmoji(!showEmoji)}
+                  title="Suntikkan emoji viral di kata kunci"
                 />
-                {/* Quick position buttons */}
-                <div className="flex items-center justify-between gap-1 mt-2">
-                  <button
-                    type="button"
-                    onClick={() => setSubPosition(50)}
-                    className={`flex-1 py-1.5 rounded-lg text-[9px] font-semibold border transition-colors ${
-                      subPosition === 50 ? themeClasses.chipActive : themeClasses.chipIdle
-                    }`}
-                  >
-                    Tengah (50%)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSubPosition(68)}
-                    className={`flex-1 py-1.5 rounded-lg text-[9px] font-semibold border transition-colors ${
-                      subPosition === 68 ? themeClasses.chipActive : themeClasses.chipIdle
-                    }`}
-                  >
-                    TikTok Safe (68%)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSubPosition(80)}
-                    className={`flex-1 py-1.5 rounded-lg text-[9px] font-semibold border transition-colors ${
-                      subPosition === 80 ? themeClasses.chipActive : themeClasses.chipIdle
-                    }`}
-                  >
-                    Bawah (80%)
-                  </button>
-                </div>
               </div>
+            )}
+          </StepCard>
 
-              {/* Auto-Emoji Toggle */}
-              <div className="flex items-center justify-between pt-1 border-t border-slate-800/60">
-                <div className="flex flex-col">
-                  <span className="text-[11px] font-semibold text-slate-300 flex items-center gap-1">
-                    <SparklesIcon className="h-3.5 w-3.5 text-yellow-400" />
-                    <span>Auto-Emoji Hook</span>
-                  </span>
-                  <span className="text-[9px] text-slate-500">
-                    Suntikkan emoji viral di kata kunci
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowEmoji(!showEmoji)}
-                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    showEmoji ? 'bg-emerald-500' : 'bg-slate-800'
-                  }`}
-                  role="switch"
-                  aria-checked={showEmoji}
-                >
-                  <span
-                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                      showEmoji ? 'translate-x-4' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* GLASS WATERMARK SETTINGS CARD */}
-          <div className={`rounded-2xl border ${themeClasses.card} p-3 space-y-2.5 shadow-lg`}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <span className={`flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex-shrink-0 ${watermarkEnabled ? 'shadow-[0_0_0_1px_rgba(34,211,238,0.25)]' : ''}`}>
-                  <ShieldCheckIcon className="h-4 w-4 stroke-[2]" />
-                </span>
-                <div className="flex flex-col leading-none">
-                  <span className="text-[11px] font-bold text-slate-100 uppercase tracking-wider font-['Outfit']">
-                    Glass Watermark
-                  </span>
-                  <span className="text-[9px] text-slate-500 mt-1">
-                    Label kaca sumber & akun
-                  </span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setWatermarkEnabled(!watermarkEnabled)}
-                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                  watermarkEnabled ? 'bg-cyan-500' : 'bg-slate-800'
-                }`}
-                role="switch"
-                aria-checked={watermarkEnabled}
+          {/* STEP 05 — BRANDING / WATERMARK */}
+          <StepCard
+            step={5}
+            icon={<ShieldCheckIcon className="h-4 w-4 stroke-[2]" />}
+            title="Branding"
+            hint="Label kaca sumber & akun"
+            isLast
+            right={
+              <MiniSwitch
+                checked={watermarkEnabled}
+                onChange={() => setWatermarkEnabled(!watermarkEnabled)}
+                accent="cyan"
                 title="Aktifkan / Nonaktifkan Watermark Glass Effect"
-              >
-                <span
-                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                    watermarkEnabled ? 'translate-x-4' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </div>
-
-            {watermarkEnabled && (
-              <div className="space-y-2 pt-1 border-t border-slate-800/60 animate-in fade-in duration-150">
-                {/* Source Channel Watermark (Top Left) */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[10px] font-semibold text-slate-400 flex items-center gap-1">
-                      <span className="text-cyan-400">▶</span> Sumber (Kiri Atas)
-                    </label>
-                    <span className="text-[9px] text-slate-500 font-mono">Pill Kaca</span>
-                  </div>
+              />
+            }
+          >
+            {watermarkEnabled ? (
+              <div className="grid grid-cols-1 gap-1.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-md border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 text-[10px] flex-shrink-0" title="Sumber (Kiri Atas)">▶</span>
                   <input
                     type="text"
                     value={sourceWatermark}
                     onChange={(e) => setSourceWatermark(e.target.value)}
-                    placeholder="Contoh: Deddy Corbuzier / Channel"
-                    className="w-full h-8 px-2.5 rounded-lg bg-slate-900/80 border border-slate-800 text-xs text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/40 transition-all font-sans"
+                    placeholder="Sumber / Channel (kiri atas)"
+                    className="flex-1 h-7 px-2 rounded-lg bg-slate-900/80 border border-slate-800 text-[10.5px] text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/40 transition-all"
                   />
                 </div>
-
-                {/* Account Handle Watermark (Top Right) */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[10px] font-semibold text-slate-400 flex items-center gap-1">
-                      <span className="text-amber-400">@</span> Akun Clipper (Kanan Atas)
-                    </label>
-                    <span className="text-[9px] text-amber-500/80 font-mono">Amber Pop</span>
-                  </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-400 text-[11px] font-bold flex-shrink-0" title="Akun Clipper (Kanan Atas)">@</span>
                   <input
                     type="text"
                     value={accountWatermark}
                     onChange={(e) => setAccountWatermark(e.target.value)}
-                    placeholder="Contoh: @visionclipper"
-                    className="w-full h-8 px-2.5 rounded-lg bg-slate-900/80 border border-slate-800 text-xs text-amber-300 placeholder-slate-600 focus:outline-none focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/40 transition-all font-mono"
+                    placeholder="@visionclipper (kanan atas)"
+                    className="flex-1 h-7 px-2 rounded-lg bg-slate-900/80 border border-slate-800 text-[10.5px] text-amber-300 placeholder-slate-600 focus:outline-none focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/40 transition-all font-mono"
                   />
                 </div>
               </div>
+            ) : (
+              <p className="text-[10px] text-slate-500">Watermark nonaktif — video bersih tanpa label.</p>
             )}
-          </div>
+          </StepCard>
 
           {/* STICKY BOTTOM GENERATE BUTTON */}
-          <div className="mt-auto pt-3 flex items-center gap-2 sticky bottom-0 bg-[#0e1218] border-t border-slate-800/80 pb-2">
+          <div className="mt-auto pt-2.5 flex items-center gap-2 sticky bottom-0 bg-[#0e1218] border-t border-slate-800/80 pb-1.5">
               <button
                 onClick={sourceKind === 'render-folder' ? undefined : handleStartProcessing}
                 disabled={isProcessing || sourceKind === 'render-folder'}
-                className={`flex flex-1 h-11 items-center justify-center gap-2 rounded-xl text-xs font-bold transition-all ${
+                className={`flex flex-1 h-10 items-center justify-center gap-2 rounded-xl text-xs font-bold transition-all ${
                   sourceKind === 'render-folder'
                     ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/40 cursor-default'
                     : themeClasses.actionBtn
@@ -1942,7 +1799,7 @@ export const SimpleClipperDashboard: React.FC = () => {
               {isProcessing && (
                 <button
                   onClick={handleStopProcessing}
-                  className="flex h-11 w-11 items-center justify-center rounded-xl bg-rose-950/80 border border-rose-600/40 text-rose-400 hover:bg-rose-900 transition-all shadow-xs active:scale-95 flex-shrink-0"
+                  className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-950/80 border border-rose-600/40 text-rose-400 hover:bg-rose-900 transition-all shadow-xs active:scale-95 flex-shrink-0"
                   title="Hentikan Proses (Cancel)"
                 >
                   <StopIconSolid className="h-4 w-4" />
