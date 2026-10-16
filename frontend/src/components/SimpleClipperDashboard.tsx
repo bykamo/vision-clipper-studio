@@ -160,15 +160,6 @@ const NumberPills: React.FC<{ value: number; onChange: (n: number) => void }> = 
   </div>
 );
 
-/** Small check badge shown on the top-right of a selected tile */
-const ActiveCheck: React.FC<{ className?: string }> = ({ className = '' }) => (
-  <span
-    className={`absolute top-1.5 right-1.5 z-10 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md ring-2 ring-emerald-950/60 ${className}`}
-  >
-    <CheckIcon className="h-2.5 w-2.5 stroke-[3]" />
-  </span>
-);
-
 /** Compact labelled switch row used in the control rail */
 const CompactToggle: React.FC<{
   icon?: React.ReactNode;
@@ -1397,7 +1388,7 @@ export const SimpleClipperDashboard: React.FC = () => {
       {/* ─────────────────────────────────────────────────────────────
           1. TOP APP HEADER
          ───────────────────────────────────────────────────────────── */}
-      <header className={`flex h-14 items-center justify-between border-b ${themeClasses.header} px-5 shadow-md z-20`}>
+      <header className={`flex h-14 flex-shrink-0 items-center justify-between ${themeClasses.header} rounded-2xl border px-5 shadow-lg z-20 mx-3 mt-3`}>
 
         {/* Left: Brand Logo & Title */}
         <div className="flex items-center gap-3">
@@ -1511,7 +1502,7 @@ export const SimpleClipperDashboard: React.FC = () => {
       {/* ─────────────────────────────────────────────────────────────
           2. MAIN CONTENT: 3-COLUMN WORKSPACE
          ───────────────────────────────────────────────────────────── */}
-      <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-3 gap-3 p-3">
+      <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-3 gap-3 px-3 pb-3 pt-3">
 
         {/* ── COLUMN 1: LEFT SIDEBAR (SETTINGS & CONTROLS) ── */}
         <aside className={`flex min-h-0 flex-col rounded-2xl border ${themeClasses.sidebar} p-3.5 overflow-y-auto scrollbar-thin`}>
@@ -1674,7 +1665,6 @@ export const SimpleClipperDashboard: React.FC = () => {
                     title={o.label}
                     className={`${isActive ? themeClasses.tileActive : themeClasses.tileIdle} relative flex flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 transition-all`}
                   >
-                    {isActive && <ActiveCheck />}
                     <span className="flex h-6 items-center justify-center">{o.glyph}</span>
                     <span className={`text-[9px] font-bold leading-none ${isActive ? 'text-emerald-300' : 'text-slate-200'}`}>
                       {o.label}
@@ -1869,24 +1859,26 @@ export const SimpleClipperDashboard: React.FC = () => {
         </section>
 
         {/* ── COLUMN 3: RIGHT WORKSPACE (60% WORKSPACE / 40% PERMANENT LOG) ── */}
-        <main className="flex min-h-0 flex-col h-full rounded-2xl border border-slate-800/80 bg-[#0b0f15] overflow-hidden p-3.5 gap-3">
+        <main className="flex min-h-0 flex-col h-full overflow-hidden">
 
           {/* ── TOP SECTION: 60% WORKSPACE (CLIP PREVIEW / OUTPUT / STATUS) ── */}
           <div className="flex-[6] min-h-0 flex flex-col overflow-hidden">
+            <div className={`rounded-2xl border border-slate-800/80 ${themeClasses.card} flex flex-col h-full overflow-hidden`}>
 
             {/* 1. CONFIG PHASE: Standby Clip Preview */}
             {phase === 'config' && (
-              <div className={`rounded-2xl border ${themeClasses.card} p-4 shadow-xl flex flex-col h-full overflow-hidden`}>
-                <div className="flex items-center justify-between mb-3 border-b border-slate-800/80 pb-2.5 flex-shrink-0">
-                  <div className="flex items-center gap-2">
-                    <FolderArrowDownIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
-                    <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                      CLIP PREVIEW
-                    </h2>
+              <div className="flex flex-col h-full overflow-hidden">
+                <div className="flex h-8 items-center gap-2.5 px-3.5 border-b border-slate-800/80 bg-[#161b22] flex-shrink-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f56]" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]" />
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#27c93f]" />
                   </div>
-                  <span className="text-[11px] text-slate-400 font-medium">Standby</span>
+                  <span className="font-mono text-[11px] font-bold text-slate-400 tracking-wider">
+                    CLIP PREVIEW
+                  </span>
                 </div>
-                <div className="flex flex-1 flex-col items-center justify-center py-6 text-center text-slate-500">
+                <div className="flex flex-1 flex-col items-center justify-center p-4 py-6 text-center text-slate-500">
                   <FolderArrowDownIcon className="h-10 w-10 stroke-[1.5] mb-2.5 opacity-30 text-emerald-400" />
                   <p className="text-xs font-semibold text-slate-300">Belum ada klip yang di-generate</p>
                   <p className="text-[11px] text-slate-500 max-w-xs mt-1">
@@ -1898,29 +1890,16 @@ export const SimpleClipperDashboard: React.FC = () => {
 
             {/* 2. ANALYZING PHASE: Skeleton Loading (mimics upcoming clip cards) */}
             {phase === 'analyzing' && (
-              <div className={`rounded-2xl border ${themeClasses.card} p-4 shadow-xl flex flex-col h-full overflow-hidden`}>
-                <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5 flex-shrink-0">
-                  <div className="flex items-center gap-2">
-                    <SparklesIcon className="h-4 w-4 text-emerald-400 animate-spin" />
-                    <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                      AI ANALYZING VIDEO
-                    </h2>
-                  </div>
-                  <span className="text-[11px] font-mono text-emerald-400 font-bold">{progress}%</span>
-                </div>
-                <div className="flex-1 min-h-0 pt-3">
+              <div className={`${themeClasses.card} p-4 flex flex-col h-full overflow-hidden`}>
+                <div className="flex-1 min-h-0">
                   <AnalyzingSkeleton />
-                </div>
-                <div className="flex items-center justify-between pt-2 border-t border-slate-800/60 text-[10px] text-slate-500 font-mono flex-shrink-0">
-                  <span>Model: Groq Whisper Cloud | Lang: {languageMode === 'en_to_id' ? 'EN ➔ ID' : languageMode.toUpperCase()}</span>
-                  <span>Target: {clipCount} Klip</span>
                 </div>
               </div>
             )}
 
             {/* 3. PREVIEW PHASE: Clip Approval Cards (60% Space) */}
             {phase === 'preview' && (
-              <div className={`rounded-2xl border ${themeClasses.card} p-3.5 shadow-xl flex flex-col h-full overflow-hidden`}>
+              <div className={`${themeClasses.card} p-3.5 flex flex-col h-full overflow-hidden`}>
                 {/* Error Notification Banner if render failed */}
                 {renderErrorMessage && (
                   <div className="flex items-start gap-2.5 p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs shadow-lg mb-2 flex-shrink-0">
@@ -2112,29 +2091,16 @@ export const SimpleClipperDashboard: React.FC = () => {
 
             {/* 4. RENDERING PHASE: Skeleton Loading (mimics upcoming output grid) */}
             {phase === 'rendering' && (
-              <div className={`rounded-2xl border ${themeClasses.card} p-4 shadow-xl flex flex-col h-full overflow-hidden`}>
-                <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5 flex-shrink-0">
-                  <div className="flex items-center gap-2">
-                    <FilmIcon className="h-4 w-4 text-emerald-400 animate-pulse" />
-                    <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                      RENDERING VERTICAL CLIPS (9:16)
-                    </h2>
-                  </div>
-                  <span className="text-[11px] font-mono text-emerald-400 font-bold">{progress}%</span>
-                </div>
-                <div className="flex-1 min-h-0 pt-3">
+              <div className={`${themeClasses.card} p-4 flex flex-col h-full overflow-hidden`}>
+                <div className="flex-1 min-h-0">
                   <RenderingSkeleton count={confirmedClipCount || clipCount} />
-                </div>
-                <div className="flex items-center justify-between pt-2 border-t border-slate-800/60 text-[10px] text-slate-500 font-mono flex-shrink-0">
-                  <span>Preset: {selectedPresetId}</span>
-                  <span>Format: 1080x1920 MP4</span>
                 </div>
               </div>
             )}
 
             {/* 5. COMPLETE PHASE: Output Clips */}
             {phase === 'complete' && (
-              <div className={`rounded-2xl border ${themeClasses.card} p-3.5 shadow-xl flex flex-col h-full overflow-hidden`}>
+              <div className={`${themeClasses.card} p-3.5 flex flex-col h-full overflow-hidden`}>
                 {/* Header */}
                 <div className="flex items-center justify-between mb-2.5 border-b border-slate-800/80 pb-2 flex-shrink-0">
                   <div className="flex items-center gap-2">
@@ -2330,11 +2296,12 @@ export const SimpleClipperDashboard: React.FC = () => {
               </div>
             )}
 
+            </div>
           </div>
 
           {/* ── BOTTOM SECTION: PERMANENT PROCESS LOG (40% SPACE) ── */}
-          <div className="flex-[4] min-h-0 flex flex-col overflow-hidden">
-            <div className="rounded-2xl border border-slate-800/90 bg-[#0d1117] overflow-hidden shadow-xl flex flex-col h-full">
+          <div className="flex-[4] min-h-0 flex flex-col overflow-hidden pt-2">
+            <div className="rounded-xl border border-slate-800/90 bg-[#0d1117] overflow-hidden flex flex-col h-full">
 
               {/* Terminal Window Header */}
               <div className="flex h-8 items-center justify-between px-3.5 border-b border-slate-800/80 bg-[#161b22] flex-shrink-0">
@@ -2347,17 +2314,7 @@ export const SimpleClipperDashboard: React.FC = () => {
                     <span className={`h-2.5 w-2.5 rounded-full ${isProcessing ? 'bg-[#27c93f] animate-pulse' : 'bg-[#27c93f]'}`} />
                   </div>
                   <span className="font-mono text-[11px] font-bold text-slate-400 tracking-wider">
-                    {phase === 'analyzing'
-                      ? 'PROSES LOG (ANALYZING)'
-                      : phase === 'rendering'
-                      ? 'PROSES LOG (RENDERING)'
-                      : phase === 'complete'
-                      ? 'PROSES LOG (100% SELESAI)'
-                      : phase === 'preview'
-                      ? 'PROSES LOG (ANALISIS SELESAI)'
-                      : status === 'error'
-                      ? 'PROSES LOG (ERROR)'
-                      : 'PROSES LOG'}
+                    PROSES LOG
                   </span>
                 </div>
 
