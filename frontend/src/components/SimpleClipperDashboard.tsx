@@ -166,7 +166,8 @@ export const SimpleClipperDashboard: React.FC = () => {
   const transcriptionModel = 'groq';
   const [languageMode, setLanguageMode] = useState<string>('id');
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
-  const [selectedPresetId, setSelectedPresetId] = useState<string>('tiktok_viral');
+  // Default = tanpa subtitle. Gaya caption dipilih lewat check/uncheck pada kartu.
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('no_subtitle');
   const [framingMode, setFramingMode] = useState<FramingMode>('smart_crop');
   const [subPosition, setSubPosition] = useState<number>(68);
   const [showEmoji, setShowEmoji] = useState<boolean>(true);
@@ -783,9 +784,9 @@ export const SimpleClipperDashboard: React.FC = () => {
     handleOpenUploadModal(clip);
   };
 
-  // Handle Preset Change
+  // Handle Preset Change — klik untuk pilih, klik lagi untuk uncheck (tanpa subtitle)
   const handleSelectPreset = (preset: SubtitleStyleConfig) => {
-    setSelectedPresetId(preset.presetId);
+    setSelectedPresetId(prev => (prev === preset.presetId ? 'no_subtitle' : preset.presetId));
   };
 
   const previewCandidate = (clip: ClipCandidate) => {
@@ -1689,10 +1690,10 @@ export const SimpleClipperDashboard: React.FC = () => {
           <SectionLabel
             icon={<PaintBrushIcon className="h-4 w-4 stroke-[2]" />}
             label="Subtitle Style"
-            hint="Pilih gaya caption"
+            hint="Klik untuk pakai, klik lagi untuk lepas"
           />
 
-          {/* Subtitle Style Cards Grid */}
+          {/* Subtitle Style Cards Grid — klik untuk pilih, klik lagi untuk lepas */}
           <div className="grid grid-cols-2 gap-2 mb-4">
             {SUBTITLE_PRESETS.map((preset) => {
               const isSelected = selectedPresetId === preset.presetId;
@@ -1700,9 +1701,10 @@ export const SimpleClipperDashboard: React.FC = () => {
                 <button
                   key={preset.presetId}
                   onClick={() => handleSelectPreset(preset)}
-                  className={`${isSelected ? themeClasses.tileActive : themeClasses.tileIdle} flex flex-col items-start rounded-xl p-2 text-left transition-all`}
+                  role="checkbox"
+                  aria-checked={isSelected}
+                  className={`${isSelected ? themeClasses.tileActive : themeClasses.tileIdle} relative flex flex-col items-start rounded-xl p-2 text-left transition-all`}
                 >
-                  {isSelected && <ActiveCheck />}
                   {/* Card Title */}
                   <div className="flex items-center justify-between w-full mb-1.5 px-0.5">
                     <div className="flex items-center gap-1.5 truncate">
@@ -1745,15 +1747,6 @@ export const SimpleClipperDashboard: React.FC = () => {
                     {preset.presetId === 'word_pop' && (
                       <div className="relative font-['Impact'] font-black uppercase text-[10px] text-yellow-300 tracking-wider leading-none text-center drop-shadow-[0_2px_4px_rgba(0,0,0,1)] scale-110">
                         <span>SUBTITLE!</span>
-                      </div>
-                    )}
-
-                    {preset.presetId === 'no_subtitle' && (
-                      <div className="relative flex items-center gap-1 text-[8.5px] font-medium text-slate-500">
-                        <span className="rounded bg-rose-950/80 text-rose-400 border border-rose-800/40 px-1 font-mono text-[7px] font-bold">
-                          OFF
-                        </span>
-                        <span>Tanpa Subtitle</span>
                       </div>
                     )}
                   </div>

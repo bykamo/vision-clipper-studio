@@ -82,25 +82,5 @@ export const SUBTITLE_PRESETS: SubtitleStyleConfig[] = [
     allCaps: true,
     positionY: 50,
     showEmoji: false
-  },
-  {
-    presetId: 'no_subtitle',
-    name: 'No Subtitle',
-    description: 'Tanpa subtitle sama sekali',
-    icon: '❌',
-    fontFamily: 'Plus Jakarta Sans, sans-serif',
-    fontSize: 0,
-    primaryColor: 'transparent',
-    highlightColor: 'transparent',
-    strokeColor: 'transparent',
-    strokeWidth: 0,
-    shadow: false,
-    backgroundBox: false,
-    backgroundColor: 'transparent',
-    animationType: 'none',
-    wordsPerLine: 0,
-    allCaps: false,
-    positionY: 0,
-    showEmoji: false
   }
 ];

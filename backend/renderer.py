@@ -4,6 +4,7 @@ import sys
 import math
 import time
 import json
+import random
 import subprocess
 import cv2
 import numpy as np
@@ -94,52 +95,98 @@ def _sanitize_word_timestamps(words, clip_start, clip_end, min_word_dur=0.18):
         
     return sanitized
 
-# Kamus Kata Kunci Viral untuk Auto-Emoji Insertion
+# Kamus Kata Kunci Viral untuk Auto-Emoji Insertion.
+# Setiap kata kunci punya BEBERAPA kandidat emoji yang cocok maknanya dengan kalimat;
+# satu kandidat dipilih acak supaya subtitle tidak monoton. Kandidat pertama = default.
+# WAJIB: semua emoji di sini harus ada di font backend/fonts/NotoEmoji.ttf,
+# kalau tidak akan muncul kotak kosong (tofu). Diverifikasi oleh test_renderer.
 EMOJI_KEYWORDS = {
     # Keuangan / Bisnis / Karier
-    "uang": "💰", "duit": "💸", "kaya": "🤑", "cuan": "💵", "bisnis": "📈",
-    "investasi": "📊", "modal": "💵", "kerja": "💼", "gaji": "💰", "karir": "👔",
-    "untung": "📈", "rugi": "📉", "saham": "📊", "omset": "💸", "omzet": "💸",
+    "uang": ("💰", "💵", "🤑"),
+    "duit": ("💸", "💰", "💵"),
+    "kaya": ("🤑", "💰", "💎"),
+    "cuan": ("💵", "💰", "📈"),
+    "bisnis": ("📈", "💼", "🏢"),
+    "investasi": ("📊", "📈", "💹"),
+    "modal": ("💵", "💰", "🏦"),
+    "kerja": ("💼", "🛠️", "💪"),
+    "gaji": ("💰", "💵", "🧾"),
+    "karir": ("👔", "📈", "🎯"),
+    "untung": ("📈", "💹", "🎉"),
+    "rugi": ("📉", "💸", "😖"),
+    "saham": ("📊", "📈", "💹"),
+    "omset": ("💸", "📈", "💰"),
+    "omzet": ("💸", "📈", "💰"),
     # Emosi & Reaksi
-    "kaget": "😱", "shock": "🤯", "kecewa": "😞", "marah": "😡", "bahaya": "⚠️",
-    "masalah": "🚨", "takut": "😨", "hancur": "💥", "stres": "😫", "capek": "😮‍💨",
+    "kaget": ("😱", "😲", "🤯"),
+    "shock": ("🤯", "😱", "⚡"),
+    "kecewa": ("😞", "😔", "💔"),
+    "marah": ("😡", "🤬", "🔥"),
+    "bahaya": ("⚠️", "🚨", "☠️"),
+    "masalah": ("🚨", "⚠️", "🧩"),
+    "takut": ("😨", "😰", "😱"),
+    "hancur": ("💥", "🧨", "💔"),
+    "stres": ("😫", "😖", "🌀"),
+    "capek": ("😮‍💨", "😩", "🥱"),
     # Mindset & Inspirasi
-    "otak": "🧠", "pikiran": "🧠", "mindset": "💡", "ide": "💡", "fokus": "🎯",
-    "sukses": "🏆", "menang": "🥇", "juara": "👑", "waktu": "⏱️", "disiplin": "⚡",
-    "rahasia": "🤫", "kunci": "🔑", "target": "🎯", "kebiasaan": "🔄",
+    "otak": ("🧠", "💡", "⚙️"),
+    "pikiran": ("🧠", "💭", "💡"),
+    "mindset": ("💡", "🧠", "🎯"),
+    "ide": ("💡", "✨", "🧠"),
+    "fokus": ("🎯", "🔍", "🧘"),
+    "sukses": ("🏆", "🚀", "🌟"),
+    "menang": ("🥇", "🏆", "✌️"),
+    "juara": ("👑", "🏆", "🥇"),
+    "waktu": ("⏱️", "⏰", "⌛"),
+    "disiplin": ("⚡", "⏰", "🎯"),
+    "rahasia": ("🤫", "🔒", "🕵️"),
+    "kunci": ("🔑", "🗝️", "🔓"),
+    "target": ("🎯", "📌", "🏹"),
+    "kebiasaan": ("🔄", "🔁", "♻️"),
     # Viral / Energetik
-    "viral": "🚀", "meledak": "💥", "api": "🔥", "batu": "🗿", "mati": "💀",
-    "keren": "✨", "gila": "🤯", "parah": "💀", "bohong": "🤥", "salah": "❌",
-    "benar": "✅", "stop": "🛑", "mulai": "🚀"
+    "viral": ("🚀", "🔥", "📢"),
+    "meledak": ("💥", "🧨", "🔥"),
+    "api": ("🔥", "🚒", "💥"),
+    "batu": ("🗿", "🪨", "💪"),
+    "mati": ("💀", "⚰️", "🥀"),
+    "keren": ("✨", "😎", "🔥"),
+    "gila": ("🤯", "😵", "🌀"),
+    "parah": ("💀", "😵", "🚨"),
+    "bohong": ("🤥", "🚫", "🙊"),
+    "salah": ("❌", "🚫", "🙅"),
+    "benar": ("✅", "👍", "💯"),
+    "stop": ("🛑", "✋", "🚫"),
+    "mulai": ("🚀", "▶️", "🏁"),
 }
 
 def _inject_emojis_to_words(words, min_gap=4):
     """
     Suntikkan emoji kontekstual pada kata kunci viral dengan frekuensi terkontrol.
     Maksimal 1 emoji per min_gap kata untuk menjaga kerapian & estetika subtitle.
+    Emoji dipilih acak dari kandidat yang cocok dengan makna kalimat.
     """
     if not words:
         return words
-    
+
     decorated = []
     last_emoji_idx = -min_gap
-    
+
     for i, w in enumerate(words):
         raw_word = re.sub(r"[^\w]", "", w.get("word", "").lower())
         matched_emoji = None
         if i - last_emoji_idx >= min_gap:
-            for kw, em in EMOJI_KEYWORDS.items():
+            for kw, candidates in EMOJI_KEYWORDS.items():
                 if raw_word == kw or (len(raw_word) >= 4 and raw_word.startswith(kw)):
-                    matched_emoji = em
+                    matched_emoji = random.choice(candidates)
                     break
-        
+
         if matched_emoji:
             new_text = f"{w['word']} {matched_emoji}"
             last_emoji_idx = i
             decorated.append({**w, "word": new_text})
         else:
             decorated.append(w)
-            
+
     return decorated
 
 # Palet warna aksen ASS (&HAABBGGRR / &HBBGGRR&) kontras tinggi untuk variasi emoji viral
@@ -169,9 +216,106 @@ EMOJI_COLORS = {
     "💀": "&HE0E0E0&",  # Tengkorak (Putih tulang)
     "😱": "&H00BFFF&",  # Kaget (Amber)
     "🤯": "&H00BFFF&",  # Shock (Amber)
+    # --- Pelengkap kandidat acak (emoji tanpa entri memakai warna default amber) ---
+    "💎": "&HFFCC00&",  # Berlian (Cyan terang)
+    "🏦": "&H00D4FF&",  # Bank (Emas)
+    "🏢": "&H00D4FF&",  # Kantor (Emas)
+    "💹": "&H00E676&",  # Grafik naik (Hijau)
+    "🎉": "&H00FFFF&",  # Perayaan (Kuning)
+    "💔": "&H0000FF&",  # Patah hati (Merah)
+    "☠️": "&H0000FF&",  # Bahaya (Merah)
+    "🧨": "&H0000FF&",  # Petasan (Merah)
+    "🔒": "&H00D4FF&",  # Terkunci (Emas)
+    "🔓": "&H00E676&",  # Terbuka (Hijau)
+    "🗝️": "&H00D4FF&",  # Kunci antik (Emas)
+    "📌": "&H0044FF&",  # Pin (Merah-orange)
+    "📅": "&H00D4FF&",  # Kalender (Emas)
+    "⏰": "&H00D4FF&",  # Alarm (Emas)
+    "⏱️": "&H00D4FF&",  # Stopwatch (Emas)
+    "⌛": "&H00D4FF&",  # Hourglass (Emas)
+    "✋": "&H0000FF&",  # Stop tangan (Merah)
+    "⛔": "&H0000FF&",  # Dilarang (Merah)
+    "💯": "&H00E676&",  # Seratus (Hijau)
+    "👍": "&H00E676&",  # Jempol (Hijau)
+    "😎": "&H00FFFF&",  # Keren (Kuning)
+    "😪": "&H00D4FF&",  # Ngantuk (Emas)
+    "🥱": "&H00D4FF&",  # Menguap (Emas)
+    "💪": "&H00E676&",  # Kekuatan (Hijau)
+    "🧘": "&H00FFFF&",  # Meditasi (Kuning)
+    "🤓": "&H00FFFF&",  # Kutu buku (Kuning)
+    "💭": "&H00FFFF&",  # Pikiran (Kuning)
+    "🔍": "&H00D4FF&",  # Cari (Emas)
+    "🔧": "&H00D4FF&",  # Kunci pas (Emas)
+    "🧩": "&H00FFFF&",  # Puzzle (Kuning)
+    "🧾": "&H00D4FF&",  # Struk (Emas)
+    "🥀": "&H0000FF&",  # Bunga layu (Merah)
+    "⚰️": "&HE0E0E0&",  # Peti (Silver)
+    "⛰️": "&HE0E0E0&",  # Gunung (Silver)
+    "🪨": "&HE0E0E0&",  # Batu (Silver)
+    "🌟": "&H00FFFF&",  # Bintang (Kuning)
+    "✌️": "&H00E676&",  # Victory (Hijau)
+    "🏁": "&H00FFFF&",  # Finish (Kuning)
+    "👻": "&H00FFFF&",  # Hantu (Kuning)
+    "🙅": "&H0000FF&",  # Tidak (Merah)
+    "🙊": "&H0000FF&",  # Tutup mulut (Merah)
+    "🚫": "&H0000FF&",  # Dilarang (Merah)
+    "🚒": "&H0000FF&",  # Pemadam (Merah)
+    "😵": "&H00BFFF&",  # Pusing (Amber)
+    "😖": "&H00BFFF&",  # Frustasi (Amber)
+    "😔": "&H00BFFF&",  # Sedih (Amber)
+    "😞": "&H00BFFF&",  # Kecewa (Amber)
+    "😡": "&H0000FF&",  # Marah (Merah)
+    "🤬": "&H0000FF&",  # Marah besar (Merah)
+    "😨": "&H00BFFF&",  # Takut (Amber)
+    "😰": "&H00BFFF&",  # Cemas (Amber)
+    "😲": "&H00BFFF&",  # Terkejut (Amber)
+    "😩": "&H00BFFF&",  # Lelah (Amber)
+    "😫": "&H00BFFF&",  # Sangat lelah (Amber)
+    "🤥": "&H0000FF&",  # Bohong (Merah)
+    "🤫": "&H00D4FF&",  # Ssst (Emas)
+    "🔄": "&H00FFFF&",  # Ulang (Kuning)
+    "🔁": "&H00FFFF&",  # Repeat (Kuning)
+    "♻️": "&H00E676&",  # Daur ulang (Hijau)
+    "⚙️": "&H00D4FF&",  # Gear (Emas)
+    "🛠️": "&H00D4FF&",  # Perkakas (Emas)
+    "👔": "&H00D4FF&",  # Dasi (Emas)
+    "🕵️": "&H00D4FF&",  # Detektif (Emas)
+    "💼": "&H00D4FF&",  # Tas kerja (Emas)
+    "📢": "&H00FFFF&",  # Megafon (Kuning)
+    "📊": "&H00D4FF&",  # Bar chart (Emas)
+    "🏹": "&H0044FF&",  # Panah (Merah-orange)
+    "🎯": "&H0044FF&",  # Target (Merah-orange)
 }
 
-_EMOJI_PATTERN = re.compile(r"([\U00010000-\U0010ffff\u2600-\u27bf\ufe0f])")
+# Rentang karakter emoji yang tercakup oleh font Noto Emoji.
+# PENTING: daftar ini harus lengkap. Emoji yang TIDAK cocok akan ditulis mentah dan
+# dirender memakai font subtitle (Plus Jakarta Sans / Montserrat / Impact) yang tidak
+# memiliki glyph-nya, sehingga muncul "kotak kosong" / tofu.
+# Contoh nyata: ⏱ (U+23F1) pada kata kunci "waktu" ada di blok Misc Technical (U+2300),
+# di luar rentang lama -> tampil sebagai kotak kosong.
+_EMOJI_CHAR_RANGES = (
+    r"\U0001F000-\U0001FAFF"      # emoticon, pictograph, transport, symbol, extended-A
+    r"\u2190-\u21FF"              # panah (↔ ↕ ⇄)
+    r"\u2300-\u23FF"              # misc technical (⌚ ⏰ ⏱ ⏲ ⏳)
+    r"\u2460-\u24FF"              # enclosed alphanumerics (① Ⓜ)
+    r"\u25A0-\u25FF"              # geometric shapes (▶ ◀ ● ■)
+    r"\u2600-\u27BF"              # misc symbols & dingbats (⚠ ✨ ✂)
+    r"\u2B00-\u2BFF"              # misc symbols and arrows (⭐ ⬛ ⬜)
+    r"\u3030\u303D\u3297\u3299"   # CJK symbols (〰 〽 ㊗ ㊙)
+    r"\u2122\u2139\u2049\u203C"   # ™ ℹ ‼ ⁉
+)
+_EMOJI_CHAR = f"[{_EMOJI_CHAR_RANGES}]"
+
+# Satu "cluster" emoji: base + variation selector + skin tone + rangkaian ZWJ.
+# Cluster diperlakukan sebagai satu kesatuan agar urutan seperti 😮‍💨 tidak terpotong
+# oleh tag {\fn...} di tengahnya.
+_EMOJI_CLUSTER = (
+    r"[\U0001F1E6-\U0001F1FF]{2}"                                        # bendera (2 regional indicator)
+    rf"|{_EMOJI_CHAR}[\uFE0E\uFE0F]?[\U0001F3FB-\U0001F3FF]?"
+    rf"(?:\u200D{_EMOJI_CHAR}[\uFE0E\uFE0F]?[\U0001F3FB-\U0001F3FF]?)*"  # rangkaian ZWJ
+    r"|\u20E3"                                                           # keycap
+)
+_EMOJI_PATTERN = re.compile(f"({_EMOJI_CLUSTER})")
 
 def _format_ass_word(text, base_color="&HFFFFFF&", alpha_hide=False, uppercase=False):
     """
@@ -183,11 +327,18 @@ def _format_ass_word(text, base_color="&HFFFFFF&", alpha_hide=False, uppercase=F
 
     def _replace_emoji(match):
         em = match.group(1)
-        if em == "\ufe0f":  # variation selector
+        if em in ("\ufe0e", "\ufe0f", "\u200d"):
             return ""
+        # Font monokrom Noto Emoji tidak butuh variation selector
+        em = em.replace("\ufe0e", "").replace("\ufe0f", "")
+        color = (
+            EMOJI_COLORS.get(em)
+            or EMOJI_COLORS.get(f"{em}\ufe0f")
+            or EMOJI_COLORS.get(em[:1])
+            or "&H00D4FF&"
+        )
         if alpha_hide:
             return f"{{\\fnNoto Emoji\\alpha&HFF&}}{em}{{\\fn\\alpha&H00&}}"
-        color = EMOJI_COLORS.get(em, "&H00D4FF&")
         return f"{{\\fnNoto Emoji\\c{color}}}{em}{{\\fn\\c{base_color}}}"
 
     if uppercase:
@@ -481,18 +632,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             start_ass = format_ass_timestamp(w["start"])
             next_start = words[i+1]["start"] if i + 1 < len(words) else w["end"]
             end_ass = format_ass_timestamp(max(w["end"], next_start))
+            # Emoji harus lewat _format_ass_word agar dibungkus font Noto Emoji
+            # (menulis teks mentah akan menghasilkan kotak kosong / tofu).
             text = _format_ass_word(w["word"], base_color="&HFFFFFF&", uppercase=True)
-            # Dynamic punchy scale effect on entry
-            f.write(f"Dialogue: 0,{start_ass},{end_ass},WordPopStyle,,0,0,0,,{{\\t(0,60,\\fscx110\\fscy110)}}{{\\t(60,120,\\fscx100\\fscy100)}}{text}\n")
-            # Dynamic punchy scale effect on entry
-            f.write(f"Dialogue: 0,{start_ass},{end_ass},WordPopStyle,,0,0,0,,{{\\t(0,60,\\fscx110\\fscy110)}}{{\\t(60,120,\\fscx100\\fscy100)}}{text}\n")
-    with open(out_ass_path, "w", encoding="utf-8") as f:
-        f.write(ass_header)
-        for i, w in enumerate(words):
-            start_ass = format_ass_timestamp(w["start"])
-            next_start = words[i+1]["start"] if i + 1 < len(words) else w["end"]
-            end_ass = format_ass_timestamp(max(w["end"], next_start))
-            text = w["word"].upper()
             # Dynamic punchy scale effect on entry
             f.write(f"Dialogue: 0,{start_ass},{end_ass},WordPopStyle,,0,0,0,,{{\\t(0,60,\\fscx110\\fscy110)}}{{\\t(60,120,\\fscx100\\fscy100)}}{text}\n")
 

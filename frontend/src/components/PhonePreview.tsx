@@ -71,6 +71,8 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   const [isMuted, setIsMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [hasLoadedMetadata, setHasLoadedMetadata] = useState(false);
+  const [mediaError, setMediaError] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1.0);
   const [centerAnimation, setCenterAnimation] = useState<'play' | 'pause' | null>(null);
   const [showPlayPulse, setShowPlayPulse] = useState(false);
@@ -193,9 +195,21 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     }
   };
 
+  // Reset transport readout whenever the source changes so the bar clearly
+  // falls back to the "no playback" state until new metadata arrives.
+  useEffect(() => {
+    setCurrentTime(0);
+    setDuration(0);
+    setHasLoadedMetadata(false);
+    setMediaError(false);
+    setIsPlaying(false);
+  }, [videoStreamUrl]);
+
   const handleLoadedMetadata = () => {
     if (videoRef.current) {
       setDuration(videoRef.current.duration || 0);
+      setHasLoadedMetadata(true);
+      setMediaError(false);
       videoRef.current.muted = isMuted;
       videoRef.current.volume = 1;
       if (isRenderedClip) {
@@ -204,6 +218,15 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
         videoRef.current.currentTime = previewClip.start;
       }
     }
+  };
+
+  // A failed stream (missing file / unsupported codec) also counts as "no playback".
+  const handleMediaError = () => {
+    setMediaError(true);
+    setHasLoadedMetadata(false);
+    setDuration(0);
+    setCurrentTime(0);
+    setIsPlaying(false);
   };
 
   const handleTimeUpdate = () => {
@@ -252,13 +275,19 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   };
 
   const handleSeek = (time: number) => {
+    const video = videoRef.current;
+    // Ignore seeks while there is no playback source / metadata yet.
+    if (!video || !hasLoadedMetadata) return;
+
+    // The transport timeline is clip-relative while a clip range is being previewed.
+    const offset = previewClip && !isRenderedClip ? previewClip.start : 0;
+    const absolute = offset + time;
     const nextTime = previewClip
-      ? Math.min(previewClip.end, Math.max(previewClip.start, time))
-      : time;
+      ? Math.min(previewClip.end, Math.max(previewClip.start, absolute))
+      : absolute;
+
     setCurrentTime(nextTime);
-    if (videoRef.current) {
-      videoRef.current.currentTime = nextTime;
-    }
+    video.currentTime = nextTime;
   };
 
   const toggleMute = () => {
@@ -329,10 +358,33 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const playbackProgress = duration > 0
-    ? Math.min(100, Math.max(0, (currentTime / duration) * 100))
+  // ── ADAPTIVE TRANSPORT TIMELINE ──
+  // The transport bar reacts to three states:
+  //   1. No playback  -> nothing loaded yet (no source / metadata pending) => placeholder "--:--"
+  //   2. Paused       -> media ready but not playing => real times, dim status dot
+  //   3. Playing      -> real times, glowing emerald status dot
+  // While previewing a clip range, the timeline is clip-relative instead of source-relative.
+  const hasVideoSource = Boolean(videoStreamUrl);
+  const mediaDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
+
+  const isClipRange = Boolean(previewClip && !isRenderedClip);
+  const clipStart = isClipRange && previewClip ? previewClip.start : 0;
+  const clipDuration = isClipRange && previewClip ? Math.max(0, previewClip.end - previewClip.start) : 0;
+
+  const timelineDuration = isClipRange ? clipDuration : mediaDuration;
+  const timelineCurrent = isClipRange
+    ? Math.min(timelineDuration, Math.max(0, currentTime - clipStart))
+    : Math.min(mediaDuration, Math.max(0, currentTime));
+
+  // Timeline is only interactive once we actually know the media length.
+  const isTimelineReady = hasVideoSource && hasLoadedMetadata && !mediaError && timelineDuration > 0;
+  // Playback controls are only blocked when there is truly nothing to play.
+  const isTransportDisabled = !hasVideoSource || mediaError;
+
+  const playbackProgress = isTimelineReady
+    ? Math.min(100, Math.max(0, (timelineCurrent / timelineDuration) * 100))
     : 0;
-  const remainingTime = Math.max(0, duration - currentTime);
+  const remainingTime = Math.max(0, timelineDuration - timelineCurrent);
 
   // Dynamic values for Social Media overlay
   const displayAccount = (accountWatermark || 'visionclipper.ai').replace(/^@/, '');
@@ -511,6 +563,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       ref={videoRef}
                       src={videoStreamUrl}
                       onLoadedMetadata={handleLoadedMetadata}
+                      onError={handleMediaError}
                       onTimeUpdate={handleTimeUpdateWithClip}
                       onPlay={() => setIsPlaying(true)}
                       onPause={() => setIsPlaying(false)}
@@ -1089,14 +1142,21 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
       </div>
 
       {/* ── STUDIO TRANSPORT BAR ── */}
-      <div className="ios26-glass w-full max-w-[480px] px-3.5 py-2 flex items-center gap-3 select-none flex-shrink-0 mt-1">
+      <div
+        className={`ios26-glass w-full max-w-[480px] px-3.5 py-2 flex items-center gap-3 select-none flex-shrink-0 mt-1 transition-opacity duration-200 ${
+          isTransportDisabled ? 'opacity-70' : ''
+        }`}
+      >
         {/* Primary Transport Play/Pause */}
         <button
           type="button"
           onClick={togglePlay}
-          className="ios26-play flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-white transition active:scale-95"
-          aria-label={isPlaying ? 'Jeda preview' : 'Putar preview'}
-          title={isPlaying ? 'Jeda preview' : 'Putar preview'}
+          disabled={isTransportDisabled}
+          className={`ios26-play flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-white transition ${
+            isTransportDisabled ? 'cursor-not-allowed opacity-40 saturate-50' : 'active:scale-95'
+          }`}
+          aria-label={isTransportDisabled ? 'Belum ada video untuk diputar' : isPlaying ? 'Jeda preview' : 'Putar preview'}
+          title={isTransportDisabled ? 'Belum ada video untuk diputar' : isPlaying ? 'Jeda preview' : 'Putar preview'}
         >
           {isPlaying ? (
             <PauseIcon className="h-4 w-4 text-white" />
@@ -1107,19 +1167,51 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
         {/* Timeline and Time Readout */}
         <div className="min-w-0 flex-1">
-          <div className="mb-1 flex items-center justify-between text-[11px] font-mono text-white/90">
-            <span className="text-white font-semibold">{formatTime(currentTime)}</span>
-            <span className="text-white/40">/{formatTime(duration || 45)}</span>
+          <div className="mb-1 flex items-center justify-between text-[11px] font-mono">
+            {isTimelineReady ? (
+              <>
+                {/* Playback in progress / paused at a known position */}
+                <span className="flex items-center gap-1.5 text-white font-semibold tabular-nums">
+                  <span
+                    aria-hidden
+                    className={`h-1.5 w-1.5 rounded-full transition-colors duration-200 ${
+                      isPlaying ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.85)]' : 'bg-white/30'
+                    }`}
+                  />
+                  {formatTime(timelineCurrent)}
+                </span>
+                <span className={`tabular-nums transition-colors duration-200 ${isPlaying ? 'text-white/55' : 'text-white/35'}`}>
+                  {formatTime(timelineDuration)}
+                </span>
+              </>
+            ) : (
+              <>
+                {/* No playback: no source selected or media metadata not loaded yet */}
+                <span className="text-white/25">--:--</span>
+                <span className="text-white/20">--:--</span>
+              </>
+            )}
           </div>
           <input
             type="range"
             min={0}
-            max={duration || 45}
-            value={currentTime}
+            max={isTimelineReady ? timelineDuration : 1}
+            step={isTimelineReady ? 0.1 : 1}
+            value={isTimelineReady ? Math.min(timelineCurrent, timelineDuration) : 0}
             onChange={(e) => handleSeek(Number(e.target.value))}
-            className="ios-media-scrubber block w-full cursor-pointer"
+            disabled={!isTimelineReady}
+            className={`ios-media-scrubber block w-full ${
+              isTimelineReady ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+            }`}
             style={{ '--ios-scrubber-progress': `${playbackProgress}%` } as React.CSSProperties}
-            aria-label="Posisi video"
+            aria-label={isTimelineReady ? (isClipRange ? 'Posisi di dalam klip' : 'Posisi video') : 'Belum ada video untuk diposisikan'}
+            title={
+              isTimelineReady
+                ? remainingTime > 0
+                  ? `Sisa ${formatTime(remainingTime)}`
+                  : 'Posisi video'
+                : 'Belum ada video'
+            }
           />
         </div>
 
@@ -1128,8 +1220,11 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
           <button
             type="button"
             onClick={toggleMute}
-            className="ios26-glass-btn flex h-7 w-7 items-center justify-center text-white/70 hover:text-white"
-            title={isMuted ? 'Nyalakan suara' : 'Matikan suara'}
+            disabled={isTransportDisabled}
+            className={`ios26-glass-btn flex h-7 w-7 items-center justify-center text-white/70 hover:text-white ${
+              isTransportDisabled ? 'cursor-not-allowed opacity-40' : ''
+            }`}
+            title={isTransportDisabled ? 'Belum ada audio' : isMuted ? 'Nyalakan suara' : 'Matikan suara'}
           >
             {isMuted ? <SpeakerXMarkIcon className="h-3.5 w-3.5 text-rose-400" /> : <SpeakerWaveIcon className="h-3.5 w-3.5" />}
           </button>
@@ -1137,8 +1232,11 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
           <button
             type="button"
             onClick={handleRateChange}
-            className="ios26-glass-btn h-7 min-w-8 px-1.5 text-[10.5px] font-mono font-semibold text-white/80 hover:text-white"
-            title="Kecepatan pemutaran"
+            disabled={isTransportDisabled}
+            className={`ios26-glass-btn h-7 min-w-8 px-1.5 text-[10.5px] font-mono font-semibold text-white/80 hover:text-white ${
+              isTransportDisabled ? 'cursor-not-allowed opacity-40' : ''
+            }`}
+            title={isTransportDisabled ? 'Belum ada video' : 'Kecepatan pemutaran'}
           >
             {playbackRate}x
           </button>

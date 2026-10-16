@@ -18,9 +18,53 @@ from backend.renderer import (
     build_split_screen_graph,
     _calc_margin_v,
     _inject_emojis_to_words,
+    _format_ass_word,
+    _EMOJI_PATTERN,
+    EMOJI_KEYWORDS,
+    EMOJI_COLORS,
     generate_ass_subtitles,
     extract_and_format_clip,
 )
+from backend.utils import FONTS_DIR
+
+
+def _read_ttf_cmap_codepoints(path):
+    """Baca semua codepoint yang punya glyph dari tabel cmap sebuah file TTF/OTF."""
+    import struct
+
+    with open(path, "rb") as fh:
+        data = fh.read()
+
+    num_tables = struct.unpack(">H", data[4:6])[0]
+    codepoints = set()
+
+    for i in range(num_tables):
+        off = 12 + i * 16
+        if data[off:off + 4] != b"cmap":
+            continue
+        cmap_off = struct.unpack(">I", data[off + 8:off + 12])[0]
+        num_sub = struct.unpack(">H", data[cmap_off + 2:cmap_off + 4])[0]
+        for j in range(num_sub):
+            rec = cmap_off + 4 + j * 8
+            _, _, sub_off = struct.unpack(">HHI", data[rec:rec + 8])
+            sub = cmap_off + sub_off
+            fmt = struct.unpack(">H", data[sub:sub + 2])[0]
+            if fmt == 4:
+                seg_x2 = struct.unpack(">H", data[sub + 6:sub + 8])[0]
+                seg = seg_x2 // 2
+                ends = struct.unpack(f">{seg}H", data[sub + 14:sub + 14 + seg_x2])
+                sp = sub + 14 + seg_x2 + 2
+                starts = struct.unpack(f">{seg}H", data[sp:sp + seg_x2])
+                for s, e in zip(starts, ends):
+                    if e != 0xFFFF:
+                        codepoints.update(range(s, e + 1))
+            elif fmt == 12:
+                ngroups = struct.unpack(">I", data[sub + 12:sub + 16])[0]
+                for g in range(ngroups):
+                    b = sub + 16 + g * 12
+                    s, e, _ = struct.unpack(">III", data[b:b + 12])
+                    codepoints.update(range(s, e + 1))
+    return codepoints
 
 
 class RendererIntegrityTest(unittest.TestCase):
@@ -260,12 +304,21 @@ class SplitScreenAndSubtitleEnhancementTest(unittest.TestCase):
             {"word": "kaya", "start": 2.2, "end": 2.6},
         ]
         injected = _inject_emojis_to_words(words, min_gap=4)
-        # "Rahasia" matches -> "Rahasia 🤫"
-        self.assertIn("🤫", injected[0]["word"])
-        # "bisnis" skipped because gap < 4
-        self.assertNotIn("📈", injected[1]["word"])
-        # "kaya" (idx 5, gap >= 4) matches -> "kaya 🤑"
-        self.assertIn("🤑", injected[5]["word"])
+        # "Rahasia" cocok -> salah satu kandidat emoji disuntikkan
+        self.assertTrue(
+            any(em.replace("\ufe0f", "") in injected[0]["word"] for em in EMOJI_KEYWORDS["rahasia"]),
+            msg=injected[0]["word"],
+        )
+        # "bisnis" dilewati karena jarak < 4 kata
+        self.assertFalse(
+            any(em.replace("\ufe0f", "") in injected[1]["word"] for em in EMOJI_KEYWORDS["bisnis"]),
+            msg=injected[1]["word"],
+        )
+        # "kaya" (idx 5, gap >= 4) cocok -> emoji disuntikkan
+        self.assertTrue(
+            any(em.replace("\ufe0f", "") in injected[5]["word"] for em in EMOJI_KEYWORDS["kaya"]),
+            msg=injected[5]["word"],
+        )
 
     @patch("backend.renderer.build_split_screen_graph")
     @patch("backend.renderer.generate_ass_subtitles")
@@ -456,12 +509,68 @@ class SplitScreenAndSubtitleEnhancementTest(unittest.TestCase):
             with open(ass_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            # Emojis like 🚀 injected into "viral" must be tagged with Noto Emoji and pop color
+            # Emoji yang disuntikkan ke kata "viral" harus dibungkus font Noto Emoji
+            # (kalau tidak, libass akan menggambarnya sebagai kotak kosong / tofu).
             self.assertIn(r"{\fnNoto Emoji", content)
-            self.assertIn("🚀", content)
+            candidates = EMOJI_KEYWORDS["viral"]
+            self.assertTrue(
+                any(em.replace("\ufe0f", "") in content for em in candidates),
+                msg=f"expected one of {candidates} in generated ASS",
+            )
         finally:
             if os.path.exists(ass_path):
                 os.remove(ass_path)
+
+    def test_every_keyword_emoji_is_covered_by_noto_emoji_font(self):
+        """
+        Regresi 'kotak kosong': setiap emoji di EMOJI_KEYWORDS harus
+        (a) dikenali _EMOJI_PATTERN sehingga dibungkus {\\fnNoto Emoji ...}, dan
+        (b) benar-benar punya glyph di backend/fonts/NotoEmoji.ttf.
+        """
+        font_path = os.path.join(FONTS_DIR, "NotoEmoji.ttf")
+        if not os.path.exists(font_path):
+            self.skipTest(f"{font_path} not found")
+
+        cmap_codepoints = _read_ttf_cmap_codepoints(font_path)
+        self.assertGreater(len(cmap_codepoints), 100)
+
+        for keyword, candidates in EMOJI_KEYWORDS.items():
+            for emoji in candidates:
+                # (a) harus dikenali sebagai cluster emoji
+                self.assertIsNotNone(
+                    _EMOJI_PATTERN.fullmatch(emoji),
+                    msg=f"keyword {keyword!r} emoji {emoji!r} tidak dikenali _EMOJI_PATTERN",
+                )
+                # (b) harus dibungkus font Noto Emoji di output ASS
+                formatted = _format_ass_word(f"kata {emoji}")
+                self.assertIn(
+                    r"\fnNoto Emoji", formatted,
+                    msg=f"keyword {keyword!r} emoji {emoji!r} tidak dibungkus font Noto Emoji",
+                )
+                # (c) setiap codepoint harus ada di font
+                for ch in emoji:
+                    if ch in ("\ufe0e", "\ufe0f", "\u200d"):
+                        continue
+                    self.assertIn(
+                        ord(ch), cmap_codepoints,
+                        msg=f"emoji {emoji!r} (keyword {keyword!r}) codepoint U+{ord(ch):04X} tidak ada di NotoEmoji.ttf",
+                    )
+
+    def test_zwj_emoji_cluster_is_not_split_by_font_tags(self):
+        """😮‍💨 (capek) harus tetap satu cluster, bukan dipecah tag {\\fn} di tengah ZWJ."""
+        out = _format_ass_word("capek \U0001F62E\u200D\U0001F4A8")
+        self.assertIn(r"{\fnNoto Emoji", out)
+        # hanya boleh ada satu pembuka {\fnNoto Emoji ...} untuk seluruh cluster
+        self.assertEqual(out.count(r"\fnNoto Emoji"), 1)
+        self.assertIn("\U0001F62E\u200D\U0001F4A8", out)
+
+    def test_stopwatch_keyword_is_wrapped_with_emoji_font(self):
+        """⏱ (U+23F1) ada di blok Misc Technical, di luar rentang emoji 'umum'.
+        Regresi: dulu tidak dikenali sehingga muncul kotak kosong."""
+        out = _format_ass_word("waktu \u23F1\ufe0F")
+        self.assertIn(r"{\fnNoto Emoji", out)
+        self.assertIn("\u23F1", out)
+        self.assertNotIn("\ufe0f", out)  # variation selector dibuang
 
     @patch("backend.renderer.generate_ass_subtitles")
     @patch("backend.renderer.run_command")
