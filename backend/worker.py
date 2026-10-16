@@ -4,8 +4,8 @@ import os
 import sys
 import time
 from backend.downloader import get_video_file, get_video_source_name
-from backend.transcriber import transcribe_video, build_transcript_text, get_media_duration
-from backend.analyzer import build_viral_prompt, call_llm_api, extract_json_block
+from backend.transcriber import transcribe_video, build_transcript_text, build_compact_transcript_text, get_media_duration
+from backend.analyzer import build_viral_prompt, call_llm_api, extract_json_block, PermanentLLMError
 from backend.renderer import extract_and_format_clip
 from backend.utils import (
     log,
@@ -154,6 +154,14 @@ def main():
         transcript_text = build_transcript_text(segments)
 
         prompt = build_viral_prompt(transcript_text, args.num_clips, mode=args.mode)
+        # Compact fallback prompt (merged timestamp blocks) used when a model
+        # rejects the full transcript for exceeding its token budget.
+        compact_transcript = build_compact_transcript_text(segments)
+        compact_prompt = (
+            build_viral_prompt(compact_transcript, args.num_clips, mode=args.mode)
+            if compact_transcript and compact_transcript != transcript_text
+            else None
+        )
 
         max_retries = 3
         clips = []
@@ -164,7 +172,7 @@ def main():
                 llm_endpoint = os.environ.get("ROUTER_API_ENDPOINT") or DEFAULT_ENDPOINT
                 llm_key = os.environ.get("ROUTER_API_KEY") or DEFAULT_API_KEY
                 llm_model = os.environ.get("ROUTER_LLM_MODEL") or DEFAULT_LLM_MODEL
-                llm_response = call_llm_api(prompt, llm_model, llm_endpoint, llm_key, job_id=job_id)
+                llm_response = call_llm_api(prompt, llm_model, llm_endpoint, llm_key, job_id=job_id, compact_prompt=compact_prompt)
                 data = extract_json_block(llm_response, job_id=job_id)
                 clips = data.get("clips", [])
                 if clips:
@@ -172,6 +180,13 @@ def main():
                 else:
                     last_error = "LLM returned empty 'clips' list in JSON."
                     log(f"Percobaan ke-{attempt + 1}: LLM merespons tapi 'clips' kosong.", job_id=job_id)
+            except PermanentLLMError as e:
+                # All models rejected for non-recoverable reasons (location,
+                # credentials). Retrying with the same setup cannot help.
+                last_error = str(e)
+                log(f"Semua model LLM gagal dengan error permanen: {e}", job_id=job_id)
+                log("Periksa konfigurasi model AI di Pengaturan Studio (model/endpoint/API key).", job_id=job_id)
+                break
             except Exception as e:
                 last_error = str(e)
                 log(f"LLM API or JSON parsing failed on attempt {attempt + 1}: {e}", job_id=job_id)

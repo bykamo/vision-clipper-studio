@@ -785,9 +785,14 @@ async def _sse_from_process(cmd, job_id: str, request: Request = None):
 
         process = subprocess.Popen(
             cmd,
+            # Explicit stdio: never inherit the server's (possibly stale) fds.
+            # Inheriting a dead terminal fd as stdin makes the child abort at
+            # interpreter init: "Fatal Python error: init_sys_streams ... Bad file descriptor".
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             bufsize=0,
+            close_fds=True,
             cwd=os.path.dirname(FRONTEND_DIR),
             **kwargs
         )

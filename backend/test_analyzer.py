@@ -1,8 +1,18 @@
 import json
+import os
 import unittest
 from unittest.mock import patch, MagicMock
 
-from backend.analyzer import build_viral_prompt, call_llm_api, extract_json_block
+from backend.analyzer import (
+    build_viral_prompt,
+    call_llm_api,
+    extract_json_block,
+    get_fallback_models,
+    _is_permanent_llm_error,
+    _is_oversize_error,
+    PermanentLLMError,
+    DEFAULT_FALLBACK_MODELS,
+)
 from backend.utils import parse_timestamp_to_seconds, get_ffprobe_binary
 
 
@@ -82,6 +92,83 @@ class AnalyzerTest(unittest.TestCase):
         result = call_llm_api("prompt text", "model-primary", "https://api.example.com", "fake-key")
         self.assertEqual(result, "Fallback success")
         self.assertEqual(mock_post.call_count, 2)
+
+    def test_fallback_pool_excludes_primary_and_honors_env(self):
+        # Defaults are used when no env override, and the primary is filtered out.
+        with patch.dict("os.environ", {}, clear=False):
+            os.environ.pop("ROUTER_FALLBACK_MODELS", None)
+            pool = get_fallback_models("model-primary")
+            self.assertEqual(pool, DEFAULT_FALLBACK_MODELS)
+            self.assertNotIn("model-primary", get_fallback_models("tip/gemini-3.8-flash"))
+        with patch.dict("os.environ", {"ROUTER_FALLBACK_MODELS": "a/b, c/d ,, e/f"}):
+            self.assertEqual(get_fallback_models("a/b"), ["c/d", "e/f"])
+
+    def test_permanent_error_classification(self):
+        self.assertTrue(_is_permanent_llm_error(400, "User location is not supported"))
+        self.assertTrue(_is_permanent_llm_error(404, "No active credentials for provider: github"))
+        self.assertTrue(_is_permanent_llm_error(413, "Request too large ... Limit 8000"))
+        self.assertFalse(_is_permanent_llm_error(429, "rate limited"))
+        self.assertFalse(_is_permanent_llm_error(500, "internal server error"))
+        self.assertFalse(_is_permanent_llm_error(200, ""))
+
+    def test_oversize_error_detection(self):
+        self.assertTrue(_is_oversize_error(413, ""))
+        self.assertTrue(_is_oversize_error(400, "please reduce your message size"))
+        self.assertFalse(_is_oversize_error(429, "rate limited"))
+
+    @patch("requests.post")
+    def test_permanent_error_raises_without_endless_retry(self, mock_post):
+        """All-models-permanent failures raise PermanentLLMError after trying each once."""
+        import requests
+
+        def make_fail(status, message):
+            m = MagicMock()
+            m.status_code = status
+            m.json.return_value = {"error": {"message": message}}
+            m.text = message
+            err = requests.HTTPError(f"{status} error")
+            m.raise_for_status.side_effect = err
+            return m
+
+        mock_post.side_effect = [
+            make_fail(400, "User location is not supported"),
+            make_fail(413, "Request too large"),
+            make_fail(404, "No active credentials for provider: x"),
+            make_fail(403, "invalid api key"),
+        ]
+        with self.assertRaises(PermanentLLMError):
+            call_llm_api("prompt", "model-primary", "https://api.example.com", "fake-key")
+        # primary + 3 fallbacks = 4 attempts, each tried once (no compact retry w/o compact_prompt)
+        self.assertEqual(mock_post.call_count, 4)
+
+    @patch("requests.post")
+    def test_oversize_retries_same_model_with_compact_prompt(self, mock_post):
+        """A 413 triggers one retry of the SAME model using the compact prompt."""
+        import requests
+
+        oversize = MagicMock()
+        oversize.status_code = 413
+        oversize.json.return_value = {"error": {"message": "Request too large for model"}}
+        oversize.text = "Request too large"
+        oversize.raise_for_status.side_effect = requests.HTTPError("413")
+
+        ok = MagicMock()
+        ok.status_code = 200
+        ok.text = '{"choices": [{"message": {"content": "{\\"clips\\": []}"}}]}'
+        ok.json.return_value = {"choices": [{"message": {"content": '{"clips": []}'}}]}
+
+        mock_post.side_effect = [oversize, ok]
+
+        result = call_llm_api(
+            "FULL prompt", "model-primary", "https://api.example.com", "fake-key",
+            compact_prompt="COMPACT prompt",
+        )
+        self.assertEqual(result, '{"clips": []}')
+        self.assertEqual(mock_post.call_count, 2)
+        # Second call must use the compact prompt on the same primary model.
+        second_payload = mock_post.call_args_list[1].kwargs["json"]
+        self.assertEqual(second_payload["model"], "model-primary")
+        self.assertEqual(second_payload["messages"][0]["content"], "COMPACT prompt")
 
 
 class UtilsEnhancementTest(unittest.TestCase):

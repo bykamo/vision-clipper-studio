@@ -614,3 +614,35 @@ def build_transcript_text(segments):
         text = seg["text"].strip()
         lines.append(f"[{start} --> {end}] {text}")
     return "\n".join(lines)
+
+def build_compact_transcript_text(segments, block_seconds=20.0):
+    """Merge adjacent segments into larger timestamped blocks.
+
+    Produces a much smaller transcript (fewer timestamp markers) so it fits
+    models with tight token-per-minute limits. Timestamp precision stays good
+    enough for the LLM to pick clip boundaries.
+    """
+    if not segments:
+        return ""
+    blocks = []
+    cur_start = float(segments[0]["start"])
+    cur_end = float(segments[0]["end"])
+    cur_parts = [segments[0]["text"].strip()]
+
+    for seg in segments[1:]:
+        s = float(seg["start"])
+        e = float(seg["end"])
+        if (e - cur_start) > block_seconds:
+            blocks.append((cur_start, cur_end, " ".join(p for p in cur_parts if p)))
+            cur_start, cur_end, cur_parts = s, e, [seg["text"].strip()]
+        else:
+            cur_end = max(cur_end, e)
+            cur_parts.append(seg["text"].strip())
+    blocks.append((cur_start, cur_end, " ".join(p for p in cur_parts if p)))
+
+    lines = []
+    for start, end, text in blocks:
+        if not text:
+            continue
+        lines.append(f"[{format_timestamp(start)} --> {format_timestamp(end)}] {text}")
+    return "\n".join(lines)

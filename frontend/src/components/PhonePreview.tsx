@@ -426,10 +426,10 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     : '#fyp #podcast #viralkonten #tips';
 
   return (
-    <div className="flex flex-col h-full w-full rounded-2xl bg-[#10161f] border border-[#202b3a] p-3 sm:p-3.5 shadow-xl overflow-hidden">
+    <div className="flex flex-col h-full w-full rounded-2xl bg-[#090d13] border border-slate-800/80 p-3 sm:p-3.5 shadow-xl overflow-hidden">
 
       {/* ── TOP HEADER OF PREVIEW + SOCIAL PLATFORM SWITCHER ── */}
-      <div className="flex items-center justify-between mb-1.5 px-1 gap-2 flex-shrink-0">
+      <div className="flex items-center justify-between mb-3 px-1 gap-2 flex-shrink-0 pb-2.5 border-b border-slate-800/80">
         <div className="flex items-center gap-2 min-w-0">
           <ViewfinderCircleIcon className={`h-4 w-4 flex-shrink-0 ${isRenderedClip ? 'text-amber-400' : 'text-emerald-400'}`} />
           <div className="flex flex-col truncate">
@@ -1187,7 +1187,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
       {/* ── STUDIO TRANSPORT BAR ── */}
       <div
-        className={`ios26-glass w-full max-w-[480px] px-3.5 py-2 flex items-center gap-3 select-none flex-shrink-0 mt-1 transition-opacity duration-200 ${
+        className={`ios26-glass w-full max-w-[480px] px-3.5 py-2 flex items-center gap-3 select-none flex-shrink-0 mt-3 transition-opacity duration-200 ${
           isTransportDisabled ? 'opacity-70' : ''
         }`}
       >

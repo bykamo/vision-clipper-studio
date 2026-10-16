@@ -48,6 +48,7 @@ import { SubtitleStyleConfig, FramingMode } from '../types';
 import { SUBTITLE_PRESETS } from '../data/subtitlePresets';
 import { PhonePreview } from './PhonePreview';
 import { StudioSettingsModal } from './StudioSettingsModal';
+import { AnalyzingSkeleton, RenderingSkeleton } from './SkeletonLoading';
 
 interface AiProviderPreset {
   label: string;
@@ -1810,7 +1811,8 @@ export const SimpleClipperDashboard: React.FC = () => {
         </aside>
 
         {/* ── COLUMN 2: CENTER WORKSPACE (iPHONE PREVIEW MOCKUP) ── */}
-        <section className="flex min-h-0 flex-col rounded-2xl border border-slate-800/80 bg-[#090d13] p-3 sm:p-3.5 overflow-hidden">
+        {/* PhonePreview renders its own card (bg/border/padding) — no extra wrapper here */}
+        <section className="flex min-h-0 flex-col overflow-hidden">
           <PhonePreview
             framingMode={framingMode}
             selectedPresetId={selectedPresetId}
@@ -1857,9 +1859,9 @@ export const SimpleClipperDashboard: React.FC = () => {
               </div>
             )}
 
-            {/* 2. ANALYZING PHASE: Progress Visualizer */}
+            {/* 2. ANALYZING PHASE: Skeleton Loading (mimics upcoming clip cards) */}
             {phase === 'analyzing' && (
-              <div className={`rounded-2xl border ${themeClasses.card} p-4 shadow-xl flex flex-col h-full overflow-hidden justify-between`}>
+              <div className={`rounded-2xl border ${themeClasses.card} p-4 shadow-xl flex flex-col h-full overflow-hidden`}>
                 <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5 flex-shrink-0">
                   <div className="flex items-center gap-2">
                     <SparklesIcon className="h-4 w-4 text-emerald-400 animate-spin" />
@@ -1869,15 +1871,8 @@ export const SimpleClipperDashboard: React.FC = () => {
                   </div>
                   <span className="text-[11px] font-mono text-emerald-400 font-bold">{progress}%</span>
                 </div>
-                <div className="flex flex-col items-center justify-center text-center py-4 flex-1">
-                  <div className="h-10 w-10 rounded-full border-2 border-emerald-500/20 border-t-emerald-400 animate-spin mb-3" />
-                  <p className="text-xs font-semibold text-slate-200">Mendeteksi Momen Viral & Transkripsi Audio...</p>
-                  <p className="text-[11px] text-slate-400 max-w-xs mt-1 leading-relaxed">
-                    Groq Whisper & frame scanner sedang membedah video Anda. Hasil klip kandidat akan tampil di panel ini sesaat lagi.
-                  </p>
-                  <div className="w-full max-w-xs bg-slate-800/80 h-2 rounded-full mt-4 overflow-hidden border border-slate-700/50">
-                    <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300" style={{ width: `${progress}%` }} />
-                  </div>
+                <div className="flex-1 min-h-0 pt-3">
+                  <AnalyzingSkeleton />
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-slate-800/60 text-[10px] text-slate-500 font-mono flex-shrink-0">
                   <span>Model: Groq Whisper Cloud | Lang: {languageMode === 'en_to_id' ? 'EN ➔ ID' : languageMode.toUpperCase()}</span>
@@ -2078,9 +2073,9 @@ export const SimpleClipperDashboard: React.FC = () => {
               </div>
             )}
 
-            {/* 4. RENDERING PHASE: Progress Visualizer */}
+            {/* 4. RENDERING PHASE: Skeleton Loading (mimics upcoming output grid) */}
             {phase === 'rendering' && (
-              <div className={`rounded-2xl border ${themeClasses.card} p-4 shadow-xl flex flex-col h-full overflow-hidden justify-between`}>
+              <div className={`rounded-2xl border ${themeClasses.card} p-4 shadow-xl flex flex-col h-full overflow-hidden`}>
                 <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5 flex-shrink-0">
                   <div className="flex items-center gap-2">
                     <FilmIcon className="h-4 w-4 text-emerald-400 animate-pulse" />
@@ -2090,15 +2085,8 @@ export const SimpleClipperDashboard: React.FC = () => {
                   </div>
                   <span className="text-[11px] font-mono text-emerald-400 font-bold">{progress}%</span>
                 </div>
-                <div className="flex flex-col items-center justify-center text-center py-4 flex-1">
-                  <div className="h-10 w-10 rounded-full border-2 border-emerald-500/20 border-t-emerald-400 animate-spin mb-3" />
-                  <p className="text-xs font-semibold text-slate-200">Sedang Merender {confirmedClipCount} Klip Pilihan...</p>
-                  <p className="text-[11px] text-slate-400 max-w-xs mt-1 leading-relaxed">
-                    Auto-framing 9:16, subtitle styling, dan audio AAC sedang diproses oleh FFmpeg. Lihat log real-time di bawah.
-                  </p>
-                  <div className="w-full max-w-xs bg-slate-800/80 h-2 rounded-full mt-4 overflow-hidden border border-slate-700/50">
-                    <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300" style={{ width: `${progress}%` }} />
-                  </div>
+                <div className="flex-1 min-h-0 pt-3">
+                  <RenderingSkeleton count={confirmedClipCount || clipCount} />
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t border-slate-800/60 text-[10px] text-slate-500 font-mono flex-shrink-0">
                   <span>Preset: {selectedPresetId}</span>
@@ -2134,22 +2122,22 @@ export const SimpleClipperDashboard: React.FC = () => {
 
                 {/* Output Dir Banner */}
                 {outputDir && (
-                  <div className={`flex items-center justify-between rounded-xl border ${themeClasses.outputBanner} p-2.5 shadow-lg bg-[#161d26] mb-2 flex-shrink-0`}>
-                    <div className="flex items-center gap-2.5 truncate">
+                  <div className={`flex items-center justify-between gap-2 rounded-xl border ${themeClasses.outputBanner} p-2.5 shadow-lg bg-[#161d26] mb-2 flex-shrink-0 overflow-hidden`}>
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
                       <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-900 text-slate-300 border border-slate-800 flex-shrink-0">
                         <FolderOpenIcon className={`h-4 w-4 stroke-[2] ${themeClasses.accentText}`} />
                       </div>
-                      <div className="truncate">
-                        <h3 className="text-xs font-bold text-slate-100">Folder Output Siap</h3>
-                        <p className="text-[10px] font-mono text-slate-400 truncate max-w-[180px] sm:max-w-xs">
+                      <div className="min-w-0">
+                        <h3 className="text-xs font-bold text-slate-100 truncate">Folder Output Siap</h3>
+                        <p className="text-[10px] font-mono text-slate-400 truncate">
                           {outputDir}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
                       <button
                         onClick={handleOpenFolder}
-                        className={`flex items-center gap-1.5 rounded-xl ${themeClasses.accentBg} px-2.5 py-1 text-[11px] font-bold transition-colors flex-shrink-0 shadow-md active:scale-95`}
+                        className={`flex items-center gap-1.5 rounded-xl ${themeClasses.accentBg} px-2.5 py-1 text-[11px] font-bold transition-colors flex-shrink-0 shadow-md active:scale-95 whitespace-nowrap`}
                       >
                         <FolderOpenIcon className="h-3.5 w-3.5 stroke-[2]" />
                         <span>Buka Folder</span>
@@ -2157,7 +2145,7 @@ export const SimpleClipperDashboard: React.FC = () => {
                       {generatedClips.length > 0 && (
                         <button
                           onClick={() => setShowFolderModal(true)}
-                          className="rounded-xl border border-slate-700 bg-slate-800 px-2 py-1 text-[11px] font-semibold text-slate-200 hover:bg-slate-700 transition-colors"
+                          className="rounded-xl border border-slate-700 bg-slate-800 px-2 py-1 text-[11px] font-semibold text-slate-200 hover:bg-slate-700 transition-colors flex-shrink-0 whitespace-nowrap"
                         >
                           Detail
                         </button>

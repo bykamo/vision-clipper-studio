@@ -1,7 +1,22 @@
 import json
+import os
 import re
 import requests
 from backend.utils import log
+
+
+def env_int(key, default):
+    """Read an integer env var with a safe fallback."""
+    try:
+        return int(str(os.environ.get(key, "")).strip() or default)
+    except (ValueError, TypeError):
+        return default
+
+
+class PermanentLLMError(RuntimeError):
+    """Raised when every candidate model failed with a non-recoverable error
+    (e.g. location restriction, missing credentials). Retrying won't help."""
+
 
 def build_viral_prompt(transcript_text, num_clips, mode="hook"):
     if mode == "affiliate":
@@ -160,7 +175,67 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 """
     return prompt
 
-def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None):
+# ── LLM fallback pool ──
+# Models tried in order after the configured primary model fails. These are
+# verified to work on the default 9Router/kamodev gateway. Override with the
+# ROUTER_FALLBACK_MODELS env var (comma-separated).
+DEFAULT_FALLBACK_MODELS = [
+    "tip/gemini-3.8-flash",
+    "freemax",
+    "tip/mimo-v2.6.flash",
+]
+
+# Errors that mean "this model/request will never succeed" -> skip immediately.
+# 400 location-restricted, 401/403 auth, 404 no credentials/model, 413 payload
+# too large for this model's token budget.
+_PERMANENT_STATUS = {400, 401, 403, 404, 413, 422}
+_PERMANENT_MARKERS = (
+    "user location is not supported",
+    "no active credentials",
+    "missing api key",
+    "invalid api key",
+    "request too large",
+    "tokens per minute",
+    "context length",
+    "maximum context",
+    "does not exist",
+)
+
+# Errors where shrinking the transcript may let the same model succeed.
+_OVERSIZE_MARKERS = (
+    "request too large",
+    "tokens per minute",
+    "payload too large",
+    "context length",
+    "maximum context",
+    "reduce your message size",
+)
+
+
+def _is_permanent_llm_error(status_code, err_text=""):
+    """True when retrying this model with the same payload cannot succeed."""
+    text = (err_text or "").lower()
+    if any(marker in text for marker in _PERMANENT_MARKERS):
+        return True
+    return status_code in _PERMANENT_STATUS
+
+
+def _is_oversize_error(status_code, err_text=""):
+    """True when the request was rejected purely for being too large."""
+    text = (err_text or "").lower()
+    if status_code == 413:
+        return True
+    return any(marker in text for marker in _OVERSIZE_MARKERS)
+
+
+def get_fallback_models(primary=None):
+    """Resolve the ordered fallback model list (env override or defaults)."""
+    raw = (os.environ.get("ROUTER_FALLBACK_MODELS") or "").strip()
+    pool = [m.strip() for m in raw.split(",") if m.strip()] if raw else list(DEFAULT_FALLBACK_MODELS)
+    return [m for m in pool if m and m != primary]
+
+
+def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None, compact_prompt=None):
     if not endpoint.rstrip('/').endswith('/chat/completions'):
         endpoint = endpoint.rstrip('/') + '/chat/completions'
     
@@ -169,63 +244,101 @@ def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None):
         headers["Authorization"] = f"Bearer {api_key}"
 
     candidate_models = [model_name]
-    fallback_pool = ["groq/openai/gpt-oss-120b", "gh/gpt-4o-mini", "gh/gpt-4o"]
-    for fb in fallback_pool:
+    for fb in get_fallback_models(primary=model_name):
         if fb not in candidate_models:
             candidate_models.append(fb)
 
     last_error = None
+    permanent_only = True
     for m in candidate_models:
-        payload = {
-            "model": m,
-            "messages": [{"role": "user", "content": prompt}],
-            "stream": False,
-            "temperature": 0.7,
-        }
+        active_prompt = prompt
+        tried_compact = False
+        while True:
+            payload = {
+                "model": m,
+                "messages": [{"role": "user", "content": active_prompt}],
+                "stream": False,
+                "temperature": 0.7,
+            }
 
-        log(f"Sending transcript to '{m}' via {endpoint} for analysis...", job_id=job_id)
-        try:
-            response = requests.post(endpoint, json=payload, headers=headers, timeout=600)
-            if response.status_code != 200:
-                err_msg = ""
+            log(f"Sending transcript to '{m}' via {endpoint} for analysis...", job_id=job_id)
+            status_code = None
+            try:
+                # Per-request timeout (seconds). A hung/slow model must fail over
+                # to the fallback chain quickly instead of blocking for minutes.
+                req_timeout = env_int("ROUTER_LLM_TIMEOUT", 180)
+                response = requests.post(endpoint, json=payload, headers=headers, timeout=req_timeout)
+                status_code = response.status_code
+                if response.status_code != 200:
+                    err_msg = ""
+                    try:
+                        err_json = response.json()
+                        err_msg = err_json.get("error", {}).get("message", "") or json.dumps(err_json)
+                    except Exception:
+                        err_msg = response.text[:500]
+                    log(f"LLM API Error with '{m}' [{response.status_code}]: {err_msg}", job_id=job_id)
+                    if not _is_permanent_llm_error(response.status_code, err_msg):
+                        permanent_only = False
+                    # Payload too big: retry the SAME model once with a compact transcript.
+                    if (
+                        compact_prompt
+                        and not tried_compact
+                        and _is_oversize_error(response.status_code, err_msg)
+                    ):
+                        tried_compact = True
+                        active_prompt = compact_prompt
+                        log(f"Model '{m}': payload terlalu besar, mencoba ulang dengan transkrip terkompresi...", job_id=job_id)
+                        continue
+                    response.raise_for_status()
+
+                # Handle standard JSON or SSE chunked formats
+                resp_text = response.text.strip()
+                if resp_text.startswith("data:"):
+                    collected = []
+                    for line in resp_text.splitlines():
+                        line = line.strip()
+                        if line.startswith("data:") and not line.endswith("[DONE]"):
+                            raw = line[5:].strip()
+                            try:
+                                chunk = json.loads(raw)
+                                delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                                if delta:
+                                    collected.append(delta)
+                            except Exception:
+                                pass
+                    if collected:
+                        return "".join(collected)
+
+                data = response.json()
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                if content and content.strip():
+                    return content
+                log(f"Unexpected response shape from LLM endpoint with '{m}': {json.dumps(data)[:500]}", job_id=job_id)
+                permanent_only = False
+                break
+            except Exception as e:
+                last_error = e
+                err_text = ""
                 try:
-                    err_json = response.json()
-                    err_msg = err_json.get("error", {}).get("message", "") or json.dumps(err_json)
+                    err_text = e.response.text[:500] if getattr(e, "response", None) is not None else str(e)
                 except Exception:
-                    err_msg = response.text[:500]
-                log(f"LLM API Error with '{m}' [{response.status_code}]: {err_msg}", job_id=job_id)
-                response.raise_for_status()
-
-            # Handle standard JSON or SSE chunked formats
-            resp_text = response.text.strip()
-            if resp_text.startswith("data:"):
-                collected = []
-                for line in resp_text.splitlines():
-                    line = line.strip()
-                    if line.startswith("data:") and not line.endswith("[DONE]"):
-                        raw = line[5:].strip()
-                        try:
-                            chunk = json.loads(raw)
-                            delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                            if delta:
-                                collected.append(delta)
-                        except Exception:
-                            pass
-                if collected:
-                    return "".join(collected)
-
-            data = response.json()
-            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            if content and content.strip():
-                return content
-            log(f"Unexpected response shape from LLM endpoint with '{m}': {json.dumps(data)[:500]}", job_id=job_id)
-        except Exception as e:
-            last_error = e
-            if m != candidate_models[-1]:
-                log(f"Model '{m}' gagal ({e}), otomatis beralih ke model fallback berikutnya...", job_id=job_id)
-            continue
+                    err_text = str(e)
+                code = status_code if status_code is not None else getattr(getattr(e, "response", None), "status_code", None)
+                if not _is_permanent_llm_error(code, err_text):
+                    permanent_only = False
+                # Retry same model with compact transcript if we haven't yet.
+                if compact_prompt and not tried_compact and _is_oversize_error(code, err_text):
+                    tried_compact = True
+                    active_prompt = compact_prompt
+                    log(f"Model '{m}': payload terlalu besar, mencoba ulang dengan transkrip terkompresi...", job_id=job_id)
+                    continue
+                if m != candidate_models[-1]:
+                    log(f"Model '{m}' gagal ({e}), otomatis beralih ke model fallback berikutnya...", job_id=job_id)
+                break
 
     if last_error:
+        if permanent_only:
+            raise PermanentLLMError(str(last_error)) from last_error
         raise last_error
     return ""
 

@@ -166,7 +166,10 @@ def start_server():
 
     # Launch as a fully detached process (survives terminal close)
     popen_kwargs = {
-        "close_fds": True,
+        # Detach stdio completely: if the server inherits the terminal's stdin,
+        # closing that terminal leaves fd 0 stale and any child process spawned
+        # later (worker) aborts with "init_sys_streams: Bad file descriptor".
+        "stdin": subprocess.DEVNULL,
         "stdout": subprocess.DEVNULL,
         "stderr": subprocess.DEVNULL,
     }
