@@ -1,9 +1,6 @@
 import React from 'react';
 import {
   Settings2,
-  Cpu,
-  Mic,
-  Youtube,
   Check,
   CheckCircle2,
   XCircle,
@@ -12,11 +9,12 @@ import {
   RefreshCw,
   Eye,
   EyeOff,
-  Sparkles,
   ArrowUpRight,
   ShieldCheck,
   Server,
-  Power
+  Power,
+  Plug,
+  Cpu
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -24,6 +22,14 @@ import { Badge } from './ui/badge';
 import { Card } from './ui/card';
 import { Label } from './ui/label';
 import { Separator } from './ui/separator';
+import {
+  OpenAILogo,
+  GroqLogo,
+  OpenRouterLogo,
+  DeepSeekLogo,
+  TikTokLogo,
+  YouTubeLogo
+} from './BrandIcons';
 
 export interface AiProviderPreset {
   label: string;
@@ -128,6 +134,23 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
 }) => {
   if (!open) return null;
 
+  /** Resolve the official brand mark for a provider key. */
+  const renderProviderLogo = (pKey: string, isSelected: boolean) => {
+    const tone = isSelected ? 'text-white' : 'text-slate-300';
+    switch (pKey) {
+      case 'openrouter':
+        return <OpenRouterLogo className={`h-5 w-5 ${tone}`} />;
+      case 'openai':
+        return <OpenAILogo className={`h-5 w-5 ${tone}`} />;
+      case 'groq_llm':
+        return <GroqLogo className={`h-5 w-5 ${tone}`} />;
+      case 'deepseek':
+        return <DeepSeekLogo className={`h-5 w-5 ${isSelected ? 'text-sky-400' : 'text-sky-300/80'}`} />;
+      default:
+        return <Plug className={`h-5 w-5 ${isSelected ? 'text-emerald-400' : 'text-slate-400'}`} />;
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-3 sm:p-5 md:p-8 animate-in fade-in-0 duration-200">
       <div className="w-full max-w-5xl h-[680px] max-h-[92vh] rounded-2xl border border-slate-800/80 bg-[#0f141b] p-0 shadow-[0_25px_60px_rgba(0,0,0,0.85)] text-slate-100 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 font-['Instrument_Sans',_'Plus_Jakarta_Sans',_sans-serif]">
@@ -169,21 +192,27 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                 Kategori Pengaturan
               </p>
 
-              <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-1 md:pb-0 scrollbar-none">
+              <nav className="flex md:flex-col gap-1.5 overflow-x-auto md:overflow-visible pb-1 md:pb-0 scrollbar-none">
                 {/* 1. Model AI */}
                 <button
                   type="button"
                   onClick={() => setActiveTab('ai')}
-                  className={`flex items-center justify-between w-full px-3 py-2.5 rounded-xl text-left text-sm transition-all cursor-pointer group ${
+                  className={`flex items-center justify-between w-full px-2.5 py-2.5 rounded-xl text-left transition-all cursor-pointer group ${
                     activeTab === 'ai'
-                      ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/40 shadow-xs font-semibold'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/80 border border-transparent'
+                      ? 'bg-emerald-950/50 border border-emerald-500/40 shadow-xs'
+                      : 'border border-transparent hover:bg-slate-900/80'
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <Cpu className={`h-4 w-4 flex-shrink-0 ${activeTab === 'ai' ? 'text-emerald-400' : 'text-slate-400 group-hover:text-slate-200'}`} />
+                    <span className={`flex h-8 w-8 items-center justify-center rounded-lg border flex-shrink-0 transition-colors ${
+                      activeTab === 'ai'
+                        ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                        : 'bg-slate-900/90 border-slate-800 text-slate-400 group-hover:text-slate-200'
+                    }`}>
+                      <Cpu className="h-4 w-4" />
+                    </span>
                     <div className="min-w-0">
-                      <span className="block truncate text-xs sm:text-sm font-semibold leading-tight">
+                      <span className={`block truncate text-xs sm:text-sm font-semibold leading-tight ${activeTab === 'ai' ? 'text-emerald-200' : 'text-slate-200'}`}>
                         Model AI (LLM)
                       </span>
                       <span className={`hidden md:block text-[11px] truncate mt-0.5 font-normal ${
@@ -211,16 +240,22 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setActiveTab('whisper')}
-                  className={`flex items-center justify-between w-full px-3 py-2.5 rounded-xl text-left text-sm transition-all cursor-pointer group ${
+                  className={`flex items-center justify-between w-full px-2.5 py-2.5 rounded-xl text-left transition-all cursor-pointer group ${
                     activeTab === 'whisper'
-                      ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/40 shadow-xs font-semibold'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/80 border border-transparent'
+                      ? 'bg-emerald-950/50 border border-emerald-500/40 shadow-xs'
+                      : 'border border-transparent hover:bg-slate-900/80'
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <Mic className={`h-4 w-4 flex-shrink-0 ${activeTab === 'whisper' ? 'text-emerald-400' : 'text-slate-400 group-hover:text-slate-200'}`} />
+                    <span className={`flex h-8 w-8 items-center justify-center rounded-lg border flex-shrink-0 transition-colors ${
+                      activeTab === 'whisper'
+                        ? 'bg-orange-500/15 border-orange-500/40 text-orange-300'
+                        : 'bg-slate-900/90 border-slate-800 text-slate-400 group-hover:text-slate-200'
+                    }`}>
+                      <GroqLogo className="h-4 w-4" />
+                    </span>
                     <div className="min-w-0">
-                      <span className="block truncate text-xs sm:text-sm font-semibold leading-tight">
+                      <span className={`block truncate text-xs sm:text-sm font-semibold leading-tight ${activeTab === 'whisper' ? 'text-emerald-200' : 'text-slate-200'}`}>
                         Groq Whisper
                       </span>
                       <span className={`hidden md:block text-[11px] truncate mt-0.5 font-normal ${
@@ -248,16 +283,22 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setActiveTab('youtube')}
-                  className={`flex items-center justify-between w-full px-3 py-2.5 rounded-xl text-left text-sm transition-all cursor-pointer group ${
+                  className={`flex items-center justify-between w-full px-2.5 py-2.5 rounded-xl text-left transition-all cursor-pointer group ${
                     activeTab === 'youtube'
-                      ? 'bg-red-950/40 text-red-300 border border-red-500/40 shadow-xs font-semibold'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/80 border border-transparent'
+                      ? 'bg-red-950/40 border border-red-500/40 shadow-xs'
+                      : 'border border-transparent hover:bg-slate-900/80'
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <Youtube className="h-4 w-4 text-red-500 flex-shrink-0" />
+                    <span className={`flex h-8 w-8 items-center justify-center rounded-lg border flex-shrink-0 transition-colors ${
+                      activeTab === 'youtube'
+                        ? 'bg-red-500/15 border-red-500/40 text-red-400'
+                        : 'bg-slate-900/90 border-slate-800 text-slate-400 group-hover:text-slate-200'
+                    }`}>
+                      <YouTubeLogo className="h-4 w-4" />
+                    </span>
                     <div className="min-w-0">
-                      <span className="block truncate text-xs sm:text-sm font-semibold leading-tight">
+                      <span className={`block truncate text-xs sm:text-sm font-semibold leading-tight ${activeTab === 'youtube' ? 'text-red-200' : 'text-slate-200'}`}>
                         YouTube Shorts
                       </span>
                       <span className={`hidden md:block text-[11px] truncate mt-0.5 font-normal ${
@@ -285,16 +326,22 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setActiveTab('tiktok')}
-                  className={`flex items-center justify-between w-full px-3 py-2.5 rounded-xl text-left text-sm transition-all cursor-pointer group ${
+                  className={`flex items-center justify-between w-full px-2.5 py-2.5 rounded-xl text-left transition-all cursor-pointer group ${
                     activeTab === 'tiktok'
-                      ? 'bg-cyan-950/40 text-cyan-300 border border-cyan-500/40 shadow-xs font-semibold'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/80 border border-transparent'
+                      ? 'bg-cyan-950/40 border border-cyan-500/40 shadow-xs'
+                      : 'border border-transparent hover:bg-slate-900/80'
                   }`}
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <Sparkles className="h-4 w-4 text-cyan-400 flex-shrink-0" />
+                    <span className={`flex h-8 w-8 items-center justify-center rounded-lg border flex-shrink-0 transition-colors ${
+                      activeTab === 'tiktok'
+                        ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
+                        : 'bg-slate-900/90 border-slate-800 text-slate-400 group-hover:text-slate-200'
+                    }`}>
+                      <TikTokLogo className="h-4 w-4" />
+                    </span>
                     <div className="min-w-0">
-                      <span className="block truncate text-xs sm:text-sm font-semibold leading-tight">
+                      <span className={`block truncate text-xs sm:text-sm font-semibold leading-tight ${activeTab === 'tiktok' ? 'text-cyan-200' : 'text-slate-200'}`}>
                         TikTok Studio
                       </span>
                       <span className={`hidden md:block text-[11px] truncate mt-0.5 font-normal ${
@@ -394,23 +441,32 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                             key={pKey}
                             type="button"
                             onClick={() => handleSelectProvider(pKey)}
-                            className={`flex flex-col items-start p-3 rounded-xl border text-left transition-all cursor-pointer relative ${
+                            className={`group flex flex-col items-start gap-2 p-3 rounded-xl border text-left transition-all cursor-pointer relative ${
                               isSelected
-                                ? 'border-emerald-500/80 bg-emerald-950/40 shadow-sm ring-1 ring-emerald-500/50 text-white'
-                                : 'border-slate-800 bg-[#131820]/70 text-slate-400 hover:border-slate-700 hover:text-slate-200 hover:bg-[#131820]'
+                                ? 'border-emerald-500/80 bg-gradient-to-b from-emerald-950/50 to-emerald-950/20 shadow-sm ring-1 ring-emerald-500/50'
+                                : 'border-slate-800 bg-[#131820]/70 hover:border-slate-700 hover:bg-[#131820]'
                             }`}
                           >
-                            <div className="flex items-center justify-between w-full mb-1">
-                              <span className={`text-xs font-bold leading-tight truncate ${isSelected ? 'text-white' : 'text-slate-300'}`}>
-                                {shortLabel}
+                            <div className="flex items-center justify-between w-full">
+                              <span className={`flex h-9 w-9 items-center justify-center rounded-lg border flex-shrink-0 transition-colors ${
+                                isSelected
+                                  ? 'bg-emerald-500/10 border-emerald-500/30'
+                                  : 'bg-slate-900/80 border-slate-800 group-hover:border-slate-700'
+                              }`}>
+                                {renderProviderLogo(pKey, isSelected)}
                               </span>
                               {isSelected && (
-                                <Check className="h-3 w-3 text-emerald-400 flex-shrink-0" />
+                                <Check className="h-3.5 w-3.5 text-emerald-400 flex-shrink-0" />
                               )}
                             </div>
-                            <span className={`text-[10px] font-mono block truncate w-full ${isSelected ? 'text-emerald-300' : 'text-slate-500'}`}>
-                              {badgeText}
-                            </span>
+                            <div className="min-w-0 w-full">
+                              <span className={`block text-xs font-bold leading-tight truncate ${isSelected ? 'text-white' : 'text-slate-200'}`}>
+                                {shortLabel}
+                              </span>
+                              <span className={`text-[10px] font-mono block truncate w-full mt-0.5 ${isSelected ? 'text-emerald-300' : 'text-slate-500'}`}>
+                                {badgeText}
+                              </span>
+                            </div>
                           </button>
                         );
                       })}
@@ -811,7 +867,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                     /* Disconnected State */
                     <Card className="border-slate-800/80 bg-[#131820] text-center p-6 sm:p-8 space-y-5">
                       <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-600/20 text-red-500 border border-red-500/40 shadow-inner">
-                        <Youtube className="h-7 w-7" />
+                        <YouTubeLogo className="h-7 w-7" />
                       </div>
 
                       <div className="space-y-1.5 max-w-md mx-auto">
@@ -843,7 +899,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                           onClick={handleConnectYouTube}
                           className="bg-red-600 hover:bg-red-500 text-white font-bold"
                         >
-                          <Youtube className="h-4 w-4" />
+                          <YouTubeLogo className="h-4 w-4" />
                           <span>Hubungkan Channel YouTube (Google OAuth)</span>
                         </Button>
                       </div>
@@ -983,7 +1039,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                     onClick={handleConnectYouTube}
                     className="bg-red-600 hover:bg-red-500 text-white font-bold"
                   >
-                    <Youtube className="h-4 w-4" />
+                    <YouTubeLogo className="h-4 w-4" />
                     <span>Hubungkan YouTube</span>
                   </Button>
                 )
