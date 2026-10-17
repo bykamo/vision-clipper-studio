@@ -13,6 +13,14 @@ def env_int(key, default):
         return default
 
 
+def env_float(key, default):
+    """Read a float env var with a safe fallback."""
+    try:
+        return float(str(os.environ.get(key, "")).strip() or default)
+    except (ValueError, TypeError):
+        return default
+
+
 class PermanentLLMError(RuntimeError):
     """Raised when every candidate model failed with a non-recoverable error
     (e.g. location restriction, missing credentials). Retrying won't help."""
@@ -62,17 +70,40 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 - Segments MUST NOT overlap.
 - If possible, include the CTA/product mention within the segment. If the CTA is nearby, extend the segment to include it.
 - `viral_score` ranges from 0-100. Score based on: hook strength (30%), sales potential (40%), emotional impact (15%), shareability (15%).
+- SCORING CALIBRATION:
+  * Skor adalah RELATIVE RANKING antar kandidat di transkrip ini, bukan skor absolut.
+  * Tidak boleh ada dua klip dengan selisih < 3 poin.
+  * 90+ HANYA untuk segmen yang secara objektif luar biasa (hook kuat + emosi tinggi + quotable). Klip rata-rata harus di 60-75.
+
+### 2b. RETENTION ENGINEERING:
+- Prefer durasi 45-80 detik. Hanya gunakan 90-150s jika arc-nya benar-benar padat tanpa bagian lambat.
+- Buang filler, jeda diam, dan pengulangan dari segmen — mulai tepat sebelum hook, akhiri tepat setelah payoff.
+- Utamakan segmen dengan "open loop" di tengah (cerita yang payoff-nya ditunda) agar penonton menonton sampai habis.
+- Ending ideal: punchline/takeaway yang terasa menyambung kembali ke pembukaan (rewatch/loop-friendly).
+
+### 2c. TITLE OPTIONS (HOOK OVERLAY):
+- title_options[0] (angle paling curiosity) akan dipakai sebagai teks overlay di 3 detik pertama video:
+  * Maksimal 8 kata, ada angka atau spesifik (contoh: "3 kesalahan...", "Rp50 ribu...", "90% orang...").
+  * Tidak boleh clickbait palsu — janjinya harus terbayar dalam klip.
 
 ### 3. CAPTION GUIDELINES (100% HUMAN CREATOR TONE, NO AI VIBES):
 - Write like an authentic Indonesian TikTok / Reels affiliate creator. Use natural, conversational colloquial Indonesian (lu-gue/gw/lo/aja/nih/banget/kan/worth it).
 - Length: 1-2 punchy, concise sentences (max 100-120 chars). Maximum 1 emoji (e.g. 😭, 🤯, 🔥).
+- TIKTOK SEO: Sisipkan 1-2 keyword pencarian yang orang Indonesia ketik di search (contoh: "cara", "tips", "review", "alasan kenapa", nama produk) secara NATURAL dalam 40-50 karakter pertama caption. Kalimat pembuka caption = kalimat yang terlihat sebelum "...selengkapnya" di feed.
+- SHOP CTA: Jika produk tersedia di TikTok Shop, akhiri caption dengan CTA belanja natural seperti "ada di keranjang kuning 🛒" atau "cek keranjang kuning sebelum kehabisan". Maksimal 1 CTA per caption, jangan menagih.
+- ANGKA = HOOK KUAT: Jika ada promo/diskon/harga yang disebut di segmen, masukkan angkanya di caption (contoh: "cuma Rp50 ribu").
 - ABSOLUTE PROHIBITION - NEVER END WITH A QUESTION: Do NOT end with questions or engagement bait like "Gimana menurut kalian?", "Setuju gak?", "Pernah ngalamin?", "Coba komen di bawah!", "Ada yang relate?". The caption MUST end with a strong, definitive statement, benefit takeaway, or relatable insight.
 - FORBIDDEN BANNED AI WORDS: "Apakah kamu", "Ini dia", "Pernahkah Anda", "Yuk simak", "Tonton sampai habis", "Tahukah kamu", "Fakta menarik", "Jangan lewatkan", "Simak penjelasannya".
 - GOOD EXAMPLES:
+  * "Review jujur headset Rp50 ribu ini, buat meeting online aman banget, ada di keranjang kuning 🛒"
   * "Nyesel baru tau barang ini sekarang, beneran ngebantu banget pas kerjaan numpuk 😭"
   * "Solusi paling masuk akal buat yang pengen rapi tanpa harus keluar modal jutaan."
-  * "Ternyata ini alasan kenapa barang murah gini bisa laku ratusan ribu pcs."
-- HASHTAGS: Provide EXACTLY 4 to 5 HIGH-TRAFFIC, targeted Indonesian viral hashtags with '#' prefix directly matching the product and niche (e.g. ["#fyp", "#racuntiktok", "#gadget", "#rekomendasi", "#trending"]). DO NOT output more than 5 hashtags.
+- HASHTAG STRATEGY (untuk distribusi akun kecil/baru):
+  * Maksimal 1 tag broad (contoh: #fyp). JANGAN pakai #viral, #trending, #beranda, #foryou.
+  * 2-3 tag NICHE spesifik yang mendeskripsikan TOPIK PERSIS klip ini (contoh: #reviewgadget, #headsetmurah, #tipsshop).
+  * 1-2 tag komunitas medium (pemirsa aktif, kompetisi rendah).
+  * 1 tag nama produk/brand jika disebut di transkrip (contoh: #namaproduk).
+  * Total 4-5 tag. Tag harus membantu algoritma MENGKATEGORIKAN video, bukan sekadar ngejar traffic.
 
 ## RESPONSE FORMAT (ONLY valid JSON, no explanation, no markdown)
 
@@ -87,8 +118,8 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
       "reason": "Why this converts — which sales psychology triggers are present",
       "viral_score": 95,
       "sales_score": 88,
-      "caption": "Nyesel baru tau barang ini sekarang, beneran ngebantu pas kerjaan numpuk 😭",
-      "hashtags": ["#fyp", "#racuntiktok", "#gadget", "#rekomendasi", "#trending"]
+      "caption": "Review jujur headset Rp50 ribu ini, buat meeting online aman banget, ada di keranjang kuning 🛒",
+      "hashtags": ["#fyp", "#reviewgadget", "#headsetmurah", "#tipsonline", "#namaproduk"]
     }}
   ]
 }}
@@ -141,10 +172,26 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 - Segments MUST NOT overlap.
 - `title_options` should provide 3 distinct angles: (1) curiosity-driven, (2) benefit-driven, (3) controversial/provocative.
 - `viral_score` ranges from 0-100. Weight: hook strength (35%), emotional intensity (25%), shareability (20%), comment potential (20%).
+- SCORING CALIBRATION:
+  * Skor adalah RELATIVE RANKING antar kandidat di transkrip ini, bukan skor absolut.
+  * Tidak boleh ada dua klip dengan selisih < 3 poin.
+  * 90+ HANYA untuk segmen yang secara objektif luar biasa (hook kuat + emosi tinggi + quotable). Klip rata-rata harus di 60-75.
+
+### 2b. RETENTION ENGINEERING:
+- Prefer durasi 45-80 detik. Hanya gunakan 90-150s jika arc-nya benar-benar padat tanpa bagian lambat.
+- Buang filler, jeda diam, dan pengulangan dari segmen — mulai tepat sebelum hook, akhiri tepat setelah payoff.
+- Utamakan segmen dengan "open loop" di tengah (cerita yang payoff-nya ditunda) agar penonton menonton sampai habis.
+- Ending ideal: punchline/takeaway yang terasa menyambung kembali ke pembukaan (rewatch/loop-friendly).
+
+### 2c. TITLE OPTIONS (HOOK OVERLAY):
+- title_options[0] (angle paling curiosity) akan dipakai sebagai teks overlay di 3 detik pertama video:
+  * Maksimal 8 kata, ada angka atau spesifik (contoh: "3 kesalahan...", "90% orang...", "Alasan kenapa...").
+  * Tidak boleh clickbait palsu — janjinya harus terbayar dalam klip.
 
 ### 3. CAPTION GUIDELINES (100% HUMAN CREATOR TONE, NO AI VIBES):
 - Write like an authentic Indonesian podcast/video clipper posting on TikTok, Shorts, or Instagram Reels. Use natural, everyday colloquial Indonesian (lu-gue/gw/lo/aja/nih/banget/kan/parah/asli).
 - Length: 1-2 punchy, concise sentences (max 100-120 chars). Maximum 1 subtle emoji (e.g. 🗿, 💀, 🤯, 🔥) or no emoji.
+- TIKTOK SEO: Sisipkan 1-2 keyword pencarian yang orang Indonesia ketik di search (contoh: "alasan kenapa", "cara", "mindset", "psikologi", topik spesifik klip) secara NATURAL dalam 40-50 karakter pertama caption. Kalimat pembuka caption = kalimat yang terlihat sebelum "...selengkapnya" di feed.
 - ABSOLUTE PROHIBITION - NEVER END WITH A QUESTION: Do NOT end with questions or engagement bait like "Gimana menurut kalian?", "Setuju gak?", "Pernah ngalamin hal serupa?", "Kalian tim mana nih?", "Coba komen di bawah!", "Ada yang ngerasa gini juga?". The caption MUST end with a strong, definitive statement, hard-hitting observation, or brutal truth takeaway.
 - FORBIDDEN BANNED AI WORDS: "Apakah kamu", "Ini dia", "Pernahkah Anda", "Yuk simak", "Tonton sampai habis", "Tahukah kamu", "Fakta menariknya", "Simak baik-baik", "Mari kita bahas", "Jangan lewatkan".
 - GOOD EXAMPLES:
@@ -152,7 +199,11 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
   * "Mindset kayak gini yang bikin banyak orang stuck bertahun-tahun tanpa sadar."
   * "Alasan kenapa orang yang beneran kompeten justru jarang banyak omong di publik."
   * "Ternyata ini penyebab utama kenapa generasi sekarang gampang banget burnout."
-- HASHTAGS: Provide EXACTLY 4 to 5 HIGH-TRAFFIC, targeted Indonesian viral hashtags with '#' prefix directly matching the video topic (e.g. ["#fyp", "#mindset", "#bisnis", "#edukasi", "#beranda"]). DO NOT output more than 5 hashtags.
+- HASHTAG STRATEGY (untuk distribusi akun kecil/baru):
+  * Maksimal 1 tag broad (contoh: #fyp). JANGAN pakai #viral, #trending, #beranda, #foryou.
+  * 2-3 tag NICHE spesifik yang mendeskripsikan TOPIK PERSIS klip ini (contoh: #mindsetbisnis, #psikologija, #keuanganpribadi, #caradagang).
+  * 1-2 tag komunitas medium (pemirsa aktif, kompetisi rendah).
+  * Total 4-5 tag. Tag harus membantu algoritma MENGKATEGORIKAN video, bukan sekadar ngejar traffic.
 
 ## RESPONSE FORMAT (ONLY valid JSON, no explanation, no markdown)
 
@@ -165,7 +216,7 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
       "reason": "Which viral triggers from the framework are present and why this will go viral",
       "viral_score": 95,
       "caption": "Realita pahit kenapa kerja keras doang gak bakal bikin lu kaya kalau polanya salah 🗿",
-      "hashtags": ["#fyp", "#mindset", "#bisnis", "#edukasi", "#beranda"]
+      "hashtags": ["#fyp", "#mindsetbisnis", "#psikologija", "#keuanganpribadi"]
     }}
   ]
 }}
@@ -259,7 +310,7 @@ def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None, compact_pro
                 "model": m,
                 "messages": [{"role": "user", "content": active_prompt}],
                 "stream": False,
-                "temperature": 0.7,
+                "temperature": env_float("ROUTER_LLM_TEMPERATURE", 0.4),
             }
 
             log(f"Sending transcript to '{m}' via {endpoint} for analysis...", job_id=job_id)

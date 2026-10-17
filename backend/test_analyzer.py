@@ -37,9 +37,29 @@ class AnalyzerTest(unittest.TestCase):
         prompt_hook = build_viral_prompt(transcript, num_clips=3, mode="hook")
         self.assertIn("VIRAL DETECTION FRAMEWORK", prompt_hook)
         self.assertIn(transcript, prompt_hook)
+        self.assertIn("HASHTAG STRATEGY", prompt_hook)
+        self.assertIn("TIKTOK SEO", prompt_hook)
+        self.assertIn("RETENTION ENGINEERING", prompt_hook)
+        self.assertIn("SCORING CALIBRATION", prompt_hook)
+        self.assertIn("TITLE OPTIONS (HOOK OVERLAY)", prompt_hook)
 
         prompt_affiliate = build_viral_prompt(transcript, num_clips=2, mode="affiliate")
         self.assertIn("AFFILIATE SALES", prompt_affiliate)
+        self.assertIn("HASHTAG STRATEGY", prompt_affiliate)
+        self.assertIn("TIKTOK SEO", prompt_affiliate)
+        self.assertIn("RETENTION ENGINEERING", prompt_affiliate)
+        self.assertIn("SCORING CALIBRATION", prompt_affiliate)
+        self.assertIn("TITLE OPTIONS (HOOK OVERLAY)", prompt_affiliate)
+        self.assertIn("keranjang kuning", prompt_affiliate)
+        self.assertNotIn("keranjang kuning", prompt_hook)
+
+    def test_env_float_temperature(self):
+        from backend.analyzer import env_float
+        with patch.dict(os.environ, {"ROUTER_LLM_TEMPERATURE": "0.55"}):
+            self.assertEqual(env_float("ROUTER_LLM_TEMPERATURE", 0.4), 0.55)
+        self.assertEqual(env_float("ROUTER_LLM_TEMPERATURE_NOT_SET", 0.4), 0.4)
+        with patch.dict(os.environ, {"ROUTER_LLM_TEMPERATURE": "bukan-angka"}):
+            self.assertEqual(env_float("ROUTER_LLM_TEMPERATURE", 0.4), 0.4)
 
     @patch("requests.post")
     def test_call_llm_api_standard_response(self, mock_post):
