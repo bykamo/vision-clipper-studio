@@ -10,7 +10,6 @@ import {
   Eye,
   EyeOff,
   ArrowUpRight,
-  ShieldCheck,
   Server,
   Power,
   Plug,
@@ -174,7 +173,6 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
     idleChip: string;
     activeText: string;
     activeDesc: string;
-    status: React.ReactNode;
   }> = [
     {
       key: 'ai',
@@ -185,11 +183,6 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
       idleChip: 'bg-slate-900/90 border-slate-800 text-slate-400',
       activeText: 'text-emerald-200',
       activeDesc: 'text-emerald-400/80',
-      status: aiConfig?.ready ? (
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]" />
-      ) : (
-        <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.9)]" />
-      ),
     },
     {
       key: 'whisper',
@@ -200,11 +193,6 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
       idleChip: 'bg-slate-900/90 border-slate-800 text-slate-400',
       activeText: 'text-orange-200',
       activeDesc: 'text-orange-400/80',
-      status: aiConfig?.groq_key_set ? (
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]" />
-      ) : (
-        <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.9)]" />
-      ),
     },
     {
       key: 'youtube',
@@ -215,11 +203,6 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
       idleChip: 'bg-slate-900/90 border-slate-800 text-slate-400',
       activeText: 'text-red-200',
       activeDesc: 'text-red-400/80',
-      status: ytConnected && ytChannel ? (
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.9)]" />
-      ) : (
-        <span className="h-1.5 w-1.5 rounded-full bg-slate-600" />
-      ),
     },
     {
       key: 'tiktok',
@@ -230,7 +213,6 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
       idleChip: 'bg-slate-900/90 border-slate-800 text-slate-400',
       activeText: 'text-cyan-200',
       activeDesc: 'text-cyan-400/80',
-      status: <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.9)]" />,
     },
   ];
 
@@ -274,14 +256,6 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <span className={`hidden sm:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
-              aiConfig?.ready
-                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                : 'border-amber-500/40 bg-amber-500/10 text-amber-300'
-            }`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${aiConfig?.ready ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-              {aiConfig?.ready ? 'Engine Aktif' : 'Engine Belum Siap'}
-            </span>
             <span className={`hidden md:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
               aiConfig?.groq_key_set
                 ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
@@ -335,11 +309,6 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                           : 'border border-transparent hover:bg-slate-900/80'
                       }`}
                     >
-                      {/* Active accent bar */}
-                      {isActive && (
-                        <span className="absolute left-0 top-1/2 -translate-y-1/2 h-6 w-[3px] rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" aria-hidden="true" />
-                      )}
-
                       <div className="flex items-center gap-3 min-w-0">
                         <span className={`flex h-8 w-8 items-center justify-center rounded-lg border flex-shrink-0 transition-colors ${
                           isActive ? item.activeChip : `${item.idleChip} group-hover:text-slate-200`
@@ -356,10 +325,6 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                             {item.desc}
                           </span>
                         </div>
-                      </div>
-
-                      <div className="ml-2 flex-shrink-0 flex items-center">
-                        {item.status}
                       </div>
                     </button>
                   );
@@ -398,10 +363,6 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                   Ready
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 leading-tight flex items-center gap-1">
-                <ShieldCheck className="h-3 w-3 text-emerald-400/80 flex-shrink-0" />
-                <span>Token & key tersimpan aman di lokal</span>
-              </p>
               <button
                 type="button"
                 onClick={onShutdown}
