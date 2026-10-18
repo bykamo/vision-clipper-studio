@@ -53,7 +53,7 @@ def main():
     parser.add_argument("--job-id", type=int, default=None, help="Job ID for DB logging")
     parser.add_argument("--model", type=str, default="groq", choices=["groq"], help="Transcription provider (Groq Whisper Cloud)")
     parser.add_argument("--out-dir", type=str, default=DEFAULT_OUT_DIR, help="Output directory")
-    parser.add_argument("--sub-style", type=str, default="tiktok_viral", choices=["tiktok_viral", "classic_karaoke", "minimalist", "word_pop", "no_subtitle", "none"], help="Subtitle style")
+    parser.add_argument("--sub-style", type=str, default="tiktok_viral", choices=["tiktok_viral", "classic_karaoke", "minimalist", "word_pop", "translation_read", "no_subtitle", "none"], help="Subtitle style")
     parser.add_argument("--framing-mode", type=str, default="smart_crop", choices=["smart_crop", "fit_blur", "split_screen"], help="Video layout framing mode")
     parser.add_argument("--sub-position", type=int, default=68, help="Subtitle vertical position percentage from top (30-85)")
     parser.add_argument("--show-emoji", action="store_true", default=True, help="Render original emojis from transcript in subtitles (colored via Noto Color Emoji)")
@@ -99,6 +99,15 @@ def main():
 
             resolved_source_wm = (args.source_watermark or analysis.get("source_name") or get_video_source_name(video_path) or "").strip()
             resolved_account_wm = (args.account_watermark or "").strip()
+            # Analysis JSON lama belum punya translation_mode: fallback ke
+            # perbandingan source_lang/target_lang.
+            analysis_translation_mode = bool(
+                analysis.get("translation_mode")
+                if "translation_mode" in analysis
+                else analysis.get("source_lang", "id") != analysis.get("target_lang", "id")
+            )
+            if analysis_translation_mode:
+                log("Mode terjemahan aktif: subtitle ditampilkan sebagai kalimat utuh dengan reading-time floor.", job_id=job_id)
 
             indices = _parse_render_indices(args.render_indices, len(clips))
             log(f"Render mode: rendering {len(indices)} selected clips from analysis.", job_id=job_id)
@@ -121,7 +130,8 @@ def main():
                         watermark_enabled=args.watermark_enabled,
                         source_watermark=resolved_source_wm,
                         account_watermark=resolved_account_wm,
-                        inject_emoji=args.inject_emoji
+                        inject_emoji=args.inject_emoji,
+                        translation_mode=analysis_translation_mode
                     )
                 except Exception as e:
                     log(f"Failed to render clip {idx}: {e}", job_id=job_id)
@@ -154,6 +164,10 @@ def main():
             target_lang=args.target_lang,
             job_id=job_id
         )
+        translation_mode = bool(args.target_lang != "none" and args.source_lang != args.target_lang)
+        if translation_mode:
+            log(f"Mode terjemahan aktif ({args.source_lang} -> {args.target_lang}): subtitle "
+                f"ditampilkan sebagai kalimat utuh dengan reading-time floor.", job_id=job_id)
         transcript_text = build_transcript_text(segments)
 
         prompt = build_viral_prompt(transcript_text, args.num_clips, mode=args.mode)
@@ -247,6 +261,9 @@ def main():
                 "status": "analyzed",
                 "video_path": video_path,
                 "source_name": resolved_source_wm,
+                "source_lang": args.source_lang,
+                "target_lang": args.target_lang,
+                "translation_mode": translation_mode,
                 "clips": clips,
                 "segments": _serialize_segments(segments),
                 "output_dir": actual_out_dir
@@ -280,7 +297,8 @@ def main():
                     watermark_enabled=args.watermark_enabled,
                     source_watermark=resolved_source_wm,
                     account_watermark=resolved_account_wm,
-                    inject_emoji=args.inject_emoji
+                    inject_emoji=args.inject_emoji,
+                    translation_mode=translation_mode
                 )
             except Exception as e:
                 log(f"Failed to render clip {i}: {e}", job_id=job_id)

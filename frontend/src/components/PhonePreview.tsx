@@ -360,6 +360,17 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
             <span>Konsisten itu lebih penting dari motivasi</span>
           </div>
         );
+      case 'translation_read':
+        return (
+          <div className="flex flex-col items-center justify-center gap-0.5 text-center select-none bg-black/55 px-2.5 py-1.5 rounded-md">
+            <span className="font-['Plus_Jakarta_Sans',_sans-serif] font-bold text-[11.5px] text-white leading-snug drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
+              Konsisten itu lebih penting
+            </span>
+            <span className="font-['Plus_Jakarta_Sans',_sans-serif] font-bold text-[11.5px] text-white leading-snug drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
+              dari motivasi
+            </span>
+          </div>
+        );
       case 'word_pop':
         return (
           <div className="flex flex-col items-center justify-center font-['Impact',_sans-serif] font-black uppercase text-[28px] text-[#FBBF24] tracking-wider text-center drop-shadow-[0_4px_10px_rgba(0,0,0,1)] select-none animate-pulse leading-none">

@@ -64,6 +64,26 @@ export const SUBTITLE_PRESETS: SubtitleStyleConfig[] = [
     showEmoji: false
   },
   {
+    presetId: 'translation_read',
+    name: 'Terjemahan',
+    description: 'Kalimat utuh 2 baris, tanpa highlight per kata',
+    icon: '📖',
+    fontFamily: 'Plus Jakarta Sans, sans-serif',
+    fontSize: 24,
+    primaryColor: '#FFFFFF',
+    highlightColor: '#FFFFFF',
+    strokeColor: '#000000',
+    strokeWidth: 3,
+    shadow: true,
+    backgroundBox: true,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    animationType: 'none',
+    wordsPerLine: 7,
+    allCaps: false,
+    positionY: 32,
+    showEmoji: false
+  },
+  {
     presetId: 'word_pop',
     name: 'Word Pop (Reels)',
     description: '1 kata per saat di tengah',

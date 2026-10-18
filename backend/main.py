@@ -973,7 +973,7 @@ async def render_selected(request: Request):
 
     if not _valid_analysis_id(analysis_id) or not isinstance(clip_indices, list) or not clip_indices:
         return JSONResponse(status_code=400, content={"error": "Missing analysis_id or clip_indices"})
-    if sub_style not in {"tiktok_viral", "classic_karaoke", "minimalist", "word_pop", "no_subtitle", "none"}:
+    if sub_style not in {"tiktok_viral", "classic_karaoke", "minimalist", "word_pop", "translation_read", "no_subtitle", "none"}:
         return JSONResponse(status_code=400, content={"error": "Invalid subtitle style"})
     if framing_mode not in {"smart_crop", "fit_blur", "split_screen"}:
         return JSONResponse(status_code=400, content={"error": "Invalid framing mode"})

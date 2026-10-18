@@ -519,6 +519,116 @@ class SplitScreenAndSubtitleEnhancementTest(unittest.TestCase):
             if os.path.exists(ass_path):
                 os.remove(ass_path)
 
+    def test_translation_read_style_uses_two_lines_and_reading_floor(self):
+        """Mode terjemahan: cue kalimat utuh, maks 2 baris, ada reading-time floor."""
+        from backend.renderer import _chunk_words, _schedule_cues, _split_words_into_lines
+
+        text = "Konsisten itu jauh lebih penting daripada motivasi yang datang sesaat"
+        words = [
+            {"word": w, "start": i * 0.35, "end": i * 0.35 + 0.3}
+            for i, w in enumerate(text.split())
+        ]
+        chunks = _chunk_words(words, max_words=7, max_chars=34,
+                              break_on_comma=False, max_gap=0.6)
+        cues = _schedule_cues(chunks)
+
+        self.assertTrue(cues)
+        # tidak ada cue yang tumpang tindih
+        for a, b in zip(cues, cues[1:]):
+            self.assertLessEqual(a["end"], b["start"] + 0.05)
+        # semua cue memenuhi durasi baca minimum
+        for cue in cues:
+            self.assertGreaterEqual(cue["end"] - cue["start"], 1.19)
+        # maksimal 2 baris, tidak ada kata yang hilang/terpotong
+        for cue in cues:
+            lines = _split_words_into_lines(cue["words"])
+            self.assertLessEqual(len(lines), 2)
+            self.assertEqual(
+                [w["word"] for line in lines for w in line],
+                [w["word"] for w in cue["words"]],
+            )
+
+    def test_translation_read_ass_has_no_per_word_highlight(self):
+        with tempfile.NamedTemporaryFile(suffix=".ass", delete=False) as tf:
+            ass_path = tf.name
+
+        try:
+            segments = [{
+                "start": 1.0, "end": 3.0,
+                "words": [
+                    {"word": w, "start": 1.0 + i * 0.4, "end": 1.35 + i * 0.4}
+                    for i, w in enumerate("Konsisten itu lebih penting dari motivasi".split())
+                ],
+            }]
+            generate_ass_subtitles(
+                segments, ass_path, clip_start=0.0, clip_end=4.0,
+                sub_style="translation_read", translation_mode=True,
+            )
+            with open(ass_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            self.assertIn("ReadStyle", content)
+            self.assertNotIn("ViralStyle", content)
+            # tidak ada highlight kuning per kata
+            self.assertNotIn("&H0000FFFF&", content)
+            # cue memakai baris baru ASS (kalimat utuh)
+            self.assertIn("\\N", content)
+        finally:
+            if os.path.exists(ass_path):
+                os.remove(ass_path)
+
+    def test_translation_mode_overrides_word_style_presets(self):
+        """Preset bergaya kata otomatis dialihkan agar terjemahan mudah dibaca."""
+        with tempfile.NamedTemporaryFile(suffix=".ass", delete=False) as tf:
+            ass_path = tf.name
+
+        try:
+            segments = [{
+                "start": 1.0, "end": 3.0,
+                "words": [
+                    {"word": w, "start": 1.0 + i * 0.4, "end": 1.35 + i * 0.4}
+                    for i, w in enumerate("Ini terjemahan kalimat panjang".split())
+                ],
+            }]
+            generate_ass_subtitles(
+                segments, ass_path, clip_start=0.0, clip_end=4.0,
+                sub_style="tiktok_viral", translation_mode=True,
+            )
+            with open(ass_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            self.assertIn("ReadStyle", content)
+            self.assertNotIn("ViralStyle", content)
+        finally:
+            if os.path.exists(ass_path):
+                os.remove(ass_path)
+
+    def test_native_mode_keeps_word_highlight(self):
+        """Regresi: konten native (id->id) tidak boleh berubah gayanya."""
+        with tempfile.NamedTemporaryFile(suffix=".ass", delete=False) as tf:
+            ass_path = tf.name
+
+        try:
+            segments = [{
+                "start": 1.0, "end": 3.0,
+                "words": [
+                    {"word": "Konsisten", "start": 1.0, "end": 1.5},
+                    {"word": "itu", "start": 1.6, "end": 2.0},
+                ],
+            }]
+            generate_ass_subtitles(
+                segments, ass_path, clip_start=0.0, clip_end=4.0,
+                sub_style="tiktok_viral", translation_mode=False,
+            )
+            with open(ass_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            self.assertIn("ViralStyle", content)
+            self.assertIn("&H0000FFFF&", content)
+        finally:
+            if os.path.exists(ass_path):
+                os.remove(ass_path)
+
     def test_every_keyword_emoji_is_covered_by_emoji_fonts(self):
         """
         Regresi 'kotak kosong': setiap emoji di EMOJI_KEYWORDS harus

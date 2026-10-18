@@ -12,6 +12,7 @@ export type SubtitlePresetId =
   | 'tiktok_viral'
   | 'classic_karaoke'
   | 'minimalist'
+  | 'translation_read'
   | 'word_pop'
   | 'no_subtitle';
 

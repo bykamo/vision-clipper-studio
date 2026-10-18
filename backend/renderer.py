@@ -199,6 +199,27 @@ STYLE_CHUNK_LIMITS = {
     "minimalist": {"max_words": 4, "max_chars": 16},
 }
 
+# ── MODE TERJEMAHAN (audio bahasa sumber, subtitle bahasa target) ──
+# Subtitle terjemahan TIDAK memakai highlight per-kata: timing kata hasil
+# terjemahan hanya proporsional terhadap panjang karakter (lihat
+# transcriber.split_segment_into_words), sehingga highlight tidak pernah
+# sinkron dengan audio aslinya. Mode ini menampilkan kalimat utuh dengan
+# waktu baca minimum (reading-time floor).
+TRANSLATION_CHUNK_MAX_WORDS = 7
+TRANSLATION_CHUNK_MAX_CHARS = 34   # total 2 baris
+TRANSLATION_LINE_CHARS = 17        # per baris (aman di 840px, font 66)
+TRANSLATION_READ_CPS = 13.0        # karakter/detik untuk pembaca non-native
+TRANSLATION_MIN_CUE = 1.2          # detik tampil minimum
+TRANSLATION_MAX_CUE = 5.0
+TRANSLATION_CUE_HOLD = 0.4         # tahan cue sampai jeda hening berikutnya
+TRANSLATION_CHUNK_MAX_GAP = 0.6    # jeda antar kata -> batas cue baru
+TRANSLATION_MAX_DRIFT = 1.4        # batas lag kumulatif akibat reading floor
+
+STYLE_CHUNK_LIMITS["translation_read"] = {
+    "max_words": TRANSLATION_CHUNK_MAX_WORDS,
+    "max_chars": TRANSLATION_CHUNK_MAX_CHARS,
+}
+
 def _escape_ass_text(text: str) -> str:
     """Escape ASS/SSA control characters and strip raw newlines."""
     if not text:
@@ -207,6 +228,17 @@ def _escape_ass_text(text: str) -> str:
     sanitized = str(text).replace("\\", "＼").replace("{", "｛").replace("}", "｝")
     sanitized = sanitized.replace("\r", " ").replace("\n", " ").strip()
     return sanitized
+
+def _display_len(text: str) -> int:
+    """Panjang teks yang benar-benar memakan lebar baris (emoji tidak dihitung).
+
+    Emoji dirender lebih kecil daripada teks dan pada mode overlay digambar
+    sebagai PNG, jadi menghitungnya sebagai karakter akan membuat baris
+    terlihat jauh lebih panjang dari aslinya dan memicu pemenggalan dini.
+    """
+    if not text:
+        return 0
+    return len(_EMOJI_PATTERN.sub("", text).strip())
 
 def _sanitize_word_timestamps(words, clip_start, clip_end, min_word_dur=0.18):
     """
@@ -601,7 +633,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         f.write(ass_content)
 
 
-def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, sub_style="tiktok_viral", sub_position=68, show_emoji=True, watermark_enabled=True, source_watermark="", account_watermark="", inject_emoji=False, emoji_overlay=None):
+def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, sub_style="tiktok_viral", sub_position=68, show_emoji=True, watermark_enabled=True, source_watermark="", account_watermark="", inject_emoji=False, emoji_overlay=None, translation_mode=False):
     """Generate .ass subtitle file for specified style with optional glass-effect watermark badges.
 
     ``emoji_overlay``: True = tulis emoji sebagai placeholder transparan supaya
@@ -618,6 +650,7 @@ def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, sub_sty
         _generate_ass_body(
             segments, out_ass_path, clip_start, clip_end, sub_style, sub_position,
             show_emoji, watermark_enabled, source_watermark, account_watermark, inject_emoji,
+            translation_mode=translation_mode,
         )
     finally:
         _EMOJI_OVERLAY_MODE = previous_overlay_mode
@@ -625,7 +658,7 @@ def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, sub_sty
 
 def _generate_ass_body(segments, out_ass_path, clip_start, clip_end, sub_style, sub_position,
                        show_emoji, watermark_enabled, source_watermark, account_watermark,
-                       inject_emoji):
+                       inject_emoji, translation_mode=False):
     has_wm = watermark_enabled and bool((source_watermark or "").strip() or (account_watermark or "").strip())
     extra_styles, extra_dialogues = ("", [])
     if has_wm:
@@ -659,12 +692,19 @@ def _generate_ass_body(segments, out_ass_path, clip_start, clip_end, sub_style, 
             _generate_standalone_watermark_ass(out_ass_path, clip_start, clip_end, source_watermark, account_watermark)
         return
 
+    # Mode terjemahan: audio != subtitle, jadi highlight per-kata menyesatkan
+    # (timing kata hasil terjemahan hanya proporsional terhadap panjang
+    # karakter). Emoji TIDAK dimatikan: teks hasil terjemahan dari LLM hampir
+    # tidak pernah mengandung emoji, jadi injeksi kata kunci adalah satu-satunya
+    # sumber emoji pada mode ini.
+    translation = bool(translation_mode) or sub_style == "translation_read"
+
     # Emoji asli dari transkrip dirender jika show_emoji aktif.
     # Injeksi emoji kata kunci (EMOJI_KEYWORDS) hanya jika inject_emoji=True
     # (opsional, default OFF - lihat flag --inject-emoji di worker).
-    if inject_emoji and show_emoji and sub_style not in ["none", "no_subtitle"]:
+    if inject_emoji and show_emoji:
         sanitized_words = _inject_emojis_to_words(sanitized_words)
-    elif not show_emoji and sub_style not in ["none", "no_subtitle"]:
+    elif not show_emoji:
         # show_emoji=False: buang semua emoji dari teks subtitle
         sanitized_words = [
             {**w, "word": _EMOJI_PATTERN.sub("", w["word"]).strip()} for w in sanitized_words
@@ -672,46 +712,184 @@ def _generate_ass_body(segments, out_ass_path, clip_start, clip_end, sub_style, 
 
     margin_v = _calc_margin_v(sub_position)
 
-    if sub_style == "classic_karaoke":
-        _generate_classic_karaoke_style(sanitized_words, out_ass_path, clip_start, clip_end, margin_v=margin_v, extra_styles=extra_styles, extra_dialogues=extra_dialogues)
+    cues = None
+    if translation:
+        chunks = _chunk_words(
+            sanitized_words,
+            max_words=TRANSLATION_CHUNK_MAX_WORDS,
+            max_chars=TRANSLATION_CHUNK_MAX_CHARS,
+            uppercase=False,
+            break_on_comma=False,
+            max_gap=TRANSLATION_CHUNK_MAX_GAP,
+        )
+        cues = _schedule_cues(chunks)
+
+    if sub_style == "translation_read" or (
+        translation and sub_style in ("tiktok_viral", "classic_karaoke", "word_pop")
+    ):
+        # Preset bergaya kata (viral/karaoke/word pop) tidak cocok untuk teks
+        # terjemahan: otomatis dialihkan ke tampilan kalimat yang mudah dibaca.
+        _generate_translation_read_style(cues, out_ass_path, clip_start, clip_end,
+                                         margin_v=margin_v, extra_styles=extra_styles,
+                                         extra_dialogues=extra_dialogues)
     elif sub_style == "minimalist":
-        _generate_minimalist_style(sanitized_words, out_ass_path, clip_start, clip_end, margin_v=margin_v, extra_styles=extra_styles, extra_dialogues=extra_dialogues)
+        _generate_minimalist_style(sanitized_words, out_ass_path, clip_start, clip_end,
+                                   margin_v=margin_v, extra_styles=extra_styles,
+                                   extra_dialogues=extra_dialogues, cues=cues)
+    elif sub_style == "classic_karaoke":
+        _generate_classic_karaoke_style(sanitized_words, out_ass_path, clip_start, clip_end, margin_v=margin_v, extra_styles=extra_styles, extra_dialogues=extra_dialogues)
     elif sub_style == "word_pop":
         _generate_word_pop_style(sanitized_words, out_ass_path, clip_start, clip_end, margin_v=margin_v, extra_styles=extra_styles, extra_dialogues=extra_dialogues)
     else:
         _generate_tiktok_viral_style(sanitized_words, out_ass_path, clip_start, clip_end, margin_v=margin_v, extra_styles=extra_styles, extra_dialogues=extra_dialogues)
 
 
-def _chunk_words(words, max_words=2, max_chars=14, uppercase=False):
+def _chunk_words(words, max_words=2, max_chars=14, uppercase=False,
+                 break_on_comma=True, max_gap=None):
     """Split sanitized words into display chunks that fit the 9:16 safe width.
 
     The character budget is enforced BEFORE a word is added, so a chunk can
     never exceed ``max_chars`` (except when a single word is itself longer).
     Previously the limit was checked after appending, which produced over-long
     lines that spilled past the left/right safe-zone margins.
+
+    ``break_on_comma=False`` dipakai mode terjemahan: koma di bahasa Indonesia
+    sangat sering, memotong di koma menghasilkan fragmen seperti
+    "Konsisten itu" / "lebih penting".
+
+    ``max_gap`` (detik) memaksa cue baru saat ada jeda hening, sehingga batas
+    cue mengikuti frasa alami pembicara, bukan sekadar hitungan karakter.
     """
     chunks, current_chunk, current_len = [], [], 0
+    prev_end = None
+    terminators = ".?!," if break_on_comma else ".?!"
+
     for word_info in words:
         text = word_info["word"].strip()
         if uppercase:
             text = text.upper()
         if not text:
             continue
+
+        gap_break = (
+            max_gap is not None
+            and prev_end is not None
+            and float(word_info["start"]) - prev_end >= max_gap
+        )
+
         # +1 accounts for the joining space when the chunk already has content.
-        projected = current_len + len(text) + (1 if current_chunk else 0)
-        if current_chunk and (len(current_chunk) >= max_words or projected > max_chars):
+        # Emoji tidak dihitung: lebarnya kecil dan pada mode overlay digambar
+        # sebagai PNG di luar alur teks.
+        text_len = _display_len(text)
+        projected = current_len + text_len + (1 if current_chunk else 0)
+        if current_chunk and (
+            gap_break or len(current_chunk) >= max_words or projected > max_chars
+        ):
             chunks.append(current_chunk)
             current_chunk, current_len = [], 0
-            projected = len(text)
+            projected = text_len
+
         current_chunk.append({"word": text, "start": word_info["start"], "end": word_info["end"]})
         current_len = projected
+        prev_end = float(word_info["end"])
+
         # A sentence terminator naturally closes the current chunk.
-        if text[-1] in ".?!,":
+        if text[-1] in terminators:
             chunks.append(current_chunk)
             current_chunk, current_len = [], 0
+
     if current_chunk:
         chunks.append(current_chunk)
     return chunks
+
+def _split_words_into_lines(words, max_line_chars=TRANSLATION_LINE_CHARS, max_lines=2):
+    """Bagi satu cue jadi maksimal ``max_lines`` baris yang seimbang.
+
+    Pemotongan HANYA di batas kata (tidak pernah memotong kata), dan dipilih
+    titik yang mendekati panjang rata-rata supaya tidak ada satu kata
+    menggantung sendirian di baris kedua.
+    """
+    if not words:
+        return []
+    if len(words) == 1:
+        return [words]
+
+    # Emoji tidak dihitung (digambar lebih kecil / sebagai PNG overlay).
+    total_chars = _display_len(" ".join(w["word"] for w in words))
+    if total_chars <= max_line_chars:
+        # Sudah muat satu baris: jangan dipecah. Memaksa 2 baris pada cue
+        # pendek menghasilkan tampilan janggal seperti "online" / "ini".
+        return [words]
+
+    target = total_chars / max(1, max_lines)
+
+    lines, current, current_len = [], [], 0
+    for w in words:
+        word = w["word"]
+        word_len = _display_len(word)
+        projected = current_len + word_len + (1 if current else 0)
+        over_budget = projected > max_line_chars
+        balanced = len(lines) < max_lines - 1 and bool(current) and current_len >= target
+        if current and (over_budget or balanced):
+            lines.append(current)
+            current, current_len = [], 0
+            projected = word_len
+        current.append(w)
+        current_len = projected
+
+    if current:
+        lines.append(current)
+
+    # Overflow (kata tunggal yang sangat panjang) digabung ke baris terakhir;
+    # libass akan wrap sendiri karena WrapStyle: 0.
+    if len(lines) > max_lines:
+        head = lines[:max_lines - 1]
+        tail = [w for line in lines[max_lines - 1:] for w in line]
+        lines = head + [tail]
+    return lines
+
+def _schedule_cues(chunks, cps=TRANSLATION_READ_CPS, min_dur=TRANSLATION_MIN_CUE,
+                   max_dur=TRANSLATION_MAX_CUE, hold=TRANSLATION_CUE_HOLD,
+                   max_drift=TRANSLATION_MAX_DRIFT, gap=0.04):
+    """Beri tiap cue waktu baca minimum tanpa pernah menabrak cue berikutnya.
+
+    Durasi audio tidak bisa diulur, jadi lever yang dipakai:
+    1. tahan cue lebih lama (reading-time floor = panjang teks / ``cps``),
+    2. cue berikutnya baru muncul setelah cue sebelumnya selesai dibaca,
+       sehingga subtitle boleh sedikit tertinggal dari audio,
+    3. batasi lag kumulatif (``max_drift``) supaya subtitle tidak makin
+       tertinggal jauh di bagian bicara cepat. Bila anggaran lag habis, cue
+       dipangkas ke ``min_dur`` — lebih baik cepat daripada tidak sinkron.
+    """
+    if not chunks:
+        return []
+
+    cues = []
+    cursor = 0.0
+    for i, chunk in enumerate(chunks):
+        text = " ".join(w["word"] for w in chunk)
+        natural_start = float(chunk[0]["start"])
+        natural_end = float(chunk[-1]["end"])
+        next_natural = float(chunks[i + 1][0]["start"]) if i + 1 < len(chunks) else None
+
+        # Tidak boleh tampil sebelum audionya, tidak boleh menabrak cue sebelumnya.
+        start = max(natural_start, cursor)
+        need = max(min_dur, len(text) / max(1.0, cps))
+        end = min(max(natural_end, start + need), start + max_dur)
+
+        # Batasi lag cue BERIKUTNYA, bukan cue ini: kalau cue ini terlalu lama
+        # tampil, cue selanjutnya makin tertinggal dari audio.
+        if next_natural is not None:
+            end = min(end, max(start + min_dur, next_natural + max_drift - gap))
+        else:
+            end = min(end, natural_end + hold + max_drift)
+
+        end = max(end, start + min_dur)
+
+        cues.append({"words": chunk, "text": text, "start": start, "end": end})
+        cursor = end + gap
+
+    return cues
 
 
 def _generate_tiktok_viral_style(words, out_ass_path, clip_start, clip_end, margin_v=600, extra_styles="", extra_dialogues=None):
@@ -807,8 +985,73 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 f.write(f"Dialogue: 0,{start_ass},{end_ass},KaraokeStyle,,0,0,0,,{' '.join(display)}\n")
 
 
-def _generate_minimalist_style(words, out_ass_path, clip_start, clip_end, margin_v=560, extra_styles="", extra_dialogues=None):
+def _write_static_cue_ass(cues, out_ass_path, style_line, style_name,
+                          extra_styles="", extra_dialogues=None,
+                          line_chars=TRANSLATION_LINE_CHARS, fade_ms=70):
+    """Tulis .ass berisi cue kalimat statis (1-2 baris) tanpa animasi per kata."""
+    styles_block = f"{style_line}\n"
+    if extra_styles:
+        styles_block += f"{extra_styles}\n"
+
+    ass_header = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: {SAFE_WRAP_STYLE}
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+{styles_block}
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    with open(out_ass_path, "w", encoding="utf-8") as f:
+        f.write(ass_header)
+        for d in (extra_dialogues or []):
+            f.write(f"{d}\n")
+        for cue in cues:
+            lines = _split_words_into_lines(cue["words"], line_chars)
+            rendered = "\\N".join(
+                " ".join(_format_ass_word(w["word"], base_color="&HFFFFFF&") for w in line)
+                for line in lines
+            )
+            if fade_ms:
+                # Fade halus: mata pembaca non-native butuh penanda "teks baru".
+                rendered = f"{{\\fad({fade_ms},{fade_ms})}}{rendered}"
+            f.write(
+                f"Dialogue: 0,{format_ass_timestamp(cue['start'])},"
+                f"{format_ass_timestamp(cue['end'])},{style_name},,0,0,0,,{rendered}\n"
+            )
+
+def _generate_translation_read_style(cues, out_ass_path, clip_start, clip_end, margin_v=600,
+                                     extra_styles="", extra_dialogues=None):
+    """📖 Terjemahan Mudah Dibaca: kalimat utuh 1-2 baris, tanpa highlight per kata.
+
+    BorderStyle 3 (opaque box) dengan Outline sebagai padding memberi latar
+    gelap tipis supaya teks tetap terbaca di atas footage yang ramai.
+    """
+    style_line = (
+        "Style: ReadStyle,Plus Jakarta Sans,66,&H00FFFFFF,&H000000FF,&H78000000,&H80000000,"
+        f"-1,0,0,0,100,100,0.4,0,3,12,2,2,{SAFE_MARGIN_H},{SAFE_MARGIN_H},{margin_v},1"
+    )
+    _write_static_cue_ass(
+        cues, out_ass_path, style_line, "ReadStyle",
+        extra_styles=extra_styles, extra_dialogues=extra_dialogues,
+    )
+
+def _generate_minimalist_style(words, out_ass_path, clip_start, clip_end, margin_v=560, extra_styles="", extra_dialogues=None, cues=None):
     """✨ Minimalist: Teks putih bersih statis, elegan dan tidak mengganggu konten podcast."""
+    if cues is not None:
+        # Mode terjemahan: pakai cue terjadwal + pemenggalan 2 baris.
+        style_line = (
+            "Style: MinimalStyle,Plus Jakarta Sans,74,&H00FFFFFF,&H000000FF,&H00151515,&HAA000000,"
+            f"-1,0,0,0,100,100,0,0,1,5,3,2,{SAFE_MARGIN_H},{SAFE_MARGIN_H},{margin_v},1"
+        )
+        _write_static_cue_ass(
+            cues, out_ass_path, style_line, "MinimalStyle",
+            extra_styles=extra_styles, extra_dialogues=extra_dialogues, fade_ms=0,
+        )
+        return
     styles_block = f"Style: MinimalStyle,Plus Jakarta Sans,74,&H00FFFFFF,&H000000FF,&H00151515,&HAA000000,-1,0,0,0,100,100,0,0,1,5,3,2,{SAFE_MARGIN_H},{SAFE_MARGIN_H},{margin_v},1\n"
     if extra_styles:
         styles_block += f"{extra_styles}\n"
@@ -1782,7 +2025,7 @@ def _validate_rendered_video(file_path: str, min_duration: float = 0.5) -> bool:
     except Exception:
         return False
 
-def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job_id=None, sub_style="tiktok_viral", framing_mode="smart_crop", sub_position=68, show_emoji=True, watermark_enabled=True, source_watermark="", account_watermark="", inject_emoji=False):
+def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job_id=None, sub_style="tiktok_viral", framing_mode="smart_crop", sub_position=68, show_emoji=True, watermark_enabled=True, source_watermark="", account_watermark="", inject_emoji=False, translation_mode=False):
     start = max(0.0, float(clip_info.get("start", 0.0)) - 0.2)
     end = float(clip_info.get("end", 0.0)) + 1.2
     duration = end - start
@@ -1813,7 +2056,11 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
     # Emoji berwarna asli: libass tidak bisa merender font emoji berwarna, jadi
     # emoji ditulis sebagai placeholder transparan di ASS lalu ditempel sebagai
     # PNG berwarna lewat ffmpeg overlay (lihat backend/emoji_overlay.py).
-    use_emoji_overlay = show_emoji and sub_style not in ("none", "no_subtitle") and _emoji_overlay_available()
+    use_emoji_overlay = (
+        show_emoji
+        and sub_style not in ("none", "no_subtitle")
+        and _emoji_overlay_available()
+    )
     generate_ass_subtitles(
         segments,
         ass_file,
@@ -1827,6 +2074,7 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
         account_watermark=account_watermark,
         inject_emoji=inject_emoji,
         emoji_overlay=use_emoji_overlay,
+        translation_mode=translation_mode,
     )
     crop_cmd_file = os.path.join(TEMP_DIR, f"temp_cropcmd_{index}_{int(time.time()*1000)}.txt")
     

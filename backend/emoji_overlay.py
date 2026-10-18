@@ -476,6 +476,24 @@ def split_runs(text, default_font, default_size):
     return runs
 
 
+def _split_runs_by_hard_breaks(runs):
+    """Pecah runs menjadi baris-baris visual pada hard break ASS (``\\N``/``\\n``).
+
+    Mode terjemahan menulis cue sebagai dua baris (``\\N``). Tanpa pemecahan ini
+    seluruh cue diukur sebagai satu baris raksasa yang melebihi lebar frame,
+    sehingga overlay emoji dibatalkan dan emoji placeholder transparan tidak
+    pernah ditimpa PNG — hasilnya emoji hilang.
+    """
+    lines = [[]]
+    for run in runs:
+        parts = re.split(r"\\[Nn]", run["text"])
+        for index, part in enumerate(parts):
+            if index > 0:
+                lines.append([])
+            if part:
+                lines[-1].append({**run, "text": part})
+    return [line for line in lines if line]
+
 def _alpha_is_hidden(value):
     """Parse an ASS alpha value (``&HFF&``, ``FF``, ``&H00&``, ``255``).
 
@@ -626,57 +644,74 @@ def plan_emoji_overlays(ass_path, fonts_dir, play_res_x=1080, play_res_y=1920,
         if text_metrics is None:
             continue
 
-        # Measure the whole line exactly like libass does so we know where the
-        # transparent emoji slots land.
-        total_width = 0.0
-        measured = []
-        for run in runs:
-            family = run["font"]
-            if family.strip().lower() in _EMOJI_FAMILIES:
-                run_metrics = metrics_for(MONO_EMOJI_FAMILY, False) or text_metrics
-            else:
-                run_metrics = metrics_for(family, style["bold"]) or text_metrics
-            measured.append((total_width, run, run_metrics))
-            total_width += run_metrics.advance(run["text"], run["size"])
+        # Measure each visual line exactly like libass does so we know where the
+        # transparent emoji slots land. Hard breaks (``\N`` / ``\n``) start a
+        # new line, so a multi-line cue (mode terjemahan) is measured per line
+        # instead of as one over-long line that would exceed the frame width.
+        line_runs = _split_runs_by_hard_breaks(runs)
+        if not line_runs:
+            continue
 
-        if total_width <= 0 or total_width > play_res_x - 8:
+        measured_lines = []
+        for runs_in_line in line_runs:
+            total_width = 0.0
+            measured = []
+            for run in runs_in_line:
+                family = run["font"]
+                if family.strip().lower() in _EMOJI_FAMILIES:
+                    run_metrics = metrics_for(MONO_EMOJI_FAMILY, False) or text_metrics
+                else:
+                    run_metrics = metrics_for(family, style["bold"]) or text_metrics
+                measured.append((total_width, run, run_metrics))
+                total_width += run_metrics.advance(run["text"], run["size"])
+            measured_lines.append((total_width, measured))
+
+        if any(width <= 0 or width > play_res_x - 8 for width, _ in measured_lines):
             continue  # would wrap — leave the plain ASS result untouched
 
-        line_left = (play_res_x - total_width) / 2.0
-        bottom_y = play_res_y - style["margin_v"]
+        # Bottom-anchored block: the last line sits on the bottom margin and
+        # every line above it is raised by one line height (libass uses the
+        # font's ascent+descent, which FontMetrics normalises to the font size).
+        line_height = float(style["size"])
+        block_bottom_y = play_res_y - style["margin_v"]
+        last_index = len(measured_lines) - 1
 
-        for run_start_x, run, run_metrics in measured:
-            if not run["is_emoji"] or not run["visible"]:
-                continue
-            run_size = run["size"]
-            for match in EMOJI_RE.finditer(run["text"]):
-                prefix = run["text"][:match.start()]
-                slot_x = line_left + run_start_x + run_metrics.advance(prefix, run_size)
-                slot_w = run_metrics.advance(match.group(1), run_size)
-                emoji = strip_variation_selectors(match.group(1))
+        for line_index, (total_width, measured) in enumerate(measured_lines):
+            line_left = (play_res_x - total_width) / 2.0
+            bottom_y = block_bottom_y - (last_index - line_index) * line_height
 
-                # Match the *text* em size (not the emoji font's, which is much
-                # larger) so the emoji sits naturally next to the words.
-                em_px = text_metrics.em_px(run_size) * EMOJI_SIZE_SCALE
-                baseline = text_metrics.baseline_from_bottom(run_size, bottom_y)
-
-                png = render_color_emoji(emoji, em_px, fonts_dir)
-                if png is None:
+            for run_start_x, run, run_metrics in measured:
+                if not run["is_emoji"] or not run["visible"]:
                     continue
+                run_size = run["size"]
+                for match in EMOJI_RE.finditer(run["text"]):
+                    prefix = run["text"][:match.start()]
+                    slot_x = line_left + run_start_x + run_metrics.advance(prefix, run_size)
+                    slot_w = run_metrics.advance(match.group(1), run_size)
+                    emoji = strip_variation_selectors(match.group(1))
 
-                draw_x = slot_x + (slot_w - png.width) / 2.0
-                draw_y = baseline - png.height
-                overlays.append(EmojiOverlay(
-                    emoji=emoji,
-                    start=dialogue["start"],
-                    end=dialogue["end"],
-                    x=int(round(draw_x)),
-                    y=int(round(draw_y)),
-                    size=int(png.width),
-                    png_path=_write_overlay_png(png, emoji, int(round(em_px))),
-                ))
-                if len(overlays) >= max_overlays:
-                    return _merge_overlays(overlays)
+                    # Match the *text* em size (not the emoji font's, which is
+                    # much larger) so the emoji sits naturally next to the words.
+                    em_px = text_metrics.em_px(run_size) * EMOJI_SIZE_SCALE
+                    baseline = text_metrics.baseline_from_bottom(run_size, bottom_y)
+
+                    png = render_color_emoji(emoji, em_px, fonts_dir)
+                    if png is None:
+                        continue
+
+                    draw_x = slot_x + (slot_w - png.width) / 2.0
+                    draw_y = baseline - png.height
+                    overlays.append(EmojiOverlay(
+                        emoji=emoji,
+                        start=dialogue["start"],
+                        end=dialogue["end"],
+                        x=int(round(draw_x)),
+                        y=int(round(draw_y)),
+                        size=int(png.width),
+                        png_path=_write_overlay_png(png, emoji, int(round(em_px))),
+                    ))
+                    if len(overlays) >= max_overlays:
+                        return _merge_overlays(overlays)
 
     return _merge_overlays(overlays)
 

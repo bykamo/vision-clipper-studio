@@ -56,6 +56,25 @@ class SplitRunsTest(unittest.TestCase):
         self.assertEqual(runs[0]["size"], 92.0)
         self.assertEqual(runs[1]["size"], 84.0)
 
+    def test_splits_runs_on_hard_line_break(self):
+        """Cue dua baris (\\N) harus dipecah jadi baris visual terpisah."""
+        text = (
+            r"Konsisten {\fnNoto Emoji\alpha&HFF&}" + "🔥" + r"{\fn\alpha&H00&}"
+            r"\Nlebih penting"
+        )
+        runs = eo.split_runs(text, "Plus Jakarta Sans", 66.0)
+        lines = eo._split_runs_by_hard_breaks(runs)
+        self.assertEqual(len(lines), 2)
+        self.assertEqual("".join(r["text"] for r in lines[0]).strip(), "Konsisten 🔥")
+        self.assertEqual("".join(r["text"] for r in lines[1]).strip(), "lebih penting")
+        # emoji tetap terdeteksi pada baris pertama
+        self.assertTrue(any(r["is_emoji"] for r in lines[0]))
+        self.assertFalse(any(r["is_emoji"] for r in lines[1]))
+
+    def test_soft_wrap_break_also_splits(self):
+        runs = eo.split_runs(r"baris satu\nbaris dua", "Plus Jakarta Sans", 66.0)
+        self.assertEqual(len(eo._split_runs_by_hard_breaks(runs)), 2)
+
 
 class AssParsingTest(unittest.TestCase):
     def test_parses_style_and_dialogue(self):
@@ -271,6 +290,39 @@ class OverlayPlanningTest(unittest.TestCase):
             r"{\alpha&HFF&}uang {\fnNoto Emoji\alpha&HFF&}💰{\fn\alpha&H00&}{\alpha&H00&}"
         )
         self.assertEqual(eo.plan_emoji_overlays(ass, FONTS_DIR), [])
+
+    def test_multi_line_cue_still_places_emoji(self):
+        """Regresi: cue 2 baris (\\N) dulu diukur sebagai satu baris raksasa
+        sehingga overlay dibatalkan dan emoji hilang."""
+        ass = self._write_ass(
+            r"Konsisten {\fnNoto Emoji\alpha&HFF&}🔥{\fn\alpha&H00&} itu"
+            r"\Nlebih penting dari motivasi"
+        )
+        overlays = eo.plan_emoji_overlays(ass, FONTS_DIR)
+        self.assertEqual(len(overlays), 1)
+        self.assertEqual(overlays[0].emoji, "🔥")
+
+    def test_multi_line_emoji_on_both_lines(self):
+        ass = self._write_ass(
+            r"Konsisten {\fnNoto Emoji\alpha&HFF&}🔥{\fn\alpha&H00&} itu"
+            r"\Nlebih penting {\fnNoto Emoji\alpha&HFF&}💰{\fn\alpha&H00&} dari"
+        )
+        overlays = eo.plan_emoji_overlays(ass, FONTS_DIR)
+        self.assertEqual(len(overlays), 2)
+        self.assertEqual([o.emoji for o in overlays], ["🔥", "💰"])
+        # baris pertama harus berada di atas baris kedua
+        self.assertLess(overlays[0].y, overlays[1].y)
+
+    def test_multi_line_emoji_stays_inside_safe_zone(self):
+        ass = self._write_ass(
+            r"Konsisten {\fnNoto Emoji\alpha&HFF&}🔥{\fn\alpha&H00&} itu"
+            r"\Nlebih penting dari motivasi"
+        )
+        overlays = eo.plan_emoji_overlays(ass, FONTS_DIR)
+        self.assertTrue(overlays)
+        for overlay in overlays:
+            self.assertGreaterEqual(overlay.x, 0)
+            self.assertLessEqual(overlay.x + overlay.size, 1080)
 
     def test_non_bottom_aligned_style_is_skipped(self):
         ass = self._write_ass(

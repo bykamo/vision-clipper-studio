@@ -446,10 +446,12 @@ Translate the following subtitle segments from English to natural, conversationa
 
 CRITICAL RULES:
 1. Translate concisely, punchy, and naturally (conversational Indonesian, e.g. lu-gue/lo-gw/aja/nih/banget/worth it jika sesuai konteks).
-2. If any segment is already in Indonesian, keep it unchanged.
-3. NEVER add commentary, notes, or explanations.
-4. Keep the exact same number of items and matching "id" numbers.
-5. Output STRICTLY a JSON array of objects with keys "id" and "text":
+2. COMPRESSION IS MANDATORY: keep each translated segment as short as possible, ideally <= 34 characters (two subtitle lines). Drop filler words (yang, itu, sih, kan, memang, sebenarnya) when meaning is unchanged.
+3. NEVER split a phrase mid-way. If you must shorten, pick a shorter equivalent instead of dropping a meaningful word.
+4. Preserve meaning and tone. Do not add information, commentary, notes, or explanations.
+5. If a segment is already in Indonesian, keep it unchanged (but still apply rule 2).
+6. Keep the exact same number of items and matching "id" numbers.
+7. Output STRICTLY a JSON array of objects with keys "id" and "text":
 ```json
 [
   {{"id": 0, "text": "Hasil terjemahan bahasa indonesia..."}}

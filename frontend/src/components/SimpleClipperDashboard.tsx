@@ -904,6 +904,21 @@ export const SimpleClipperDashboard: React.FC = () => {
     setSelectedPresetId(prev => (prev === preset.presetId ? 'no_subtitle' : preset.presetId));
   };
 
+  // Mode terjemahan: audio != subtitle, jadi highlight per-kata menyesatkan
+  // (timing kata hasil terjemahan hanya proporsional terhadap panjang karakter).
+  // Otomatis pindah ke preset "Terjemahan" bila user belum memilih style yang
+  // memang ramah dibaca.
+  const handleLanguageModeChange = (mode: string) => {
+    setLanguageMode(mode);
+    if (mode === 'en_to_id' || mode === 'auto') {
+      setSelectedPresetId(prev =>
+        ['no_subtitle', 'tiktok_viral', 'word_pop', 'classic_karaoke'].includes(prev)
+          ? 'translation_read'
+          : prev
+      );
+    }
+  };
+
   const previewCandidate = (clip: ClipCandidate) => {
     setPreviewOutputClip(null);
     setPreviewClipRange({ start: clip.start, end: clip.end });
@@ -1614,7 +1629,7 @@ export const SimpleClipperDashboard: React.FC = () => {
                 <button
                   key={o.id}
                   type="button"
-                  onClick={() => setLanguageMode(o.id)}
+                  onClick={() => handleLanguageModeChange(o.id)}
                   className={`h-7 rounded-lg border text-[10px] font-semibold transition-colors truncate px-1 ${
                     languageMode === o.id ? themeClasses.chipActive : themeClasses.chipIdle
                   }`}
@@ -1624,6 +1639,12 @@ export const SimpleClipperDashboard: React.FC = () => {
                 </button>
               ))}
             </div>
+            {(languageMode === 'en_to_id' || languageMode === 'auto') && (
+              <p className="mt-1.5 text-[9.5px] leading-snug text-sky-300/80">
+                Mode terjemahan: subtitle tampil per kalimat (2 baris) dengan waktu baca
+                minimum, tanpa highlight per kata.
+              </p>
+            )}
           </StepCard>
 
           {/* STEP 03 — FRAMING / LAYOUT */}
