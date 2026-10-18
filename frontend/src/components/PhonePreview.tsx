@@ -431,10 +431,10 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
   // Dynamic values for Social Media overlay
   const displayAccount = (accountWatermark || 'visionclipper.ai').replace(/^@/, '');
-  const displayCaption = clipCaption || clipTitle || 'Kenapa berat badan lu gak turun meski makan dikit? Ini fakta biologisnya...';
+  const displayCaption = clipCaption || clipTitle || 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore.';
   const displayHashtags = clipHashtags && clipHashtags.length > 0
     ? clipHashtags.map(t => t.startsWith('#') ? t : `#${t}`).slice(0, 4).join(' ')
-    : '#fyp #podcast #viralkonten #tips';
+    : '#fyp #foryou #trending #viral';
 
   return (
     <div className="flex flex-col h-full w-full rounded-2xl bg-[#090d13] border border-slate-800/80 p-3 sm:p-3.5 shadow-xl overflow-hidden">
@@ -551,7 +551,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                 
                 {/* Left Flank: Authentic iOS Time (9:41 SF Pro Style) */}
                 <div className="pl-1 flex items-center">
-                  <span className="text-[12.5px] font-semibold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)] font-sans antialiased">
+                  <span className="text-[15px] font-semibold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)] font-sans antialiased">
                     9:41
                   </span>
                 </div>
@@ -668,25 +668,25 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                   </div>
                 ) : (
                   // ── EMPTY STATE: NO SOURCE VIDEO SELECTED ──
-                  <div className="relative w-full h-full flex flex-col items-center justify-center gap-3 px-6 text-center bg-[radial-gradient(ellipse_at_50%_38%,_#122032_0%,_#0a0f16_55%,_#05070a_100%)] select-none">
+                  <div className="relative w-full h-full flex flex-col items-center justify-center gap-6 px-6 text-center bg-[radial-gradient(ellipse_at_50%_38%,_#122032_0%,_#0a0f16_55%,_#05070a_100%)] select-none">
                     <div className="relative">
                       <div className="absolute inset-0 scale-150 rounded-full bg-emerald-500/20 blur-2xl" />
                       <img
                         src="/images/logo-icon-transparent.png"
                         alt="VisionClipper Studio"
                         draggable={false}
-                        className="relative h-16 w-16 object-contain opacity-90 drop-shadow-[0_4px_16px_rgba(16,185,129,0.35)]"
+                        className="relative h-[128px] w-[128px] object-contain opacity-90 drop-shadow-[0_8px_34px_rgba(16,185,129,0.45)]"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <p className="font-['Outfit',_sans-serif] text-[13px] font-bold tracking-wide text-white/90">
+                    <div className="space-y-2.5">
+                      <p className="font-['Outfit',_sans-serif] text-[26px] font-bold tracking-wide text-white/90">
                         Belum ada video
                       </p>
-                      <p className="max-w-[195px] text-[9.5px] leading-relaxed text-slate-400">
+                      <p className="mx-auto max-w-[300px] text-[14.5px] leading-relaxed text-slate-400">
                         Pilih video sumber atau folder klip di panel kiri untuk melihat preview di sini.
                       </p>
                     </div>
-                    <span className="px-2 py-0.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 text-[8px] font-bold uppercase tracking-wider font-mono text-emerald-300">
+                    <span className="px-4 py-2 rounded-full border border-emerald-500/40 bg-emerald-500/10 text-[11.5px] font-bold uppercase tracking-wider font-mono text-emerald-300">
                       {framingMode === 'smart_crop'
                         ? 'Smart Follow · 9:16'
                         : framingMode === 'fit_blur'
@@ -710,78 +710,81 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
                 {/* ── 1. TIKTOK SOCIAL MEDIA UI OVERLAY ── */}
                 {overlayMode === 'tiktok' && (
-                  <div className="absolute inset-0 z-20 flex flex-col justify-between pointer-events-none p-3 pb-7 select-none">
-                    
-                    {/* Top Feed Tabs: Mengikuti | Untuk Anda | Search */}
-                    <div className="pt-9 flex items-center justify-between text-xs font-bold text-white/90">
+                  <div className="absolute inset-0 z-20 flex flex-col pointer-events-none select-none">
+
+                    {/* Top Feed Tabs: Mengikuti | Untuk Anda | Search (clears Dynamic Island) */}
+                    <div className="pt-[52px] px-4 flex items-center justify-between text-white/90 flex-shrink-0">
                       {/* Left balancing spacer to keep center tabs perfectly centered */}
-                      <div className="w-6 h-6" />
+                      <div className="w-7 h-7" />
 
                       {/* Center Feed Tabs: Mengikuti | Untuk Anda */}
-                      <div className="flex items-center gap-3.5 text-[12.5px] drop-shadow-md">
+                      <div className="flex items-center gap-4 text-[14.5px] drop-shadow-md">
                         <span className="text-white/60 font-semibold cursor-pointer pointer-events-auto hover:text-white transition-colors">
                           Mengikuti
                         </span>
                         <div className="relative cursor-pointer pointer-events-auto font-extrabold text-white">
                           <span>Untuk Anda</span>
-                          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4 h-[2px] bg-white rounded-full shadow-xs" />
+                          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-5 h-[2.5px] bg-white rounded-full shadow-xs" />
                         </div>
                       </div>
 
                       {/* Right: Search Icon Button */}
-                      <button className="w-6 h-6 flex items-center justify-center p-0.5 text-white/90 pointer-events-auto hover:text-white cursor-pointer transition-transform active:scale-90">
-                        <MagnifyingGlassIcon className="h-[18px] w-[18px] stroke-[2.3]" />
+                      <button className="w-7 h-7 flex items-center justify-center p-0.5 text-white/90 pointer-events-auto hover:text-white cursor-pointer transition-transform active:scale-90">
+                        <MagnifyingGlassIcon className="h-[21px] w-[21px] stroke-[2.3]" />
                       </button>
                     </div>
 
+                    {/* Flexible middle keeps UI pinned to top + bottom like the real feed */}
+                    <div className="flex-1" />
+
                     {/* Bottom Half: Creator Info + Right Social Actions */}
-                    <div className="flex items-end justify-between w-full mt-auto">
+                    <div className="flex items-end justify-between w-full pl-4 pr-2.5 pb-2">
                       
                       {/* Bottom-Left: Creator Username, Caption, Music Audio */}
-                      <div className="flex-1 pr-2 pb-1 space-y-1 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] text-left">
+                      <div className="flex-1 pr-2 pb-1 space-y-1.5 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] text-left min-w-0">
                         {/* Creator Handle */}
                         <div className="flex items-center gap-1">
-                          <span className="font-['Outfit',_sans-serif] text-[12px] font-bold text-white tracking-wide">
+                          <span className="font-['Outfit',_sans-serif] text-[16px] font-bold text-white tracking-wide truncate">
                             @{displayAccount}
                           </span>
-                          <CheckBadgeIcon className="h-3.5 w-3.5 text-sky-400" />
+                          <CheckBadgeIcon className="h-4 w-4 text-sky-400 flex-shrink-0" />
                         </div>
 
                         {/* Video Caption */}
-                        <p className="text-[10.5px] leading-tight text-white/95 line-clamp-2 font-normal">
+                        <p className="text-[14px] leading-[1.3] text-white/95 line-clamp-2 font-normal">
                           {displayCaption}
                         </p>
 
                         {/* Hashtags */}
-                        <div className="flex items-center gap-1 text-[9.5px] text-white/80 font-bold">
+                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[14px] text-white/85 font-bold">
                           {displayHashtags.split(' ').map((tag, idx) => (
                             <span key={idx}>{tag}</span>
                           ))}
                         </div>
 
                         {/* Music Audio Ticker */}
-                        <div className="flex items-center gap-1.5 text-[9.5px] text-white/90 pt-0.5">
-                          <MusicalNoteIcon className={`h-3 w-3 ${isPlaying ? 'animate-spin' : ''} stroke-[2]`} style={{ animationDuration: '4s' }} />
-                          <div className="w-32 overflow-hidden whitespace-nowrap">
-                            <p className="text-[9.5px] truncate">
-                              Suara Asli - {displayAccount} (Podcast Viral)
+                        <div className="flex items-center gap-1.5 text-[13px] text-white/90 pt-0.5">
+                          <MusicalNoteIcon className={`h-4 w-4 shrink-0 ${isPlaying ? 'animate-spin' : ''} stroke-[2]`} style={{ animationDuration: '4s' }} />
+                          <div className="w-44 overflow-hidden whitespace-nowrap">
+                            <p className="text-[13px] truncate">
+                              Suara Asli - {displayAccount}
                             </p>
                           </div>
                         </div>
                       </div>
 
                       {/* Right Side: TikTok Signature Floating Action Stack */}
-                      <div className="flex flex-col items-center gap-2.5 pointer-events-auto shrink-0 pb-1">
+                      <div className="flex flex-col items-center gap-3 pointer-events-auto shrink-0 pb-1">
                         
                         {/* 1. Creator Avatar with Follow Red Plus */}
-                        <div className="relative mb-0.5">
-                          <div className="h-8 w-8 rounded-full border-2 border-white bg-slate-800 overflow-hidden shadow-lg flex items-center justify-center">
-                            <div className="w-full h-full rounded-full bg-gradient-to-tr from-sky-400 via-indigo-500 to-pink-500 flex items-center justify-center text-white text-[10px] font-bold">
+                        <div className="relative mb-1">
+                          <div className="h-11 w-11 rounded-full border-2 border-white bg-slate-800 overflow-hidden shadow-lg flex items-center justify-center">
+                            <div className="w-full h-full rounded-full bg-gradient-to-tr from-sky-400 via-indigo-500 to-pink-500 flex items-center justify-center text-white text-[14px] font-bold">
                               {displayAccount.charAt(0).toUpperCase()}
                             </div>
                           </div>
-                          <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-rose-500 text-white shadow-md hover:scale-110 cursor-pointer transition-transform">
-                            <PlusIcon className="h-2 w-2 stroke-[3]" />
+                          <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-rose-500 text-white shadow-md hover:scale-110 cursor-pointer transition-transform">
+                            <PlusIcon className="h-2.5 w-2.5 stroke-[3]" />
                           </div>
                         </div>
 
@@ -795,12 +798,12 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         >
                           <div className={`p-0.5 rounded-full ${isLiked ? 'text-rose-500' : 'text-white drop-shadow-md'}`}>
                             {isLiked ? (
-                              <HeartIconSolid className="h-6 w-6 text-rose-500 animate-pulse" />
+                              <HeartIconSolid className="h-8 w-8 text-rose-500 animate-pulse" />
                             ) : (
-                              <HeartIcon className="h-6 w-6 stroke-[2]" />
+                              <HeartIcon className="h-8 w-8 stroke-[2]" />
                             )}
                           </div>
-                          <span className="text-[9.5px] font-bold text-white drop-shadow-md">
+                          <span className="text-[11.5px] font-bold text-white drop-shadow-md">
                             {isLiked ? '248.6K' : '248.5K'}
                           </span>
                         </button>
@@ -808,9 +811,9 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         {/* 3. Comment Button */}
                         <div className="flex flex-col items-center cursor-pointer hover:scale-105 transition-transform">
                           <div className="p-0.5 text-white drop-shadow-md">
-                            <ChatBubbleOvalLeftEllipsisIcon className="h-6 w-6 stroke-[2]" />
+                            <ChatBubbleOvalLeftEllipsisIcon className="h-8 w-8 stroke-[2]" />
                           </div>
-                          <span className="text-[9.5px] font-bold text-white drop-shadow-md">
+                          <span className="text-[11.5px] font-bold text-white drop-shadow-md">
                             1,842
                           </span>
                         </div>
@@ -825,12 +828,12 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         >
                           <div className={`p-0.5 rounded-full ${isBookmarked ? 'text-amber-400' : 'text-white drop-shadow-md'}`}>
                             {isBookmarked ? (
-                              <BookmarkIconSolid className="h-6 w-6 text-amber-400" />
+                              <BookmarkIconSolid className="h-8 w-8 text-amber-400" />
                             ) : (
-                              <BookmarkIcon className="h-6 w-6 stroke-[2]" />
+                              <BookmarkIcon className="h-8 w-8 stroke-[2]" />
                             )}
                           </div>
-                          <span className="text-[9.5px] font-bold text-white drop-shadow-md">
+                          <span className="text-[11.5px] font-bold text-white drop-shadow-md">
                             {isBookmarked ? '34.3K' : '34.2K'}
                           </span>
                         </button>
@@ -838,9 +841,9 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         {/* 5. Share Button */}
                         <div className="flex flex-col items-center cursor-pointer hover:scale-105 transition-transform">
                           <div className="p-0.5 text-white drop-shadow-md">
-                            <ShareIcon className="h-5 w-5 stroke-[2]" />
+                            <ShareIcon className="h-7 w-7 stroke-[2]" />
                           </div>
-                          <span className="text-[9.5px] font-bold text-white drop-shadow-md">
+                          <span className="text-[11.5px] font-bold text-white drop-shadow-md">
                             12.8K
                           </span>
                         </div>
@@ -851,16 +854,16 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                             e.stopPropagation();
                             toggleMute();
                           }}
-                          className="relative mt-0.5 cursor-pointer hover:scale-110 active:scale-95 transition-transform"
+                          className="relative mt-1 cursor-pointer hover:scale-110 active:scale-95 transition-transform"
                           title={isMuted ? 'Nyalakan Audio' : 'Matikan Audio'}
                         >
                           <div 
-                            className={`h-7 w-7 rounded-full border border-slate-700 bg-neutral-900 shadow-xl overflow-hidden flex items-center justify-center ${
+                            className={`h-9 w-9 rounded-full border border-slate-700 bg-neutral-900 shadow-xl overflow-hidden flex items-center justify-center ${
                               isPlaying && !isMuted ? 'animate-spin' : ''
                             }`}
                             style={{ animationDuration: '3.5s' }}
                           >
-                            <div className="h-3.5 w-3.5 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center">
+                            <div className="h-[18px] w-[18px] rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center">
                               <span className={`h-1.5 w-1.5 rounded-full ${isMuted ? 'bg-rose-500' : 'bg-emerald-400'}`} />
                             </div>
                           </div>
@@ -870,8 +873,8 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
                     </div>
 
-                    {/* Bottom TikTok Tab Navigation Bar with Authentic Icons */}
-                    <div className="pt-2 border-t border-white/10 flex items-center justify-between px-0.5 pointer-events-auto bg-gradient-to-t from-black/80 via-black/40 to-transparent">
+                    {/* Bottom TikTok Tab Navigation Bar — sits above the iOS home-indicator safe area */}
+                    <div className="h-[50px] border-t border-white/10 flex items-center justify-between px-1 pointer-events-auto bg-gradient-to-t from-black/85 via-black/50 to-transparent flex-shrink-0">
                       
                       {/* 1. Beranda */}
                       <button
@@ -880,14 +883,14 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                           e.stopPropagation();
                           setActiveBottomTab('home');
                         }}
-                        className="flex flex-col items-center justify-center flex-1 cursor-pointer transition-colors group"
+                        className="flex flex-col items-center justify-center flex-1 h-full cursor-pointer transition-colors group"
                       >
                         {activeBottomTab === 'home' ? (
-                          <HomeIconSolid className="h-[18px] w-[18px] text-white drop-shadow-sm" />
+                          <HomeIconSolid className="h-[23px] w-[23px] text-white drop-shadow-sm" />
                         ) : (
-                          <HomeIcon className="h-[18px] w-[18px] text-white/70 group-hover:text-white stroke-[2]" />
+                          <HomeIcon className="h-[23px] w-[23px] text-white/70 group-hover:text-white stroke-[2]" />
                         )}
-                        <span className={`text-[8px] mt-0.5 leading-none ${activeBottomTab === 'home' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}>
+                        <span className={`text-[10px] mt-1 leading-none ${activeBottomTab === 'home' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}>
                           Beranda
                         </span>
                       </button>
@@ -899,14 +902,14 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                           e.stopPropagation();
                           setActiveBottomTab('friends');
                         }}
-                        className="flex flex-col items-center justify-center flex-1 cursor-pointer transition-colors group"
+                        className="flex flex-col items-center justify-center flex-1 h-full cursor-pointer transition-colors group"
                       >
                         {activeBottomTab === 'friends' ? (
-                          <UserGroupIconSolid className="h-[18px] w-[18px] text-white drop-shadow-sm" />
+                          <UserGroupIconSolid className="h-[23px] w-[23px] text-white drop-shadow-sm" />
                         ) : (
-                          <UserGroupIcon className="h-[18px] w-[18px] text-white/70 group-hover:text-white stroke-[2]" />
+                          <UserGroupIcon className="h-[23px] w-[23px] text-white/70 group-hover:text-white stroke-[2]" />
                         )}
-                        <span className={`text-[8px] mt-0.5 leading-none ${activeBottomTab === 'friends' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}>
+                        <span className={`text-[10px] mt-1 leading-none ${activeBottomTab === 'friends' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}>
                           Teman
                         </span>
                       </button>
@@ -914,14 +917,14 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       {/* 3. Center Create [+] Button */}
                       <div 
                         onClick={(e) => e.stopPropagation()}
-                        className="flex flex-col items-center justify-center flex-1 cursor-pointer hover:scale-105 active:scale-95 transition-transform"
+                        className="flex flex-col items-center justify-center flex-1 h-full cursor-pointer hover:scale-105 active:scale-95 transition-transform"
                         title="Buat Video"
                       >
-                        <div className="relative flex h-[22px] w-[34px] items-center justify-center">
-                          <div className="absolute inset-y-0 left-0 w-[27px] rounded-[7px] bg-[#00f2fe]" />
-                          <div className="absolute inset-y-0 right-0 w-[27px] rounded-[7px] bg-[#fe0979]" />
-                          <div className="relative flex h-full w-[29px] items-center justify-center rounded-[6px] bg-white text-black shadow-xs">
-                            <PlusIcon className="h-3.5 w-3.5 stroke-[3] text-black" />
+                        <div className="relative flex h-[26px] w-[41px] items-center justify-center">
+                          <div className="absolute inset-y-0 left-0 w-[32px] rounded-[8px] bg-[#00f2fe]" />
+                          <div className="absolute inset-y-0 right-0 w-[32px] rounded-[8px] bg-[#fe0979]" />
+                          <div className="relative flex h-full w-[34px] items-center justify-center rounded-[7px] bg-white text-black shadow-xs">
+                            <PlusIcon className="h-4 w-4 stroke-[3] text-black" />
                           </div>
                         </div>
                       </div>
@@ -933,17 +936,17 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                           e.stopPropagation();
                           setActiveBottomTab('inbox');
                         }}
-                        className="flex flex-col items-center justify-center flex-1 cursor-pointer transition-colors group"
+                        className="flex flex-col items-center justify-center flex-1 h-full cursor-pointer transition-colors group"
                       >
                         <div className="relative">
                           {activeBottomTab === 'inbox' ? (
-                            <ChatBubbleOvalLeftEllipsisIconSolid className="h-[18px] w-[18px] text-white drop-shadow-sm" />
+                            <ChatBubbleOvalLeftEllipsisIconSolid className="h-[23px] w-[23px] text-white drop-shadow-sm" />
                           ) : (
-                            <ChatBubbleOvalLeftEllipsisIcon className="h-[18px] w-[18px] text-white/70 group-hover:text-white stroke-[2]" />
+                            <ChatBubbleOvalLeftEllipsisIcon className="h-[23px] w-[23px] text-white/70 group-hover:text-white stroke-[2]" />
                           )}
-                          <span className="absolute -top-0.5 -right-1 h-1.5 w-1.5 rounded-full bg-rose-500 ring-1 ring-black" />
+                          <span className="absolute -top-0.5 -right-1 h-2 w-2 rounded-full bg-rose-500 ring-1 ring-black" />
                         </div>
-                        <span className={`text-[8px] mt-0.5 leading-none whitespace-nowrap ${activeBottomTab === 'inbox' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}>
+                        <span className={`text-[10px] mt-1 leading-none whitespace-nowrap ${activeBottomTab === 'inbox' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}>
                           Kotak Masuk
                         </span>
                       </button>
@@ -955,19 +958,22 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                           e.stopPropagation();
                           setActiveBottomTab('profile');
                         }}
-                        className="flex flex-col items-center justify-center flex-1 cursor-pointer transition-colors group"
+                        className="flex flex-col items-center justify-center flex-1 h-full cursor-pointer transition-colors group"
                       >
                         {activeBottomTab === 'profile' ? (
-                          <UserIconSolid className="h-[18px] w-[18px] text-white drop-shadow-sm" />
+                          <UserIconSolid className="h-[23px] w-[23px] text-white drop-shadow-sm" />
                         ) : (
-                          <UserIconOutline className="h-[18px] w-[18px] text-white/70 group-hover:text-white stroke-[2]" />
+                          <UserIconOutline className="h-[23px] w-[23px] text-white/70 group-hover:text-white stroke-[2]" />
                         )}
-                        <span className={`text-[8px] mt-0.5 leading-none ${activeBottomTab === 'profile' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}>
+                        <span className={`text-[10px] mt-1 leading-none ${activeBottomTab === 'profile' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}>
                           Profil
                         </span>
                       </button>
 
                     </div>
+
+                    {/* iOS home-indicator safe area (34px) */}
+                    <div className="h-[34px] bg-gradient-to-b from-black/50 to-black/85 flex-shrink-0" />
 
                   </div>
                 )}
@@ -976,74 +982,74 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                 {overlayMode === 'reels' && (
                   <div className="absolute inset-0 pointer-events-none z-25 flex flex-col justify-between overflow-hidden">
                     {/* Top Reels Header (Below iOS 18/26 Status Bar) */}
-                    <div className="pt-[44px] px-3.5 flex items-center justify-between text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
+                    <div className="pt-[46px] px-4 flex items-center justify-between text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
                       <div className="flex items-center gap-1">
-                        <span className="text-[12px] font-bold tracking-tight">Reels</span>
-                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                        <span className="text-[15px] font-bold tracking-tight">Reels</span>
+                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                         </svg>
                       </div>
-                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
                         <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z" />
                       </svg>
                     </div>
 
                     {/* Right Action Icons Column (Reels Style) */}
-                    <div className="absolute right-2.5 bottom-12 flex flex-col items-center gap-3 z-25 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+                    <div className="absolute right-3 bottom-14 flex flex-col items-center gap-4 z-25 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
                       <div className="flex flex-col items-center">
-                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" />
                         </svg>
-                        <span className="text-[7.5px] font-semibold text-white mt-0.5">184K</span>
+                        <span className="text-[11px] font-semibold text-white mt-0.5">184K</span>
                       </div>
 
                       <div className="flex flex-col items-center">
-                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641a4.483 4.483 0 0 1-.923 1.785A5.969 5.969 0 0 0 6 21c1.282 0 2.47-.402 3.445-1.087.81.22 1.668.337 2.555.337Z" />
                         </svg>
-                        <span className="text-[7.5px] font-semibold text-white mt-0.5">1,290</span>
+                        <span className="text-[11px] font-semibold text-white mt-0.5">1,290</span>
                       </div>
 
                       <div className="flex flex-col items-center">
-                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
                         </svg>
-                        <span className="text-[7.5px] font-semibold text-white mt-0.5">42K</span>
+                        <span className="text-[11px] font-semibold text-white mt-0.5">42K</span>
                       </div>
 
                       {/* 3 dots */}
                       <div className="flex flex-col items-center">
-                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM12.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM18.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" />
                         </svg>
                       </div>
 
                       {/* Audio square thumbnail */}
-                      <div className="w-6 h-6 rounded-md border border-white/60 bg-slate-900 p-0.5 flex items-center justify-center">
-                        <div className="w-full h-full bg-gradient-to-tr from-fuchsia-600 to-amber-500 rounded-sm flex items-center justify-center text-[7px] text-white">
+                      <div className="w-8 h-8 rounded-md border border-white/60 bg-slate-900 p-0.5 flex items-center justify-center">
+                        <div className="w-full h-full bg-gradient-to-tr from-fuchsia-600 to-amber-500 rounded-sm flex items-center justify-center text-[9px] text-white">
                           ♫
                         </div>
                       </div>
                     </div>
 
                     {/* Bottom Left Creator & Caption Info */}
-                    <div className="px-3 pb-10 flex flex-col text-left z-25 max-w-[80%] drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
+                    <div className="px-3.5 pb-12 flex flex-col text-left z-25 max-w-[78%] drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
                       <div className="flex items-center gap-1.5">
-                        <div className="w-6 h-6 rounded-full border border-white p-0.5 bg-gradient-to-tr from-yellow-400 via-rose-500 to-purple-600 flex items-center justify-center">
-                          <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center text-white text-[8px] font-bold">
+                        <div className="w-9 h-9 rounded-full border border-white p-0.5 bg-gradient-to-tr from-yellow-400 via-rose-500 to-purple-600 flex items-center justify-center">
+                          <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center text-white text-[11px] font-bold">
                             {displayAccount.charAt(0).toUpperCase()}
                           </div>
                         </div>
-                        <span className="text-[9.5px] font-bold text-white tracking-tight">@{displayAccount}</span>
-                        <button className="px-2 py-0.5 rounded-md border border-white/70 text-[8px] font-bold text-white ml-1">
+                        <span className="text-[14px] font-bold text-white tracking-tight">@{displayAccount}</span>
+                        <button className="px-2.5 py-1 rounded-md border border-white/70 text-[11.5px] font-bold text-white ml-1">
                           Ikuti
                         </button>
                       </div>
-                      <p className="text-[8.5px] text-white/95 leading-tight mt-1 line-clamp-1">
+                      <p className="text-[13px] text-white/95 leading-tight mt-1.5 line-clamp-2">
                         {displayCaption}
                       </p>
-                      <div className="flex items-center gap-1 mt-0.5 text-[7.5px] text-white/80">
+                      <div className="flex items-center gap-1 mt-1 text-[11.5px] text-white/80">
                         <span>♫ Audio asli • {displayAccount}</span>
                       </div>
                     </div>
@@ -1054,68 +1060,64 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                 {overlayMode === 'shorts' && (
                   <div className="absolute inset-0 pointer-events-none z-25 flex flex-col justify-between overflow-hidden">
                     {/* Top Shorts Header (Below iOS 18/26 Status Bar) */}
-                    <div className="pt-[44px] px-3.5 flex items-center justify-between text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
+                    <div className="pt-[46px] px-4 flex items-center justify-between text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
                       <div className="flex items-center gap-1">
-                        <span className="text-[12px] font-black tracking-tight text-white font-['Outfit']">Shorts</span>
+                        <span className="text-[15px] font-black tracking-tight text-white font-['Outfit']">Shorts</span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <div className="flex items-center gap-3">
+                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
                         </svg>
-                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z" />
                         </svg>
                       </div>
                     </div>
 
                     {/* Right Action Icons Column (Shorts Style) */}
-                    <div className="absolute right-2.5 bottom-12 flex flex-col items-center gap-2.5 z-25 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+                    <div className="absolute right-3 bottom-14 flex flex-col items-center gap-3.5 z-25 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
                       <div className="flex flex-col items-center">
-                        <svg className="w-5 h-5 text-white fill-white" viewBox="0 0 24 24">
-                          <path d="M7.493 18.5c-.425 0-.82-.236-.975-.632A7.48 7.48 0 0 1 6 15.125c0-1.75.599-3.358 1.603-4.633.441-.56.637-1.282.527-1.986l-.27-1.73a2.25 2.25 0 0 1 1.763-2.553l.422-.065c1.196-.184 2.378.508 2.766 1.62.339.972.84 1.879 1.48 2.686.438.552 1.05.94 1.734 1.085 1.517.323 2.628 1.636 2.628 3.197 0 1.835-1.464 3.325-3.298 3.344l-3.076.033c-.76.008-1.487.35-1.988.946l-.578.69a1.05 1.05 0 0 1-.808.415Z" />
+                        <svg className="w-7 h-7 text-white" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                          <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z" />
                         </svg>
-                        <span className="text-[7.5px] font-semibold text-white mt-0.5">312K</span>
+                        <span className="text-[11px] font-semibold text-white mt-0.5">312K</span>
                       </div>
 
                       <div className="flex flex-col items-center">
-                        <svg className="w-5 h-5 text-white fill-white rotate-180" viewBox="0 0 24 24">
-                          <path d="M7.493 18.5c-.425 0-.82-.236-.975-.632A7.48 7.48 0 0 1 6 15.125c0-1.75.599-3.358 1.603-4.633.441-.56.637-1.282.527-1.986l-.27-1.73a2.25 2.25 0 0 1 1.763-2.553l.422-.065c1.196-.184 2.378.508 2.766 1.62.339.972.84 1.879 1.48 2.686.438.552 1.05.94 1.734 1.085 1.517.323 2.628 1.636 2.628 3.197 0 1.835-1.464 3.325-3.298 3.344l-3.076.033c-.76.008-1.487.35-1.988.946l-.578.69a1.05 1.05 0 0 1-.808.415Z" />
+                        <svg className="w-7 h-7 text-white" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                          <path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z" />
                         </svg>
-                        <span className="text-[7.5px] font-semibold text-white mt-0.5">Dislike</span>
+                        <span className="text-[11px] font-semibold text-white mt-0.5">Dislike</span>
                       </div>
 
                       <div className="flex flex-col items-center">
-                        <svg className="w-5 h-5 text-white fill-white" viewBox="0 0 24 24">
-                          <path fillRule="evenodd" d="M4.848 2.771A49.144 49.144 0 0 1 12 2.25c2.43 0 4.817.177 7.152.521 1.942.286 3.348 1.984 3.348 3.946v6.262c0 1.962-1.406 3.66-3.348 3.946-1.579.233-3.208.384-4.871.448l-4.103 3.518a.75.75 0 0 1-1.238-.57v-3.084A50.04 50.04 0 0 1 4.848 16.98C2.906 16.694 1.5 14.996 1.5 13.034V6.77c0-1.962 1.406-3.66 3.348-3.946Z" clipRule="evenodd" />
-                        </svg>
-                        <span className="text-[7.5px] font-semibold text-white mt-0.5">2.4K</span>
+                        <ChatBubbleOvalLeftEllipsisIconSolid className="w-7 h-7 text-white" />
+                        <span className="text-[11px] font-semibold text-white mt-0.5">2.4K</span>
                       </div>
 
                       <div className="flex flex-col items-center">
-                        <svg className="w-5 h-5 text-white fill-white" viewBox="0 0 24 24">
-                          <path fillRule="evenodd" d="M15.75 4.5a3 3 0 1 1 .825 2.066l-8.421 4.679a3.002 3.002 0 0 1 0 1.51l8.421 4.679a3 3 0 1 1-.729 1.31l-8.421-4.678a3 3 0 1 1 0-4.132l8.421-4.679a3 3 0 0 1-.096-.755Z" clipRule="evenodd" />
-                        </svg>
-                        <span className="text-[7.5px] font-semibold text-white mt-0.5">Bagikan</span>
+                        <ShareIcon className="w-7 h-7 text-white stroke-[2.5]" />
+                        <span className="text-[11px] font-semibold text-white mt-0.5">Bagikan</span>
                       </div>
 
                       {/* Sound square */}
-                      <div className="w-6 h-6 rounded-md border border-white/60 bg-red-600 p-0.5 flex items-center justify-center">
-                        <span className="text-[8px] text-white">▶</span>
+                      <div className="w-8 h-8 rounded-md border border-white/60 bg-red-600 p-0.5 flex items-center justify-center">
+                        <span className="text-[10px] text-white">▶</span>
                       </div>
                     </div>
 
                     {/* Bottom Left Shorts Creator & Caption Info */}
-                    <div className="px-3 pb-10 flex flex-col text-left z-25 max-w-[80%] drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
+                    <div className="px-3.5 pb-12 flex flex-col text-left z-25 max-w-[78%] drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
                       <div className="flex items-center gap-1.5">
-                        <div className="w-5 h-5 rounded-full bg-red-600 flex items-center justify-center text-white text-[8px] font-bold">
+                        <div className="w-7 h-7 rounded-full bg-red-600 flex items-center justify-center text-white text-[11px] font-bold">
                           {displayAccount.charAt(0).toUpperCase()}
                         </div>
-                        <span className="text-[9.5px] font-bold text-white tracking-tight">@{displayAccount}</span>
-                        <button className="px-2 py-0.5 rounded-full bg-white text-black text-[7.5px] font-black uppercase tracking-wider ml-1">
+                        <span className="text-[14px] font-bold text-white tracking-tight">@{displayAccount}</span>
+                        <button className="px-2.5 py-1 rounded-full bg-white text-black text-[11px] font-black uppercase tracking-wider ml-1">
                           Subscribe
                         </button>
                       </div>
-                      <p className="text-[8.5px] text-white/95 leading-tight mt-1 line-clamp-1">
+                      <p className="text-[13px] text-white/95 leading-tight mt-1.5 line-clamp-2">
                         {displayCaption}
                       </p>
                     </div>
@@ -1124,18 +1126,18 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
                 {/* ── LIVE GLASS WATERMARK BADGES (Top Safe Zone) ── */}
                 {watermarkEnabled && !isRenderedClip && (sourceWatermark || accountWatermark) && (
-                  <div className="absolute top-11 inset-x-3.5 flex items-center justify-between pointer-events-none z-30">
+                  <div className="absolute top-12 inset-x-3.5 flex items-center justify-between pointer-events-none z-30">
                     {sourceWatermark ? (
-                      <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#121418]/75 backdrop-blur-md border border-white/15 shadow-[0_4px_12px_rgba(0,0,0,0.5)] max-w-[55%]">
-                        <span className="text-[7.5px] text-white/90 font-medium truncate tracking-wide">
-                          <span className="text-cyan-400 mr-1 text-[6.5px]">▶</span>Source: {sourceWatermark}
+                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#121418]/75 backdrop-blur-md border border-white/15 shadow-[0_4px_12px_rgba(0,0,0,0.5)] max-w-[55%]">
+                        <span className="text-[9.5px] text-white/90 font-medium truncate tracking-wide">
+                          <span className="text-cyan-400 mr-1 text-[8px]">▶</span>Source: {sourceWatermark}
                         </span>
                       </div>
                     ) : <div />}
 
                     {accountWatermark ? (
-                      <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#121418]/75 backdrop-blur-md border border-white/15 shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
-                        <span className="text-[8px] font-bold text-amber-300 font-mono tracking-tight">
+                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#121418]/75 backdrop-blur-md border border-white/15 shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
+                        <span className="text-[10px] font-bold text-amber-300 font-mono tracking-tight">
                           {accountWatermark.startsWith('@') ? accountWatermark : `@${accountWatermark}`}
                         </span>
                       </div>
@@ -1167,9 +1169,9 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
               {/* ─────────────────────────────────────────────────────
                   AUTHENTIC iOS HOME INDICATOR BAR
-                  - White rounded bar at bottom center
+                  - 134pt wide @ 393pt screen => 121px @ 356px, 5px tall, 9px from bottom
                  ───────────────────────────────────────────────────── */}
-              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 h-[3.5px] w-28 rounded-full bg-white/70 shadow-sm pointer-events-none z-40" />
+              <div className="absolute bottom-[9px] left-1/2 -translate-x-1/2 h-[5px] w-[121px] rounded-full bg-white/85 shadow-sm pointer-events-none z-40" />
 
             </div>
 
