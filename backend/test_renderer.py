@@ -19,6 +19,7 @@ from backend.renderer import (
     _calc_margin_v,
     _inject_emojis_to_words,
     _format_ass_word,
+    _get_active_emoji_font,
     _EMOJI_PATTERN,
     EMOJI_KEYWORDS,
     EMOJI_COLORS,
@@ -481,7 +482,7 @@ class SplitScreenAndSubtitleEnhancementTest(unittest.TestCase):
             self.assertEqual(kwargs["source_watermark"], "YouTube Channel")
             self.assertEqual(kwargs["account_watermark"], "@clipper")
 
-    def test_generate_ass_subtitles_formats_emojis_with_noto_emoji_font(self):
+    def test_generate_ass_subtitles_formats_emojis_with_emoji_font(self):
         with tempfile.NamedTemporaryFile(suffix=".ass", delete=False) as tf:
             ass_path = tf.name
 
@@ -492,7 +493,7 @@ class SplitScreenAndSubtitleEnhancementTest(unittest.TestCase):
                     "end": 3.0,
                     "words": [
                         {"word": "konten", "start": 1.0, "end": 1.5},
-                        {"word": "viral", "start": 1.6, "end": 2.2}
+                        {"word": "viral \U0001F680", "start": 1.6, "end": 2.2}
                     ]
                 }
             ]
@@ -509,30 +510,32 @@ class SplitScreenAndSubtitleEnhancementTest(unittest.TestCase):
             with open(ass_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            # Emoji yang disuntikkan ke kata "viral" harus dibungkus font Noto Emoji
+            # Emoji asli dari transkrip harus dibungkus font emoji aktif
             # (kalau tidak, libass akan menggambarnya sebagai kotak kosong / tofu).
-            self.assertIn(r"{\fnNoto Emoji", content)
-            candidates = EMOJI_KEYWORDS["viral"]
-            self.assertTrue(
-                any(em.replace("\ufe0f", "") in content for em in candidates),
-                msg=f"expected one of {candidates} in generated ASS",
-            )
+            active_font = _get_active_emoji_font()
+            self.assertIn(r"{\fn" + active_font, content)
+            self.assertIn("\U0001F680", content)
         finally:
             if os.path.exists(ass_path):
                 os.remove(ass_path)
 
-    def test_every_keyword_emoji_is_covered_by_noto_emoji_font(self):
+    def test_every_keyword_emoji_is_covered_by_emoji_fonts(self):
         """
         Regresi 'kotak kosong': setiap emoji di EMOJI_KEYWORDS harus
-        (a) dikenali _EMOJI_PATTERN sehingga dibungkus {\\fnNoto Emoji ...}, dan
-        (b) benar-benar punya glyph di backend/fonts/NotoEmoji.ttf.
+        (a) dikenali _EMOJI_PATTERN sehingga dibungkus {\fn<font> ...}, dan
+        (b) benar-benar punya glyph di font emoji monokrom (fallback) & warna.
         """
-        font_path = os.path.join(FONTS_DIR, "NotoEmoji.ttf")
-        if not os.path.exists(font_path):
-            self.skipTest(f"{font_path} not found")
+        mono_font_path = os.path.join(FONTS_DIR, "NotoEmoji.ttf")
+        color_font_path = os.path.join(FONTS_DIR, "NotoColorEmoji.ttf")
+        if not os.path.exists(mono_font_path):
+            self.skipTest(f"{mono_font_path} not found")
 
-        cmap_codepoints = _read_ttf_cmap_codepoints(font_path)
-        self.assertGreater(len(cmap_codepoints), 100)
+        mono_cmap = _read_ttf_cmap_codepoints(mono_font_path)
+        self.assertGreater(len(mono_cmap), 100)
+        color_cmap = (
+            _read_ttf_cmap_codepoints(color_font_path)
+            if os.path.exists(color_font_path) else set()
+        )
 
         for keyword, candidates in EMOJI_KEYWORDS.items():
             for emoji in candidates:
@@ -541,34 +544,58 @@ class SplitScreenAndSubtitleEnhancementTest(unittest.TestCase):
                     _EMOJI_PATTERN.fullmatch(emoji),
                     msg=f"keyword {keyword!r} emoji {emoji!r} tidak dikenali _EMOJI_PATTERN",
                 )
-                # (b) harus dibungkus font Noto Emoji di output ASS
+                # (b) harus dibungkus font emoji di output ASS
                 formatted = _format_ass_word(f"kata {emoji}")
-                self.assertIn(
-                    r"\fnNoto Emoji", formatted,
-                    msg=f"keyword {keyword!r} emoji {emoji!r} tidak dibungkus font Noto Emoji",
+                self.assertRegex(
+                    formatted, r"\\fn(Noto Color Emoji|Noto Emoji)",
+                    msg=f"keyword {keyword!r} emoji {emoji!r} tidak dibungkus font emoji",
                 )
-                # (c) setiap codepoint harus ada di font
+                # (c) setiap codepoint harus ada di font monokrom (fallback) & warna
                 for ch in emoji:
                     if ch in ("\ufe0e", "\ufe0f", "\u200d"):
                         continue
                     self.assertIn(
-                        ord(ch), cmap_codepoints,
+                        ord(ch), mono_cmap,
                         msg=f"emoji {emoji!r} (keyword {keyword!r}) codepoint U+{ord(ch):04X} tidak ada di NotoEmoji.ttf",
                     )
+                    if color_cmap:
+                        self.assertIn(
+                            ord(ch), color_cmap,
+                            msg=f"emoji {emoji!r} (keyword {keyword!r}) codepoint U+{ord(ch):04X} tidak ada di NotoColorEmoji.ttf",
+                        )
+
+    def test_color_mode_wraps_without_tint(self):
+        """Mode warna: emoji dibungkus {\fnNoto Color Emoji} TANPA tag \c tint."""
+        with patch.dict(os.environ, {"EMOJI_FONT_MODE": "color"}):
+            out = _format_ass_word("keren \U0001F525", base_color="&HFFFFFF&")
+        fire = "\U0001F525"
+        self.assertIn("{\\fnNoto Color Emoji}" + fire + "{\\fn}", out)
+        # Tidak ada tag warna tint di segmen emoji
+        emoji_segment = out.split("{\\fnNoto Color Emoji}")[1]
+        self.assertNotIn("\\c&H", emoji_segment)
+
+    def test_mono_mode_wraps_with_tint(self):
+        """Mode fallback monokrom: emoji dibungkus {\fnNoto Emoji\c<color>} (perilaku lama)."""
+        with patch.dict(os.environ, {"EMOJI_FONT_MODE": "mono"}):
+            out = _format_ass_word("keren \U0001F525", base_color="&HFFFFFF&")
+        fire = "\U0001F525"
+        self.assertIn("{\\fnNoto Emoji\\c&H0070FF&}" + fire + "{\\fn\\c&HFFFFFF&}", out)
 
     def test_zwj_emoji_cluster_is_not_split_by_font_tags(self):
-        """😮‍💨 (capek) harus tetap satu cluster, bukan dipecah tag {\\fn} di tengah ZWJ."""
+        """😮‍💨 (capek) harus tetap satu cluster, bukan dipecah tag {\fn} di tengah ZWJ."""
         out = _format_ass_word("capek \U0001F62E\u200D\U0001F4A8")
-        self.assertIn(r"{\fnNoto Emoji", out)
-        # hanya boleh ada satu pembuka {\fnNoto Emoji ...} untuk seluruh cluster
-        self.assertEqual(out.count(r"\fnNoto Emoji"), 1)
+        active_font = _get_active_emoji_font()
+        self.assertIn(r"{\fn" + active_font, out)
+        # hanya boleh ada satu pembuka {\fn<font> ...} untuk seluruh cluster
+        self.assertEqual(out.count(r"\fn" + active_font), 1)
         self.assertIn("\U0001F62E\u200D\U0001F4A8", out)
 
     def test_stopwatch_keyword_is_wrapped_with_emoji_font(self):
         """⏱ (U+23F1) ada di blok Misc Technical, di luar rentang emoji 'umum'.
         Regresi: dulu tidak dikenali sehingga muncul kotak kosong."""
         out = _format_ass_word("waktu \u23F1\ufe0F")
-        self.assertIn(r"{\fnNoto Emoji", out)
+        active_font = _get_active_emoji_font()
+        self.assertIn(r"{\fn" + active_font, out)
         self.assertIn("\u23F1", out)
         self.assertNotIn("\ufe0f", out)  # variation selector dibuang
 

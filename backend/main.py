@@ -1016,8 +1016,10 @@ async def render_selected(request: Request):
         cmd.append("--show-emoji")
     else:
         cmd.append("--no-emoji")
-
-    watermark_enabled = bool(data.get("watermark_enabled", True))
+    if bool(data.get("inject_emoji", True)):
+        cmd.append("--inject-emoji")
+    else:
+        cmd.append("--no-inject-emoji")
     source_watermark = str(data.get("source_watermark", "")).strip()
     account_watermark = str(data.get("account_watermark", "")).strip()
     if watermark_enabled:
@@ -1069,6 +1071,11 @@ async def stream(request: Request, mode: str = "", source_type: str = "", source
         cmd.append("--show-emoji")
     else:
         cmd.append("--no-emoji")
+    inject_param = str(request.query_params.get("inject_emoji", "true")).lower()
+    if inject_param in {"0", "false", "no"}:
+        cmd.append("--no-inject-emoji")
+    else:
+        cmd.append("--inject-emoji")
 
     wm_bool = watermark_enabled.lower() in {"1", "true", "yes"}
     if wm_bool:

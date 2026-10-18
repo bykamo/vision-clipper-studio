@@ -247,6 +247,8 @@ export const SimpleClipperDashboard: React.FC = () => {
   const [framingMode, setFramingMode] = useState<FramingMode>('smart_crop');
   const [subPosition, setSubPosition] = useState<number>(68);
   const [showEmoji, setShowEmoji] = useState<boolean>(true);
+  // Emoji kontekstual: suntik emoji yang cocok dengan kalimat (EMOJI_KEYWORDS).
+  const [injectEmoji, setInjectEmoji] = useState<boolean>(true);
 
   // Watermark Settings State (Glass Effect)
   const [watermarkEnabled, setWatermarkEnabled] = useState<boolean>(true);
@@ -1154,6 +1156,7 @@ export const SimpleClipperDashboard: React.FC = () => {
       framing_mode: framingMode,
       sub_position: subPosition,
       show_emoji: showEmoji,
+      inject_emoji: injectEmoji,
       watermark_enabled: watermarkEnabled,
       source_watermark: sourceWatermark.trim(),
       account_watermark: accountWatermark.trim()
@@ -1745,10 +1748,17 @@ export const SimpleClipperDashboard: React.FC = () => {
 
                 <CompactToggle
                   icon={<SparklesIcon className="h-3.5 w-3.5 text-yellow-400" />}
-                  label="Auto-Emoji Hook"
+                  label="Emoji Berwarna"
                   checked={showEmoji}
                   onChange={() => setShowEmoji(!showEmoji)}
-                  title="Suntikkan emoji viral di kata kunci"
+                  title="Tampilkan emoji di subtitle (dirender berwarna seperti di HP)"
+                />
+                <CompactToggle
+                  icon={<SparklesIcon className="h-3.5 w-3.5 text-amber-400" />}
+                  label="Auto-Emoji Hook"
+                  checked={injectEmoji}
+                  onChange={() => setInjectEmoji(!injectEmoji)}
+                  title="Suntikkan emoji yang cocok dengan kalimat di kata kunci viral"
                 />
               </div>
             )}

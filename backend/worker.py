@@ -56,8 +56,10 @@ def main():
     parser.add_argument("--sub-style", type=str, default="tiktok_viral", choices=["tiktok_viral", "classic_karaoke", "minimalist", "word_pop", "no_subtitle", "none"], help="Subtitle style")
     parser.add_argument("--framing-mode", type=str, default="smart_crop", choices=["smart_crop", "fit_blur", "split_screen"], help="Video layout framing mode")
     parser.add_argument("--sub-position", type=int, default=68, help="Subtitle vertical position percentage from top (30-85)")
-    parser.add_argument("--show-emoji", action="store_true", default=True, help="Auto-inject high-impact viral emojis to subtitles")
-    parser.add_argument("--no-emoji", action="store_false", dest="show_emoji", help="Disable auto emoji injection")
+    parser.add_argument("--show-emoji", action="store_true", default=True, help="Render original emojis from transcript in subtitles (colored via Noto Color Emoji)")
+    parser.add_argument("--no-emoji", action="store_false", dest="show_emoji", help="Strip all emojis from subtitles")
+    parser.add_argument("--inject-emoji", action="store_true", default=True, help="Auto-inject keyword-based viral emojis (EMOJI_KEYWORDS) that match the sentence context")
+    parser.add_argument("--no-inject-emoji", action="store_false", dest="inject_emoji", help="Disable keyword-based emoji injection")
     # Watermark flags
     parser.add_argument("--watermark-enabled", action="store_true", default=True, help="Burn-in subtle glass-effect watermarks")
     parser.add_argument("--no-watermark", action="store_false", dest="watermark_enabled", help="Disable watermarks")
@@ -118,7 +120,8 @@ def main():
                         show_emoji=args.show_emoji,
                         watermark_enabled=args.watermark_enabled,
                         source_watermark=resolved_source_wm,
-                        account_watermark=resolved_account_wm
+                        account_watermark=resolved_account_wm,
+                        inject_emoji=args.inject_emoji
                     )
                 except Exception as e:
                     log(f"Failed to render clip {idx}: {e}", job_id=job_id)
@@ -276,7 +279,8 @@ def main():
                     show_emoji=args.show_emoji,
                     watermark_enabled=args.watermark_enabled,
                     source_watermark=resolved_source_wm,
-                    account_watermark=resolved_account_wm
+                    account_watermark=resolved_account_wm,
+                    inject_emoji=args.inject_emoji
                 )
             except Exception as e:
                 log(f"Failed to render clip {i}: {e}", job_id=job_id)

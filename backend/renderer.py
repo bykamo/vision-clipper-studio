@@ -19,6 +19,135 @@ from backend.utils import (
     FONTS_DIR,
 )
 
+# ── FONT EMOJI ──
+# Mode warna: NotoColorEmoji.ttf (CBDT bitmap) dirender native oleh libass sehingga
+# emoji tampil BERWARNA persis seperti emoji asli di HP. Mode fallback: NotoEmoji.ttf
+# (monokrom) + tint warna EMOJI_COLORS, dipakai jika font warna tidak tersedia atau
+# probe libass gagal merender bitmap warna.
+EMOJI_FONT_COLOR = "Noto Color Emoji"
+EMOJI_FONT_MONO = "Noto Emoji"
+EMOJI_COLOR_FONT_FILE = "NotoColorEmoji.ttf"
+EMOJI_MONO_FONT_FILE = "NotoEmoji.ttf"
+# Override manual: "color" | "mono" | None (auto-detect via probe)
+EMOJI_FONT_MODE_OVERRIDE = os.environ.get("EMOJI_FONT_MODE") or None
+
+
+def _probe_color_emoji_support():
+    """Cek apakah libass (bundled ffmpeg) mampu merender NotoColorEmoji (CBDT) berwarna.
+
+    Render 1 frame ASS berisi emoji via bundled ffmpeg -> rawvideo gray+u/v analisis
+    sederhana: frame di-render sebagai bgr24 lalu dicek saturasi kroma piksel emoji.
+    Emoji berwarna -> ada piksel dengan saturasi tinggi. Tofu/monokrom -> abu-abu.
+    Hasil di-cache di temp/.emoji_color_probe.json (key: path ffmpeg + mtime font).
+    """
+    global _COLOR_EMOJI_SUPPORTED
+    if _COLOR_EMOJI_SUPPORTED is not None:
+        return _COLOR_EMOJI_SUPPORTED
+
+    cache_path = os.path.join(TEMP_DIR, ".emoji_color_probe.json")
+    try:
+        ffmpeg_bin = get_ffmpeg_binary()
+    except Exception:
+        ffmpeg_bin = "ffmpeg"
+    font_path = os.path.join(FONTS_DIR, EMOJI_COLOR_FONT_FILE)
+    if not os.path.exists(font_path):
+        _COLOR_EMOJI_SUPPORTED = False
+        return False
+    try:
+        font_key = f"{ffmpeg_bin}|{os.path.getmtime(font_path)}|{os.path.getmtime(ffmpeg_bin) if os.path.exists(ffmpeg_bin) else 0}"
+    except OSError:
+        font_key = None
+
+    if font_key:
+        try:
+            with open(cache_path, "r", encoding="utf-8") as fh:
+                cached = json.load(fh)
+            if cached.get("key") == font_key:
+                _COLOR_EMOJI_SUPPORTED = bool(cached.get("supported"))
+                return _COLOR_EMOJI_SUPPORTED
+        except Exception:
+            pass
+
+    supported = False
+    probe_ass = os.path.join(TEMP_DIR, ".emoji_probe.ass")
+    try:
+        with open(probe_ass, "w", encoding="utf-8") as fh:
+            fh.write(
+                "[Script Info]\nScriptType: v4.00+\nPlayResX: 320\nPlayResY: 180\n"
+                "WrapStyle: 2\n\n[V4+ Styles]\n"
+                "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
+                f"Style: Probe,{EMOJI_FONT_COLOR},48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,5,10,10,10,1\n"
+                "\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+                "Dialogue: 0,0:00:00.00,0:00:05.00,Probe,,0,0,0,,\U0001F525\U0001F4B0\U0001F60E\n"
+            )
+        escaped_ass = _escape_filter_path(probe_ass)
+        escaped_fonts = _escape_filter_path(FONTS_DIR)
+        cmd = [
+            ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "color=c=black:s=320x180:d=1",
+            "-vf", f"subtitles='{escaped_ass}':fontsdir='{escaped_fonts}',format=bgr24",
+            "-frames:v", "1", "-f", "rawvideo", "-",
+        ]
+        raw = subprocess.run(cmd, capture_output=True, timeout=30)
+        buf = raw.stdout
+        if raw.returncode == 0 and len(buf) >= 320 * 180 * 3:
+            arr = np.frombuffer(buf[: 320 * 180 * 3], dtype=np.uint8).reshape(180, 320, 3)
+            mx = arr.max(axis=2).astype(np.int16)
+            mn = arr.min(axis=2).astype(np.int16)
+            sat = mx - mn
+            # Emoji CBDT berwarna menghasilkan banyak piksel saturasi tinggi;
+            # tofu/monokrom hanya abu-abu (saturasi ~0).
+            supported = bool((sat > 60).sum() > 200)
+    except Exception:
+        supported = False
+    finally:
+        try:
+            if os.path.exists(probe_ass):
+                os.remove(probe_ass)
+        except Exception:
+            pass
+
+    _COLOR_EMOJI_SUPPORTED = supported
+    if font_key:
+        try:
+            with open(cache_path, "w", encoding="utf-8") as fh:
+                json.dump({"key": font_key, "supported": supported}, fh)
+        except Exception:
+            pass
+    return supported
+
+
+def _get_active_emoji_font():
+    """Kembalikan nama family font emoji aktif: warna (CBDT) atau monokrom fallback."""
+    # Baca env saat dipanggil (bukan saat import) agar mudah di-override test.
+    mode = (os.environ.get("EMOJI_FONT_MODE") or "").strip().lower()
+    if mode == "mono":
+        return EMOJI_FONT_MONO
+    if mode == "color":
+        return EMOJI_FONT_COLOR
+    color_file = os.path.join(FONTS_DIR, EMOJI_COLOR_FONT_FILE)
+    if os.path.exists(color_file) and _probe_color_emoji_support():
+        return EMOJI_FONT_COLOR
+    return EMOJI_FONT_MONO
+
+
+_COLOR_EMOJI_SUPPORTED = None
+
+
+def _emoji_overlay_available():
+    """Apakah emoji berwarna bisa ditempel sebagai overlay PNG?
+
+    Butuh Pillow + fontTools + NotoColorEmoji.ttf. Jika tidak tersedia, pipeline
+    otomatis memakai font emoji monokrom (fallback lama) supaya render tidak gagal.
+    """
+    if os.environ.get("EMOJI_OVERLAY", "").strip().lower() in {"0", "false", "no", "off"}:
+        return False
+    try:
+        from backend.emoji_overlay import emoji_overlay_supported
+        return emoji_overlay_supported(FONTS_DIR)
+    except Exception:
+        return False
+
 try:
     from backend.utils import env_float, env_bool
 except ImportError:
@@ -338,20 +467,48 @@ _EMOJI_CLUSTER = (
 )
 _EMOJI_PATTERN = re.compile(f"({_EMOJI_CLUSTER})")
 
+# Saat True, emoji TIDAK digambar oleh libass melainkan diganti placeholder
+# transparan; gambar emoji berwarna asli ditempel sebagai overlay PNG di atas
+# video (lihat backend/emoji_overlay.py). Di-set oleh generate_ass_subtitles()
+# agar seluruh style generator memakai perilaku yang sama.
+_EMOJI_OVERLAY_MODE = False
+
+
 def _format_ass_word(text, base_color="&HFFFFFF&", alpha_hide=False, uppercase=False):
     """
-    Format kata agar karakter emoji otomatis menggunakan font Noto Emoji dengan aksen warna pop,
-    sehingga terhindar dari bug kotak/tofu pada libass FFmpeg di semua platform.
+    Format kata agar karakter emoji memakai font emoji yang tepat.
+
+    Tiga mode:
+    - Overlay (``_EMOJI_OVERLAY_MODE``): emoji ditulis memakai Noto Emoji tapi
+      100% transparan. libass tetap MENYISAKAN ruang selebar emoji tersebut,
+      lalu PNG emoji berwarna asli ditempel persis di ruang itu oleh ffmpeg.
+      Hasil akhir: emoji persis seperti di HP (warna penuh), tanpa tint.
+    - Warna native (Noto Color Emoji): hanya jika libass benar-benar mampu
+      merender bitmap CBDT (probe lolos).
+    - Fallback monokrom (Noto Emoji): emoji di-tint warna aksen EMOJI_COLORS.
     """
     if not text:
         return text
+
+    emoji_font = _get_active_emoji_font()
+    color_mode = emoji_font == EMOJI_FONT_COLOR
 
     def _replace_emoji(match):
         em = match.group(1)
         if em in ("\ufe0e", "\ufe0f", "\u200d"):
             return ""
-        # Font monokrom Noto Emoji tidak butuh variation selector
+        # Font emoji tidak butuh variation selector
         em = em.replace("\ufe0e", "").replace("\ufe0f", "")
+        if _EMOJI_OVERLAY_MODE:
+            # Placeholder transparan: ruang tetap disisakan untuk overlay PNG.
+            # Bila kata ini memang sedang disembunyikan (alpha_hide), jangan
+            # sentuh alpha sama sekali supaya sisa kata tetap ikut tersembunyi.
+            if alpha_hide:
+                return f"{{\\fn{EMOJI_FONT_MONO}}}{em}{{\\fn}}"
+            return f"{{\\fn{EMOJI_FONT_MONO}\\alpha&HFF&}}{em}{{\\fn\\alpha&H00&}}"
+        if color_mode:
+            # Warna asli dari bitmap CBDT font - tanpa tint
+            return f"{{\\fn{emoji_font}}}{em}{{\\fn}}"
         color = (
             EMOJI_COLORS.get(em)
             or EMOJI_COLORS.get(f"{em}\ufe0f")
@@ -359,8 +516,8 @@ def _format_ass_word(text, base_color="&HFFFFFF&", alpha_hide=False, uppercase=F
             or "&H00D4FF&"
         )
         if alpha_hide:
-            return f"{{\\fnNoto Emoji\\alpha&HFF&}}{em}{{\\fn\\alpha&H00&}}"
-        return f"{{\\fnNoto Emoji\\c{color}}}{em}{{\\fn\\c{base_color}}}"
+            return f"{{\\fn{emoji_font}\\alpha&HFF&}}{em}{{\\fn\\alpha&H00&}}"
+        return f"{{\\fn{emoji_font}\\c{color}}}{em}{{\\fn\\c{base_color}}}"
 
     if uppercase:
         parts = _EMOJI_PATTERN.split(text)
@@ -444,8 +601,31 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         f.write(ass_content)
 
 
-def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, sub_style="tiktok_viral", sub_position=68, show_emoji=True, watermark_enabled=True, source_watermark="", account_watermark=""):
-    """Generate .ass subtitle file for specified style with optional glass-effect watermark badges."""
+def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, sub_style="tiktok_viral", sub_position=68, show_emoji=True, watermark_enabled=True, source_watermark="", account_watermark="", inject_emoji=False, emoji_overlay=None):
+    """Generate .ass subtitle file for specified style with optional glass-effect watermark badges.
+
+    ``emoji_overlay``: True = tulis emoji sebagai placeholder transparan supaya
+    bisa ditimpa PNG emoji berwarna asli (lihat backend/emoji_overlay.py).
+    None = deteksi otomatis (aktif bila Pillow + NotoColorEmoji.ttf tersedia).
+    """
+    global _EMOJI_OVERLAY_MODE
+    if emoji_overlay is None:
+        emoji_overlay = _emoji_overlay_available()
+    previous_overlay_mode = _EMOJI_OVERLAY_MODE
+    _EMOJI_OVERLAY_MODE = bool(emoji_overlay) and bool(show_emoji)
+
+    try:
+        _generate_ass_body(
+            segments, out_ass_path, clip_start, clip_end, sub_style, sub_position,
+            show_emoji, watermark_enabled, source_watermark, account_watermark, inject_emoji,
+        )
+    finally:
+        _EMOJI_OVERLAY_MODE = previous_overlay_mode
+
+
+def _generate_ass_body(segments, out_ass_path, clip_start, clip_end, sub_style, sub_position,
+                       show_emoji, watermark_enabled, source_watermark, account_watermark,
+                       inject_emoji):
     has_wm = watermark_enabled and bool((source_watermark or "").strip() or (account_watermark or "").strip())
     extra_styles, extra_dialogues = ("", [])
     if has_wm:
@@ -479,9 +659,16 @@ def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, sub_sty
             _generate_standalone_watermark_ass(out_ass_path, clip_start, clip_end, source_watermark, account_watermark)
         return
 
-    # Injeksi emoji kontekstual jika fitur diaktifkan
-    if show_emoji and sub_style not in ["none", "no_subtitle"]:
+    # Emoji asli dari transkrip dirender jika show_emoji aktif.
+    # Injeksi emoji kata kunci (EMOJI_KEYWORDS) hanya jika inject_emoji=True
+    # (opsional, default OFF - lihat flag --inject-emoji di worker).
+    if inject_emoji and show_emoji and sub_style not in ["none", "no_subtitle"]:
         sanitized_words = _inject_emojis_to_words(sanitized_words)
+    elif not show_emoji and sub_style not in ["none", "no_subtitle"]:
+        # show_emoji=False: buang semua emoji dari teks subtitle
+        sanitized_words = [
+            {**w, "word": _EMOJI_PATTERN.sub("", w["word"]).strip()} for w in sanitized_words
+        ]
 
     margin_v = _calc_margin_v(sub_position)
 
@@ -1465,7 +1652,7 @@ def build_smart_crop_chain(trajectory, cmd_path):
     )
 
 
-def build_fit_blur_graph(finish_chain):
+def build_fit_blur_graph(finish_chain, out_label="v"):
     """
     Filtergraph Fit 16:9 + Blurred Background.
     Main 16:9 video dinaikkan 5% ke atas (posisi seimbang & proporsional untuk subtitle).
@@ -1474,11 +1661,11 @@ def build_fit_blur_graph(finish_chain):
         f"[0:v]setpts=PTS-STARTPTS,split=2[bg_in][fg_in];"
         f"[bg_in]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5,eq=brightness=-0.08[bg];"
         f"[fg_in]scale=1080:-2:flags=lanczos[fg];"
-        f"[bg][fg]overlay=(W-w)/2:(H-h)/2-(H*0.05),{finish_chain}[v]"
+        f"[bg][fg]overlay=(W-w)/2:(H-h)/2-(H*0.05),{finish_chain}[{out_label}]"
     )
 
 
-def build_split_screen_graph(video_path, start_time, end_time, finish_chain, job_id=None):
+def build_split_screen_graph(video_path, start_time, end_time, finish_chain, job_id=None, out_label="v"):
     """
     Filtergraph Dual Stack Split-Screen (Top & Bottom 50:50).
     Top window: Left speaker / Host (1080x960)
@@ -1509,7 +1696,7 @@ def build_split_screen_graph(video_path, start_time, end_time, finish_chain, job
         f"[vtop_in]crop={target_crop_w}:{height}:{top_x}:0,scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960[top];"
         f"[vbot_in]crop={target_crop_w}:{height}:{bottom_x}:0,scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960[bot];"
         f"[top][bot]vstack=inputs=2[stacked];"
-        f"[stacked]drawbox=x=0:y=958:w=1080:h=4:color=0x18181b@0.9:t=fill,{finish_chain}[v]"
+        f"[stacked]drawbox=x=0:y=958:w=1080:h=4:color=0x18181b@0.9:t=fill,{finish_chain}[{out_label}]"
     )
 
 
@@ -1595,7 +1782,7 @@ def _validate_rendered_video(file_path: str, min_duration: float = 0.5) -> bool:
     except Exception:
         return False
 
-def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job_id=None, sub_style="tiktok_viral", framing_mode="smart_crop", sub_position=68, show_emoji=True, watermark_enabled=True, source_watermark="", account_watermark=""):
+def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job_id=None, sub_style="tiktok_viral", framing_mode="smart_crop", sub_position=68, show_emoji=True, watermark_enabled=True, source_watermark="", account_watermark="", inject_emoji=False):
     start = max(0.0, float(clip_info.get("start", 0.0)) - 0.2)
     end = float(clip_info.get("end", 0.0)) + 1.2
     duration = end - start
@@ -1623,6 +1810,10 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
             os.remove(ass_file)
         except Exception:
             pass
+    # Emoji berwarna asli: libass tidak bisa merender font emoji berwarna, jadi
+    # emoji ditulis sebagai placeholder transparan di ASS lalu ditempel sebagai
+    # PNG berwarna lewat ffmpeg overlay (lihat backend/emoji_overlay.py).
+    use_emoji_overlay = show_emoji and sub_style not in ("none", "no_subtitle") and _emoji_overlay_available()
     generate_ass_subtitles(
         segments,
         ass_file,
@@ -1634,6 +1825,8 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
         watermark_enabled=watermark_enabled,
         source_watermark=source_watermark,
         account_watermark=account_watermark,
+        inject_emoji=inject_emoji,
+        emoji_overlay=use_emoji_overlay,
     )
     crop_cmd_file = os.path.join(TEMP_DIR, f"temp_cropcmd_{index}_{int(time.time()*1000)}.txt")
     
@@ -1676,8 +1869,36 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
     escaped_fonts_dir = _escape_filter_path(FONTS_DIR) if (FONTS_DIR and os.path.exists(FONTS_DIR)) else ""
     fonts_opt = f":fontsdir='{escaped_fonts_dir}'" if escaped_fonts_dir else ""
     subtitle_filter = f",subtitles='{escaped_ass}'{fonts_opt}" if has_subtitles else ""
-    finish_chain = f"{grade_chain}{subtitle_filter},fade=t=out:st={fade_out_start}:d=0.5"
-    fallback_graph = f"[0:v]{STATIC_FALLBACK_CROP_CHAIN},{finish_chain}[v]"
+    subtitle_stage = f"{grade_chain}{subtitle_filter}"
+    fade_filter = f"fade=t=out:st={fade_out_start}:d=0.5"
+
+    # Emoji berwarna asli ditempel setelah subtitle, sebelum fade (agar ikut fade).
+    emoji_overlays = []
+    if use_emoji_overlay and has_subtitles:
+        try:
+            from backend.emoji_overlay import plan_emoji_overlays
+            emoji_overlays = plan_emoji_overlays(
+                ass_file, FONTS_DIR, play_res_x=1080, play_res_y=1920, job_id=job_id,
+            )
+        except Exception as exc:
+            log(f"Emoji overlay dilewati (gagal menyiapkan): {exc}", job_id=job_id)
+            emoji_overlays = []
+
+    overlay_graph, overlay_inputs = "", []
+    if emoji_overlays:
+        from backend.emoji_overlay import build_overlay_graph
+        overlay_graph, overlay_inputs, overlay_last = build_overlay_graph(emoji_overlays, "[vsub]")
+        log(f"Emoji berwarna: {len(emoji_overlays)} overlay PNG ditempel ke klip {index}.", job_id=job_id)
+    else:
+        overlay_last = "[vsub]"
+
+    def _assemble(prefix_graph):
+        """Tempel overlay emoji + fade di belakang graph layout/crop/subtitle."""
+        parts = [prefix_graph]
+        if overlay_graph:
+            parts.append(overlay_graph)
+        parts.append(f"{overlay_last}{fade_filter}[v]")
+        return ";".join(parts)
 
     ffmpeg_bin = get_ffmpeg_binary()
 
@@ -1687,12 +1908,15 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
             "-ss", str(start),
             "-t", str(duration),
             "-i", video_path,
+            *overlay_inputs,
             "-filter_complex", filter_graph,
             "-map", "[v]",
             "-map", "0:a?",
             "-af", af_filter,
             "-ar", str(AUDIO_SAMPLE_RATE),  # Wajib: loudnorm internal 192kHz
-            "-avoid_negative_ts", "make_zero"
+            "-avoid_negative_ts", "make_zero",
+            # Overlay PNG di-loop selamanya -> output harus dibatasi eksplisit.
+            "-t", str(duration),
         ] + codec_params + ["-f", "mp4", part_out_file]
 
     def try_render(filter_graph, label):
@@ -1714,20 +1938,29 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
 
     render_success = False
     primary_graph = None
+    # Semua graph layout berakhir di label [vsub] (hasil subtitle) supaya overlay
+    # emoji berwarna + fade bisa disambung dari titik itu.
     try:
         if framing_mode == "fit_blur":
             log(f"Applying 16:9 Fit Blur Background for Clip {index} (Podcast/Live stream mode)...", job_id=job_id)
-            primary_graph = build_fit_blur_graph(finish_chain)
+            primary_graph = _assemble(build_fit_blur_graph(subtitle_stage, out_label="vsub"))
         elif framing_mode == "split_screen":
             log(f"Applying Studio Dual-Stack Split-Screen (50:50 Host/Guest) for Clip {index}...", job_id=job_id)
-            primary_graph = build_split_screen_graph(video_path, start, end, finish_chain, job_id=job_id)
+            primary_graph = _assemble(
+                build_split_screen_graph(video_path, start, end, subtitle_stage,
+                                         job_id=job_id, out_label="vsub")
+            )
         else:
             log(f"Applying AI Smart Face Tracking 9:16 for Clip {index}...", job_id=job_id)
             trajectory = compute_smart_crop_trajectory(video_path, start, end, job_id=job_id)
-            primary_graph = f"[0:v]{build_smart_crop_chain(trajectory, crop_cmd_file)},{finish_chain}[v]"
+            primary_graph = _assemble(
+                f"[0:v]{build_smart_crop_chain(trajectory, crop_cmd_file)},{subtitle_stage}[vsub]"
+            )
     except Exception as e:
         log(f"Face tracking error, using intelligent Podcast Dual-Anchor fallback: {e}", job_id=job_id)
         primary_graph = None
+
+    fallback_graph = _assemble(f"[0:v]{STATIC_FALLBACK_CROP_CHAIN},{subtitle_stage}[vsub]")
 
     try:
         if primary_graph:

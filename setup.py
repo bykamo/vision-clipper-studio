@@ -22,7 +22,11 @@ setup(
         "google-auth",
         "google-auth-oauthlib",
         "google-auth-httplib2",
-        "google-api-python-client"
+        "google-api-python-client",
+        # Emoji berwarna: Pillow merasterisasi NotoColorEmoji, fontTools membaca
+        # metrik font yang sama dengan yang dipakai libass (lihat emoji_overlay.py).
+        "pillow>=10.1.0",
+        "fonttools>=4.40.0",
     ],
     entry_points={
         "console_scripts": [
