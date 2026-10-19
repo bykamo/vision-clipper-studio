@@ -20,7 +20,6 @@ export const SUBTITLE_PRESETS: SubtitleStyleConfig[] = [
     wordsPerLine: 3,
     allCaps: true,
     positionY: 26,
-    showEmoji: true
   },
   {
     presetId: 'classic_karaoke',
@@ -41,7 +40,6 @@ export const SUBTITLE_PRESETS: SubtitleStyleConfig[] = [
     wordsPerLine: 3,
     allCaps: false,
     positionY: 24,
-    showEmoji: false
   },
   {
     presetId: 'minimalist',
@@ -61,27 +59,6 @@ export const SUBTITLE_PRESETS: SubtitleStyleConfig[] = [
     wordsPerLine: 4,
     allCaps: false,
     positionY: 22,
-    showEmoji: false
-  },
-  {
-    presetId: 'translation_read',
-    name: 'Terjemahan',
-    description: 'Kalimat utuh 2 baris, tanpa highlight per kata',
-    icon: '📖',
-    fontFamily: 'Plus Jakarta Sans, sans-serif',
-    fontSize: 24,
-    primaryColor: '#FFFFFF',
-    highlightColor: '#FFFFFF',
-    strokeColor: '#000000',
-    strokeWidth: 3,
-    shadow: true,
-    backgroundBox: true,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    animationType: 'none',
-    wordsPerLine: 7,
-    allCaps: false,
-    positionY: 32,
-    showEmoji: false
   },
   {
     presetId: 'word_pop',
@@ -101,6 +78,5 @@ export const SUBTITLE_PRESETS: SubtitleStyleConfig[] = [
     wordsPerLine: 1,
     allCaps: true,
     positionY: 50,
-    showEmoji: false
-  }
+  },
 ];

@@ -234,8 +234,18 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 DEFAULT_FALLBACK_MODELS = [
     "gemini-3.8-flash",
     "deepseek-v4.1-flash",
-    "claude-haiku-5.5",
+    "mimo-v2.6.flash",
 ]
+
+# Auth errors mean the gateway rejects the credential itself: every model on
+# that gateway will fail identically, so the whole fallback chain is aborted.
+_AUTH_MARKERS = (
+    "invalid api key",
+    "incorrect api key",
+    "invalid_api_key",
+    "unauthorized",
+    "authentication_error",
+)
 
 # Errors that mean "this model/request will never succeed" -> skip immediately.
 # 400 location-restricted, 401/403 auth, 404 no credentials/model, 413 payload
@@ -280,6 +290,19 @@ def _is_oversize_error(status_code, err_text=""):
     return any(marker in text for marker in _OVERSIZE_MARKERS)
 
 
+def _is_auth_error(status_code, err_text=""):
+    """True when the gateway rejected the API key itself (not the model).
+
+    Sending the same credential to the next model in the chain is pointless and
+    may trigger rate-limit/IP bans, so the caller aborts the whole chain.
+    Note: a bare 403 is NOT treated as auth-only here because gateways also use
+    it for "no credentials for THIS provider", which the next model may avoid.
+    """
+    text = (err_text or "").lower()
+    if any(marker in text for marker in _AUTH_MARKERS):
+        return True
+    return status_code == 401
+
 def get_fallback_models(primary=None):
     """Resolve the ordered fallback model list (env override or defaults)."""
     raw = (os.environ.get("ROUTER_FALLBACK_MODELS") or "").strip()
@@ -288,6 +311,11 @@ def get_fallback_models(primary=None):
 
 
 def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None, compact_prompt=None):
+    if not (endpoint or "").strip():
+        raise PermanentLLMError("ROUTER_API_ENDPOINT kosong. Isi endpoint AI di Pengaturan Studio.")
+    if not (api_key or "").strip():
+        raise PermanentLLMError("ROUTER_API_KEY kosong. Isi API key AI di Pengaturan Studio.")
+
     if not endpoint.rstrip('/').endswith('/chat/completions'):
         endpoint = endpoint.rstrip('/') + '/chat/completions'
     
@@ -295,10 +323,15 @@ def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None, compact_pro
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    candidate_models = [model_name]
-    for fb in get_fallback_models(primary=model_name):
-        if fb not in candidate_models:
-            candidate_models.append(fb)
+    # Never send an empty model name: the gateway would answer with an opaque
+    # auth/validation error that hides the real configuration problem.
+    candidate_models = []
+    for m in [model_name] + list(get_fallback_models(primary=model_name)):
+        name = (m or "").strip()
+        if name and name not in candidate_models:
+            candidate_models.append(name)
+    if not candidate_models:
+        raise PermanentLLMError("ROUTER_LLM_MODEL kosong. Pilih model AI di Pengaturan Studio.")
 
     last_error = None
     permanent_only = True
@@ -329,6 +362,13 @@ def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None, compact_pro
                     except Exception:
                         err_msg = response.text[:500]
                     log(f"LLM API Error with '{m}' [{response.status_code}]: {err_msg}", job_id=job_id)
+                    # The API key is rejected: every model on this gateway will
+                    # fail the same way, so stop the chain immediately.
+                    if _is_auth_error(response.status_code, err_msg):
+                        raise PermanentLLMError(
+                            f"API key ditolak oleh gateway ({response.status_code}): {err_msg or 'Invalid API key'}. "
+                            f"Periksa ROUTER_API_KEY / ROUTER_API_ENDPOINT di Pengaturan Studio."
+                        )
                     if not _is_permanent_llm_error(response.status_code, err_msg):
                         permanent_only = False
                     # Payload too big: retry the SAME model once with a compact transcript.
@@ -368,6 +408,9 @@ def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None, compact_pro
                 log(f"Unexpected response shape from LLM endpoint with '{m}': {json.dumps(data)[:500]}", job_id=job_id)
                 permanent_only = False
                 break
+            except PermanentLLMError:
+                # Credential rejected - no other model on this gateway can help.
+                raise
             except Exception as e:
                 last_error = e
                 err_text = ""
@@ -376,6 +419,11 @@ def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None, compact_pro
                 except Exception:
                     err_text = str(e)
                 code = status_code if status_code is not None else getattr(getattr(e, "response", None), "status_code", None)
+                if _is_auth_error(code, err_text):
+                    raise PermanentLLMError(
+                        f"API key ditolak oleh gateway ({code}): {err_text[:200] or 'Invalid API key'}. "
+                        f"Periksa ROUTER_API_KEY / ROUTER_API_ENDPOINT di Pengaturan Studio."
+                    ) from e
                 if not _is_permanent_llm_error(code, err_text):
                     permanent_only = False
                 # Retry same model with compact transcript if we haven't yet.

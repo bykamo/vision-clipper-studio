@@ -328,7 +328,6 @@ class WorkflowSelfCheck(unittest.TestCase):
                 "clip_indices": [1],
                 "framing_mode": "split_screen",
                 "sub_position": 75,
-                "show_emoji": True
             }
         mock_req.json = mock_json_split
         # Fails with 404 because analysis file doesn't exist, NOT 400 invalid framing mode
@@ -341,16 +340,12 @@ class WorkflowSelfCheck(unittest.TestCase):
         res_invalid_src = asyncio.run(main_module.analyze(mock_req, source="dummy.mp4", source_lang="klingon"))
         self.assertEqual(res_invalid_src.status_code, 400)
 
-        # Invalid target_lang should return 400
-        res_invalid_tgt = asyncio.run(main_module.analyze(mock_req, source="dummy.mp4", target_lang="valyrian"))
-        self.assertEqual(res_invalid_tgt.status_code, 400)
-
     def test_worker_cli_language_arguments(self):
         import argparse
         import backend.worker as worker_module
 
-        # Test worker parses --source-lang and --target-lang correctly
-        with patch.object(sys, "argv", ["worker.py", "--file", "dummy.mp4", "--source-lang", "en", "--target-lang", "id", "--analyze-only"]), \
+        # Test worker parses --source-lang correctly
+        with patch.object(sys, "argv", ["worker.py", "--file", "dummy.mp4", "--source-lang", "en", "--analyze-only"]), \
              patch("backend.worker.get_video_file", return_value="dummy.mp4"), \
              patch("backend.worker.transcribe_video", return_value=[{"start": 0, "end": 10, "text": "test"}]) as mock_transcribe, \
              patch("backend.worker.build_transcript_text", return_value="test transcript"), \
@@ -362,7 +357,7 @@ class WorkflowSelfCheck(unittest.TestCase):
             mock_transcribe.assert_called_once()
             call_kwargs = mock_transcribe.call_args[1]
             self.assertEqual(call_kwargs.get("source_lang"), "en")
-            self.assertEqual(call_kwargs.get("target_lang"), "id")
+            self.assertNotIn("target_lang", call_kwargs)
 
     def test_extract_json_block_with_conversational_intro_inside_fence(self):
         from backend.analyzer import extract_json_block

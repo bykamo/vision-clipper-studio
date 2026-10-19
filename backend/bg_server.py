@@ -38,6 +38,6 @@ sys.stderr = log_file
 import uvicorn
 try:
     uvicorn.run("backend.main:app", host='127.0.0.1', port=5050, reload=False)
-except Exception as e:
+except Exception:
     import traceback
     traceback.print_exc()

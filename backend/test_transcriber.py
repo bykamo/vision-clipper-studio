@@ -151,30 +151,6 @@ class TranscriberSnippetCompatibilityTest(unittest.TestCase):
             if os.path.exists(temp_path):
                 os.remove(temp_path)
 
-    @patch("backend.analyzer.call_llm_api")
-    def test_translate_segments_to_indonesian_preserves_boundaries_and_words(self, mock_call_llm):
-        from backend.transcriber import translate_segments_to_indonesian
-        mock_call_llm.return_value = '```json\n[{"id": 0, "text": "Halo semuanya"}, {"id": 1, "text": "Selamat datang kembali"}]\n```'
-
-        input_segments = [
-            {"start": 1.0, "end": 3.0, "text": "Hello everyone", "words": []},
-            {"start": 3.5, "end": 6.0, "text": "Welcome back", "words": []}
-        ]
-
-        result = translate_segments_to_indonesian(input_segments)
-        self.assertEqual(len(result), 2)
-        self.assertEqual(result[0]["text"], "Halo semuanya")
-        self.assertEqual(result[0]["start"], 1.0)
-        self.assertEqual(result[0]["end"], 3.0)
-        self.assertEqual(len(result[0]["words"]), 2)
-        self.assertEqual(result[0]["words"][0]["word"], "Halo")
-        self.assertAlmostEqual(result[0]["words"][0]["start"], 1.0)
-
-        self.assertEqual(result[1]["text"], "Selamat datang kembali")
-        self.assertEqual(result[1]["start"], 3.5)
-        self.assertEqual(result[1]["end"], 6.0)
-        self.assertEqual(len(result[1]["words"]), 3)
-
     @patch("uuid.uuid4")
     @patch("yt_dlp.YoutubeDL")
     @patch("webvtt.read")

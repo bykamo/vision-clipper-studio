@@ -26,7 +26,7 @@ export function TabsList({ className, ...props }: React.HTMLAttributes<HTMLDivEl
     <div
       className={cn(
         'inline-flex h-10 items-center justify-start rounded-lg bg-zinc-900/90 p-1 text-zinc-400 border border-zinc-800/80',
-        className
+        className,
       )}
       {...props}
     />
@@ -54,7 +54,7 @@ export function TabsTrigger({ value, className, children, ...props }: TabsTrigge
         isActive
           ? 'bg-zinc-800 text-zinc-100 shadow-xs'
           : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50',
-        className
+        className,
       )}
       {...props}
     >
@@ -76,7 +76,10 @@ export function TabsContent({ value, className, children, ...props }: TabsConten
   return (
     <div
       role="tabpanel"
-      className={cn('mt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 animate-in fade-in-50 duration-150', className)}
+      className={cn(
+        'mt-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 animate-in fade-in-50 duration-150',
+        className,
+      )}
       {...props}
     >
       {children}

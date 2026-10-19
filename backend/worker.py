@@ -13,7 +13,6 @@ from backend.utils import (
     DEFAULT_ENDPOINT,
     DEFAULT_API_KEY,
     DEFAULT_OUT_DIR,
-    TEMP_DIR,
     parse_timestamp_to_seconds,
 )
 
@@ -53,21 +52,16 @@ def main():
     parser.add_argument("--job-id", type=int, default=None, help="Job ID for DB logging")
     parser.add_argument("--model", type=str, default="groq", choices=["groq"], help="Transcription provider (Groq Whisper Cloud)")
     parser.add_argument("--out-dir", type=str, default=DEFAULT_OUT_DIR, help="Output directory")
-    parser.add_argument("--sub-style", type=str, default="tiktok_viral", choices=["tiktok_viral", "classic_karaoke", "minimalist", "word_pop", "translation_read", "no_subtitle", "none"], help="Subtitle style")
+    parser.add_argument("--sub-style", type=str, default="tiktok_viral", choices=["tiktok_viral", "classic_karaoke", "minimalist", "word_pop", "no_subtitle", "none"], help="Subtitle style")
     parser.add_argument("--framing-mode", type=str, default="smart_crop", choices=["smart_crop", "fit_blur", "split_screen"], help="Video layout framing mode")
     parser.add_argument("--sub-position", type=int, default=68, help="Subtitle vertical position percentage from top (30-85)")
-    parser.add_argument("--show-emoji", action="store_true", default=True, help="Render original emojis from transcript in subtitles (colored via Noto Color Emoji)")
-    parser.add_argument("--no-emoji", action="store_false", dest="show_emoji", help="Strip all emojis from subtitles")
-    parser.add_argument("--inject-emoji", action="store_true", default=True, help="Auto-inject keyword-based viral emojis (EMOJI_KEYWORDS) that match the sentence context")
-    parser.add_argument("--no-inject-emoji", action="store_false", dest="inject_emoji", help="Disable keyword-based emoji injection")
     # Watermark flags
     parser.add_argument("--watermark-enabled", action="store_true", default=True, help="Burn-in subtle glass-effect watermarks")
     parser.add_argument("--no-watermark", action="store_false", dest="watermark_enabled", help="Disable watermarks")
     parser.add_argument("--source-watermark", type=str, default="", help="Custom or auto source credit watermark text")
     parser.add_argument("--account-watermark", type=str, default="", help="Custom clipper account handle or name")
-    # Language & translation flags
+    # Language flags
     parser.add_argument("--source-lang", type=str, default="id", choices=["id", "en", "auto"], help="Source audio language (id, en, auto)")
-    parser.add_argument("--target-lang", type=str, default="id", choices=["id", "en", "none"], help="Target subtitle language (id, en, none)")
     # Phase-split flags
     parser.add_argument("--analyze-only", action="store_true", help="Only transcribe + LLM analyze, output JSON, no rendering")
     parser.add_argument("--clips-json", type=str, default=None, help="Path to analysis JSON file (skip transcribe+LLM)")
@@ -99,15 +93,6 @@ def main():
 
             resolved_source_wm = (args.source_watermark or analysis.get("source_name") or get_video_source_name(video_path) or "").strip()
             resolved_account_wm = (args.account_watermark or "").strip()
-            # Analysis JSON lama belum punya translation_mode: fallback ke
-            # perbandingan source_lang/target_lang.
-            analysis_translation_mode = bool(
-                analysis.get("translation_mode")
-                if "translation_mode" in analysis
-                else analysis.get("source_lang", "id") != analysis.get("target_lang", "id")
-            )
-            if analysis_translation_mode:
-                log("Mode terjemahan aktif: subtitle ditampilkan sebagai kalimat utuh dengan reading-time floor.", job_id=job_id)
 
             indices = _parse_render_indices(args.render_indices, len(clips))
             log(f"Render mode: rendering {len(indices)} selected clips from analysis.", job_id=job_id)
@@ -126,12 +111,9 @@ def main():
                         sub_style=args.sub_style,
                         framing_mode=args.framing_mode,
                         sub_position=args.sub_position,
-                        show_emoji=args.show_emoji,
                         watermark_enabled=args.watermark_enabled,
                         source_watermark=resolved_source_wm,
                         account_watermark=resolved_account_wm,
-                        inject_emoji=args.inject_emoji,
-                        translation_mode=analysis_translation_mode
                     )
                 except Exception as e:
                     log(f"Failed to render clip {idx}: {e}", job_id=job_id)
@@ -161,13 +143,8 @@ def main():
             source_url=args.file,
             model_size=args.model,
             source_lang=args.source_lang,
-            target_lang=args.target_lang,
             job_id=job_id
         )
-        translation_mode = bool(args.target_lang != "none" and args.source_lang != args.target_lang)
-        if translation_mode:
-            log(f"Mode terjemahan aktif ({args.source_lang} -> {args.target_lang}): subtitle "
-                f"ditampilkan sebagai kalimat utuh dengan reading-time floor.", job_id=job_id)
         transcript_text = build_transcript_text(segments)
 
         prompt = build_viral_prompt(transcript_text, args.num_clips, mode=args.mode)
@@ -183,6 +160,7 @@ def main():
         max_retries = 3
         clips = []
         last_error = None
+        permanent_error = False
         for attempt in range(max_retries):
             try:
                 log(f"Mencari bagian video paling viral menggunakan AI (Percobaan ke-{attempt + 1}). Estimasi waktu: ~10-25 detik...", job_id=job_id)
@@ -198,11 +176,12 @@ def main():
                     last_error = "LLM returned empty 'clips' list in JSON."
                     log(f"Percobaan ke-{attempt + 1}: LLM merespons tapi 'clips' kosong.", job_id=job_id)
             except PermanentLLMError as e:
-                # All models rejected for non-recoverable reasons (location,
-                # credentials). Retrying with the same setup cannot help.
+                # Non-recoverable (bad API key, location-blocked models, empty
+                # config). Retrying with the same setup cannot help.
                 last_error = str(e)
-                log(f"Semua model LLM gagal dengan error permanen: {e}", job_id=job_id)
-                log("Periksa konfigurasi model AI di Pengaturan Studio (model/endpoint/API key).", job_id=job_id)
+                permanent_error = True
+                log(f"Analisis AI dihentikan: {e}", job_id=job_id)
+                log("Periksa konfigurasi model AI di Pengaturan Studio (endpoint, API key, dan nama model harus cocok dengan gateway yang sama).", job_id=job_id)
                 break
             except Exception as e:
                 last_error = str(e)
@@ -214,6 +193,10 @@ def main():
                 time.sleep(backoff_time)
 
         if not clips:
+            if permanent_error:
+                # Configuration problem: the message already explains the fix,
+                # so don't wrap it in a misleading "after 3 attempts" text.
+                raise RuntimeError(f"Analisis AI gagal: {last_error}")
             err_msg = f"Failed to get valid clips from LLM after {max_retries} attempts: {last_error}"
             log(err_msg, job_id=job_id)
             raise RuntimeError(err_msg)
@@ -262,8 +245,6 @@ def main():
                 "video_path": video_path,
                 "source_name": resolved_source_wm,
                 "source_lang": args.source_lang,
-                "target_lang": args.target_lang,
-                "translation_mode": translation_mode,
                 "clips": clips,
                 "segments": _serialize_segments(segments),
                 "output_dir": actual_out_dir
@@ -293,16 +274,13 @@ def main():
                     sub_style=args.sub_style,
                     framing_mode=args.framing_mode,
                     sub_position=args.sub_position,
-                    show_emoji=args.show_emoji,
                     watermark_enabled=args.watermark_enabled,
                     source_watermark=resolved_source_wm,
                     account_watermark=resolved_account_wm,
-                    inject_emoji=args.inject_emoji,
-                    translation_mode=translation_mode
                 )
             except Exception as e:
                 log(f"Failed to render clip {i}: {e}", job_id=job_id)
-                raise RuntimeError(f"Fail-fast aborted: Failed to render clip {i} ({e})")
+                raise RuntimeError(f"Fail-fast aborted: Failed to render clip {i} ({e})") from e
 
         log("All done! Check your output directory.", job_id=job_id)
         if job_id:

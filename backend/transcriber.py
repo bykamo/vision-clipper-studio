@@ -1,5 +1,4 @@
 import os
-import tempfile
 import time
 import re
 import math
@@ -226,7 +225,7 @@ def transcribe_with_groq(audio_path, language="id", job_id=None):
     total_keys = len(keys)
     last_error = None
 
-    for attempt in range(total_keys):
+    for _attempt in range(total_keys):
         current_key = keys[_active_groq_key_idx % total_keys]
         key_masked = f"{current_key[:6]}...{current_key[-4:]}"
         key_num = (_active_groq_key_idx % total_keys) + 1
@@ -414,88 +413,11 @@ def transcribe_long_audio_with_groq(video_path, total_duration, chunk_duration=9
     log(f"[SUCCESS] Groq Multi-Part Transcription selesai 100%! Berhasil mengumpulkan total {len(all_segments)} segmen audio.", job_id=job_id)
     return all_segments
 
-def translate_segments_to_indonesian(segments, job_id=None):
-    """
-    Menerjemahkan teks segmen ke Bahasa Indonesia natural (creator style) menggunakan LLM,
-    dan memperbarui word-level timestamps secara proporsional agar subtitle animasi karaoke ASS tetap sinkron.
-    """
-    if not segments:
-        return segments
-
-    from backend.analyzer import call_llm_api
-    from backend.utils import DEFAULT_LLM_MODEL, DEFAULT_ENDPOINT, DEFAULT_API_KEY
-    import json
-    import re
-    import os
-
-    llm_endpoint = os.environ.get("ROUTER_API_ENDPOINT") or DEFAULT_ENDPOINT
-    llm_key = os.environ.get("ROUTER_API_KEY") or DEFAULT_API_KEY
-    llm_model = os.environ.get("ROUTER_LLM_MODEL") or DEFAULT_LLM_MODEL
-
-    log(f"Menerjemahkan {len(segments)} segmen ke Bahasa Indonesia (Creator Tone)...", job_id=job_id)
-
-    batch_size = 15
-    translated_segments = []
-
-    for i in range(0, len(segments), batch_size):
-        batch = segments[i:i + batch_size]
-        items = [{"id": idx, "text": seg.get("text", "").strip()} for idx, seg in enumerate(batch)]
-
-        prompt = f"""You are an elite video editor and translator specializing in viral social media content (TikTok, YouTube Shorts, Reels).
-Translate the following subtitle segments from English to natural, conversational Indonesian (Bahasa Indonesia santai/gaul/kreator).
-
-CRITICAL RULES:
-1. Translate concisely, punchy, and naturally (conversational Indonesian, e.g. lu-gue/lo-gw/aja/nih/banget/worth it jika sesuai konteks).
-2. COMPRESSION IS MANDATORY: keep each translated segment as short as possible, ideally <= 34 characters (two subtitle lines). Drop filler words (yang, itu, sih, kan, memang, sebenarnya) when meaning is unchanged.
-3. NEVER split a phrase mid-way. If you must shorten, pick a shorter equivalent instead of dropping a meaningful word.
-4. Preserve meaning and tone. Do not add information, commentary, notes, or explanations.
-5. If a segment is already in Indonesian, keep it unchanged (but still apply rule 2).
-6. Keep the exact same number of items and matching "id" numbers.
-7. Output STRICTLY a JSON array of objects with keys "id" and "text":
-```json
-[
-  {{"id": 0, "text": "Hasil terjemahan bahasa indonesia..."}}
-]
-```
-
-INPUT SEGMENTS:
-{json.dumps(items, ensure_ascii=False)}
-"""
-        max_retries = 3
-        batch_trans_map = {}
-        for attempt in range(max_retries):
-            try:
-                resp = call_llm_api(prompt, llm_model, llm_endpoint, llm_key, job_id=job_id)
-                fence_match = re.search(r'```(?:json)?\s*(.*?)\s*```', resp, re.DOTALL)
-                raw_json = fence_match.group(1).strip() if fence_match else resp.strip()
-                bracket_match = re.search(r'\[.*\]', raw_json, re.DOTALL)
-                if bracket_match:
-                    parsed = json.loads(bracket_match.group(0))
-                    for p in parsed:
-                        if isinstance(p, dict) and "id" in p and "text" in p:
-                            batch_trans_map[int(p["id"])] = str(p["text"]).strip()
-                    if len(batch_trans_map) > 0:
-                        break
-            except Exception as e:
-                log(f"Batch translation {i//batch_size + 1} attempt {attempt + 1} failed: {e}", job_id=job_id)
-                if attempt < max_retries - 1:
-                    time.sleep(1.0)
-
-        for idx, seg in enumerate(batch):
-            new_text = batch_trans_map.get(idx, seg.get("text", "")).strip()
-            new_seg = dict(seg)
-            new_seg["text"] = new_text
-            new_seg["words"] = split_segment_into_words(new_text, seg["start"], seg["end"])
-            translated_segments.append(new_seg)
-
-    log(f"Penerjemahan subtitle selesai! Total {len(translated_segments)} segmen berhasil diproses.", job_id=job_id)
-    return translated_segments
-
-def transcribe_video(video_path, source_url=None, model_size="groq", source_lang="id", target_lang="id", job_id=None):
+def transcribe_video(video_path, source_url=None, model_size="groq", source_lang="id", job_id=None):
     is_youtube_url = source_url and ("youtube.com" in source_url or "youtu.be" in source_url)
     video_id = extract_youtube_id(source_url) if is_youtube_url else None
-    lang_tag = f"{source_lang}_{target_lang}"
-    
+    lang_tag = source_lang
+
     # Check local cache first
     from backend.utils import PROJECT_ROOT
     import json
@@ -503,23 +425,33 @@ def transcribe_video(video_path, source_url=None, model_size="groq", source_lang
     os.makedirs(cache_dir, exist_ok=True)
 
     # Groq Cloud Whisper (Default & Ultra Cepat dengan Retry & Cache Lokal)
+    legacy_cache_paths = []
     if is_youtube_url and video_id:
         cache_path = os.path.join(cache_dir, f"{video_id}_{lang_tag}_groq.json")
-        legacy_cache_path = os.path.join(cache_dir, f"{video_id}_groq.json") if source_lang == "id" and target_lang == "id" else None
+        # Cache dari versi yang masih punya mode terjemahan (tag "{src}_{tgt}").
+        legacy_cache_paths.append(os.path.join(cache_dir, f"{video_id}_{source_lang}_id_groq.json"))
+        if source_lang == "id":
+            legacy_cache_paths.append(os.path.join(cache_dir, f"{video_id}_groq.json"))
     else:
         import hashlib
         norm_path = os.path.abspath(video_path)
         file_size = os.path.getsize(norm_path) if os.path.exists(norm_path) else 0
         file_mtime = int(os.path.getmtime(norm_path)) if os.path.exists(norm_path) else 0
-        fingerprint_raw = f"{norm_path}:{file_size}:{file_mtime}:{model_size}:{source_lang}:{target_lang}"
+        fingerprint_raw = f"{norm_path}:{file_size}:{file_mtime}:{model_size}:{source_lang}"
         file_hash = hashlib.sha256(fingerprint_raw.encode("utf-8")).hexdigest()[:16]
         cache_path = os.path.join(cache_dir, f"{file_hash}_groq.json")
 
-        legacy_fp = f"{norm_path}:{file_size}:{file_mtime}:{model_size}:id"
-        legacy_hash = hashlib.sha256(legacy_fp.encode("utf-8")).hexdigest()[:16]
-        legacy_cache_path = os.path.join(cache_dir, f"{legacy_hash}_groq.json") if source_lang == "id" and target_lang == "id" else None
+        for legacy_fp in (
+            f"{norm_path}:{file_size}:{file_mtime}:{model_size}:{source_lang}:id",
+            f"{norm_path}:{file_size}:{file_mtime}:{model_size}:id",
+        ):
+            legacy_hash = hashlib.sha256(legacy_fp.encode("utf-8")).hexdigest()[:16]
+            legacy_cache_paths.append(os.path.join(cache_dir, f"{legacy_hash}_groq.json"))
 
-    target_cache = cache_path if os.path.exists(cache_path) else (legacy_cache_path if legacy_cache_path and os.path.exists(legacy_cache_path) else None)
+    target_cache = next(
+        (p for p in [cache_path, *legacy_cache_paths] if p and os.path.exists(p)),
+        None,
+    )
     if target_cache:
         log(f"Memuat transkrip dari cache lokal: {target_cache}", job_id=job_id)
         try:
@@ -536,8 +468,6 @@ def transcribe_video(video_path, source_url=None, model_size="groq", source_lang
     if total_dur > 1200:
         segments = transcribe_long_audio_with_groq(video_path, total_dur, chunk_duration=900, language=source_lang, job_id=job_id)
         if segments:
-            if target_lang == "id" and source_lang in ["en", "auto"]:
-                segments = translate_segments_to_indonesian(segments, job_id=job_id)
             try:
                 with open(cache_path, "w", encoding="utf-8") as f:
                     json.dump(segments, f, indent=2, ensure_ascii=False)
@@ -564,8 +494,6 @@ def transcribe_video(video_path, source_url=None, model_size="groq", source_lang
             log(f"Ukuran audio ({file_size_mb:.1f} MB) mendekati limit 25 MB Groq. Beralih ke Auto-Chunking...", job_id=job_id)
             segments = transcribe_long_audio_with_groq(video_path, total_dur, chunk_duration=900, language=source_lang, job_id=job_id)
             if segments:
-                if target_lang == "id" and source_lang in ["en", "auto"]:
-                    segments = translate_segments_to_indonesian(segments, job_id=job_id)
                 try:
                     with open(cache_path, "w", encoding="utf-8") as f:
                         json.dump(segments, f, indent=2, ensure_ascii=False)
@@ -591,9 +519,6 @@ def transcribe_video(video_path, source_url=None, model_size="groq", source_lang
                     raise e
         
         if segments:
-            if target_lang == "id" and source_lang in ["en", "auto"]:
-                segments = translate_segments_to_indonesian(segments, job_id=job_id)
-
             try:
                 with open(cache_path, "w", encoding="utf-8") as f:
                     json.dump(segments, f, indent=2, ensure_ascii=False)

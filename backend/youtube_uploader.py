@@ -9,7 +9,6 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
-from backend.utils import log
 
 # Allow HTTP for local testing OAuth callback
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
@@ -179,7 +178,9 @@ def save_credentials_from_code(code: str, state: str = None):
         res = requests.post(token_url, data=data)
         token_json = res.json()
         if "error" in token_json:
-            raise RuntimeError(f"Token exchange failed: {token_json.get('error_description', token_json.get('error'))}")
+            raise RuntimeError(
+                f"Token exchange failed: {token_json.get('error_description', token_json.get('error'))}"
+            ) from None
 
         token_data = {
             "token": token_json.get("access_token"),
@@ -236,6 +237,15 @@ def get_saved_credentials():
         return creds
     except Exception as e:
         logger.warning(f"Error loading YouTube token: {e}")
+        # A revoked/expired refresh token can never recover on its own. Delete the
+        # dead file so the UI reports "not connected" instead of logging this
+        # error on every single page load.
+        if "invalid_grant" in str(e):
+            try:
+                os.remove(token_file)
+                logger.info("Removed invalid YouTube token file; user must reconnect.")
+            except Exception as remove_error:
+                logger.debug(f"Could not remove invalid token file: {remove_error}")
         return None
 
 def get_channel_info():
@@ -269,12 +279,10 @@ def get_channel_info():
         return None
 
 def disconnect_youtube():
-    removed = False
     for path in [HOME_TOKEN_FILE, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".visionclipper_youtube_token.json")]:
         if os.path.exists(path):
             try:
                 os.remove(path)
-                removed = True
             except Exception as e:
                 logger.debug(f"Error removing {path}: {e}")
     return True

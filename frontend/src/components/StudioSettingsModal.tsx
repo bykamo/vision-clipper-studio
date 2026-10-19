@@ -16,7 +16,7 @@ import {
   Cpu,
   Zap,
   Crosshair,
-  Gift
+  Gift,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -30,7 +30,7 @@ import {
   OpenRouterLogo,
   DeepSeekLogo,
   TikTokLogo,
-  YouTubeLogo
+  YouTubeLogo,
 } from './BrandIcons';
 
 export interface AiProviderPreset {
@@ -53,6 +53,48 @@ export interface AiConfigResponse {
   presets: Record<string, AiProviderPreset>;
 }
 
+export interface AiTestResult {
+  ok: boolean;
+  message?: string;
+  error?: string;
+  reply?: string;
+}
+
+export interface AiGroqTestResult {
+  ok: boolean;
+  message?: string;
+  error?: string;
+}
+
+export interface YouTubeChannelInfo {
+  id?: string;
+  title?: string;
+  customUrl?: string;
+  thumbnail?: string;
+  subscriberCount?: string;
+  videoCount?: string;
+}
+
+/** Shared section header for each settings tab canvas. */
+const TabHeader: React.FC<{
+  chipClass: string;
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+}> = ({ chipClass, icon, title, desc }) => (
+  <div className="flex items-start gap-3.5">
+    <span
+      className={`flex h-11 w-11 items-center justify-center rounded-xl border flex-shrink-0 ${chipClass}`}
+    >
+      {icon}
+    </span>
+    <div className="min-w-0 pt-0.5">
+      <h3 className="text-lg font-bold tracking-tight text-white font-['Outfit']">{title}</h3>
+      <p className="text-sm text-slate-400 mt-0.5 leading-relaxed">{desc}</p>
+    </div>
+  </div>
+);
+
 interface StudioSettingsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -69,6 +111,7 @@ interface StudioSettingsModalProps {
   aiModelsLoading: boolean;
   aiModelsError: string | null;
   aiModelsOpen: boolean;
+  setAiModelsOpen: (val: boolean) => void;
   aiModels: string[];
   aiApiKeyInput: string;
   setAiApiKeyInput: (val: string) => void;
@@ -80,16 +123,16 @@ interface StudioSettingsModalProps {
   setAiShowGroqKey: (val: boolean) => void;
   handleTestAiConnection: () => void;
   aiTesting: boolean;
-  aiTestResult: { ok: boolean; message?: string; error?: string; reply?: string } | null;
-  setAiTestResult: (val: any) => void;
+  aiTestResult: AiTestResult | null;
+  setAiTestResult: (val: AiTestResult | null) => void;
   handleTestGroqConnection: () => void;
   aiTestingGroq: boolean;
-  aiGroqTestResult: { ok: boolean; message?: string; error?: string } | null;
-  setAiGroqTestResult: (val: any) => void;
+  aiGroqTestResult: AiGroqTestResult | null;
+  setAiGroqTestResult: (val: AiGroqTestResult | null) => void;
   handleSaveAiConfig: () => void;
   aiSaving: boolean;
   ytConnected: boolean;
-  ytChannel: any;
+  ytChannel: YouTubeChannelInfo | null;
   ytAvatarFailed: boolean;
   setYtAvatarFailed: (val: boolean) => void;
   isCheckingYtStatus: boolean;
@@ -115,6 +158,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
   aiModelsLoading,
   aiModelsError,
   aiModelsOpen,
+  setAiModelsOpen,
   aiModels,
   aiApiKeyInput,
   setAiApiKeyInput,
@@ -157,7 +201,9 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
       case 'groq_llm':
         return <GroqLogo className={`h-5 w-5 ${tone}`} />;
       case 'deepseek':
-        return <DeepSeekLogo className={`h-5 w-5 ${isSelected ? 'text-sky-400' : 'text-sky-300/80'}`} />;
+        return (
+          <DeepSeekLogo className={`h-5 w-5 ${isSelected ? 'text-sky-400' : 'text-sky-300/80'}`} />
+        );
       default:
         return <Plug className={`h-5 w-5 ${isSelected ? 'text-emerald-400' : 'text-slate-400'}`} />;
     }
@@ -216,28 +262,19 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
     },
   ];
 
-  const setupDone = [aiConfig?.ready, aiConfig?.groq_key_set, ytConnected && !!ytChannel].filter(Boolean).length;
+  const setupDone = [aiConfig?.ready, aiConfig?.groq_key_set, ytConnected && !!ytChannel].filter(
+    Boolean,
+  ).length;
   const setupPct = Math.round((setupDone / 3) * 100);
-
-  /** Shared section header for each settings tab canvas. */
-  const TabHeader: React.FC<{ chipClass: string; icon: React.ReactNode; title: string; desc: string }> = ({ chipClass, icon, title, desc }) => (
-    <div className="flex items-start gap-3.5">
-      <span className={`flex h-11 w-11 items-center justify-center rounded-xl border flex-shrink-0 ${chipClass}`}>
-        {icon}
-      </span>
-      <div className="min-w-0 pt-0.5">
-        <h3 className="text-lg font-bold tracking-tight text-white font-['Outfit']">{title}</h3>
-        <p className="text-sm text-slate-400 mt-0.5 leading-relaxed">{desc}</p>
-      </div>
-    </div>
-  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-3 sm:p-5 md:p-8 animate-in fade-in-0 duration-200">
       <div className="relative w-full max-w-5xl h-[680px] max-h-[92vh] rounded-2xl border border-slate-800/80 bg-[#0f141b] p-0 shadow-[0_25px_60px_rgba(0,0,0,0.85)] text-slate-100 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 font-['Instrument_Sans',_'Plus_Jakarta_Sans',_sans-serif]">
-
         {/* Ambient top glow */}
-        <div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 h-48 w-[420px] rounded-full bg-emerald-500/10 blur-[80px]" aria-hidden="true" />
+        <div
+          className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 h-48 w-[420px] rounded-full bg-emerald-500/10 blur-[80px]"
+          aria-hidden="true"
+        />
 
         {/* Top Header Bar */}
         <div className="relative px-6 py-4 border-b border-slate-800/80 flex items-center justify-between bg-[#0f141b] flex-shrink-0">
@@ -256,20 +293,28 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <span className={`hidden md:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
-              aiConfig?.groq_key_set
-                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                : 'border-slate-700 bg-slate-900 text-slate-400'
-            }`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${aiConfig?.groq_key_set ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+            <span
+              className={`hidden md:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                aiConfig?.groq_key_set
+                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                  : 'border-slate-700 bg-slate-900 text-slate-400'
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${aiConfig?.groq_key_set ? 'bg-emerald-400' : 'bg-slate-500'}`}
+              />
               Whisper
             </span>
-            <span className={`hidden md:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
-              ytConnected && ytChannel
-                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                : 'border-slate-700 bg-slate-900 text-slate-400'
-            }`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${ytConnected && ytChannel ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+            <span
+              className={`hidden md:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                ytConnected && ytChannel
+                  ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                  : 'border-slate-700 bg-slate-900 text-slate-400'
+              }`}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${ytConnected && ytChannel ? 'bg-emerald-400' : 'bg-slate-500'}`}
+              />
               YouTube
             </span>
 
@@ -287,7 +332,6 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
 
         {/* Master-Detail Split Layout */}
         <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
-          
           {/* ─── LEFT SIDEBAR NAVIGATION ─── */}
           <aside className="w-full md:w-64 bg-[#0e1218] border-b md:border-b-0 md:border-r border-slate-800/80 p-3 sm:p-4 flex flex-col justify-between flex-shrink-0">
             <div className="space-y-1">
@@ -310,18 +354,26 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <span className={`flex h-8 w-8 items-center justify-center rounded-lg border flex-shrink-0 transition-colors ${
-                          isActive ? item.activeChip : `${item.idleChip} group-hover:text-slate-200`
-                        }`}>
+                        <span
+                          className={`flex h-8 w-8 items-center justify-center rounded-lg border flex-shrink-0 transition-colors ${
+                            isActive
+                              ? item.activeChip
+                              : `${item.idleChip} group-hover:text-slate-200`
+                          }`}
+                        >
                           {item.icon}
                         </span>
                         <div className="min-w-0">
-                          <span className={`block truncate text-xs sm:text-sm font-semibold leading-tight ${isActive ? item.activeText : 'text-slate-200'}`}>
+                          <span
+                            className={`block truncate text-xs sm:text-sm font-semibold leading-tight ${isActive ? item.activeText : 'text-slate-200'}`}
+                          >
                             {item.label}
                           </span>
-                          <span className={`hidden md:block text-[11px] truncate mt-0.5 font-normal ${
-                            isActive ? item.activeDesc : 'text-slate-500'
-                          }`}>
+                          <span
+                            className={`hidden md:block text-[11px] truncate mt-0.5 font-normal ${
+                              isActive ? item.activeDesc : 'text-slate-500'
+                            }`}
+                          >
                             {item.desc}
                           </span>
                         </div>
@@ -379,10 +431,8 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
 
           {/* ─── RIGHT MAIN SETTINGS CANVAS ─── */}
           <main className="flex-1 flex flex-col min-w-0 bg-[#0b0f14] overflow-hidden">
-            
             {/* Scrollable Canvas Body */}
             <div className="p-6 sm:p-8 space-y-6 overflow-y-auto flex-1 scrollbar-thin">
-              
               {/* ──────── TAB 1: MODEL AI (LLM) ──────── */}
               {activeTab === 'ai' && (
                 <div className="space-y-6">
@@ -398,7 +448,11 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                   <div className="flex flex-wrap items-center gap-2">
                     {[
                       { n: 1, label: 'Provider', done: true },
-                      { n: 2, label: 'Endpoint & Model', done: !!aiEndpointInput.trim() && !!aiModelInput.trim() },
+                      {
+                        n: 2,
+                        label: 'Endpoint & Model',
+                        done: !!aiEndpointInput.trim() && !!aiModelInput.trim(),
+                      },
                       { n: 3, label: 'API Key & Uji', done: !!aiConfig?.api_key_set },
                     ].map((s) => (
                       <span
@@ -409,9 +463,13 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                             : 'border-slate-700 bg-slate-900 text-slate-400'
                         }`}
                       >
-                        <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-mono ${
-                          s.done ? 'bg-emerald-500/30 text-emerald-200' : 'bg-slate-800 text-slate-400'
-                        }`}>
+                        <span
+                          className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-mono ${
+                            s.done
+                              ? 'bg-emerald-500/30 text-emerald-200'
+                              : 'bg-slate-800 text-slate-400'
+                          }`}
+                        >
                           {s.n}
                         </span>
                         {s.label}
@@ -425,29 +483,43 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                   {/* 1. Provider Selection Cards */}
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-md bg-emerald-500/15 border border-emerald-500/40 text-[10px] font-mono font-bold text-emerald-300">1</span>
+                      <span className="flex h-5 w-5 items-center justify-center rounded-md bg-emerald-500/15 border border-emerald-500/40 text-[10px] font-mono font-bold text-emerald-300">
+                        1
+                      </span>
                       <Label className="text-xs uppercase tracking-wider text-slate-400 font-bold">
                         Pilihan Provider AI
                       </Label>
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-                      {Object.entries(aiConfig?.presets || {
-                        openrouter: { label: 'OpenRouter', endpoint: '', default_model: '' },
-                        openai: { label: 'OpenAI Resmi', endpoint: '', default_model: '' },
-                        groq_llm: { label: 'Groq LLM', endpoint: '', default_model: '' },
-                        deepseek: { label: 'DeepSeek', endpoint: '', default_model: '' },
-                        custom: { label: 'Custom Endpoint', endpoint: '', default_model: '' },
-                      }).map(([pKey, pVal]) => {
+                      {Object.entries(
+                        aiConfig?.presets || {
+                          openrouter: { label: 'OpenRouter', endpoint: '', default_model: '' },
+                          openai: { label: 'OpenAI Resmi', endpoint: '', default_model: '' },
+                          groq_llm: { label: 'Groq LLM', endpoint: '', default_model: '' },
+                          deepseek: { label: 'DeepSeek', endpoint: '', default_model: '' },
+                          custom: { label: 'Custom Endpoint', endpoint: '', default_model: '' },
+                        },
+                      ).map(([pKey, pVal]) => {
                         const isSelected = aiSelectedProvider === pKey;
-                        const shortLabel = pKey === 'custom' ? 'Custom' :
-                                           pKey === 'openai' ? 'OpenAI' :
-                                           pKey === 'groq_llm' ? 'Groq LLM' : pVal.label;
-                        const badgeText = pKey === 'openrouter' ? 'Free / Murah' :
-                                          pKey === 'openai' ? 'Official' :
-                                          pKey === 'groq_llm' ? 'LPU Fast' :
-                                          pKey === 'deepseek' ? 'V3 / R1' :
-                                          '9Router / Local';
+                        const shortLabel =
+                          pKey === 'custom'
+                            ? 'Custom'
+                            : pKey === 'openai'
+                              ? 'OpenAI'
+                              : pKey === 'groq_llm'
+                                ? 'Groq LLM'
+                                : pVal.label;
+                        const badgeText =
+                          pKey === 'openrouter'
+                            ? 'Free / Murah'
+                            : pKey === 'openai'
+                              ? 'Official'
+                              : pKey === 'groq_llm'
+                                ? 'LPU Fast'
+                                : pKey === 'deepseek'
+                                  ? 'V3 / R1'
+                                  : '9Router / Local';
 
                         return (
                           <button
@@ -461,11 +533,13 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                             }`}
                           >
                             <div className="flex items-center justify-between w-full">
-                              <span className={`flex h-9 w-9 items-center justify-center rounded-lg border flex-shrink-0 transition-colors ${
-                                isSelected
-                                  ? 'bg-emerald-500/10 border-emerald-500/30'
-                                  : 'bg-slate-900/80 border-slate-800 group-hover:border-slate-700'
-                              }`}>
+                              <span
+                                className={`flex h-9 w-9 items-center justify-center rounded-lg border flex-shrink-0 transition-colors ${
+                                  isSelected
+                                    ? 'bg-emerald-500/10 border-emerald-500/30'
+                                    : 'bg-slate-900/80 border-slate-800 group-hover:border-slate-700'
+                                }`}
+                              >
                                 {renderProviderLogo(pKey, isSelected)}
                               </span>
                               {isSelected && (
@@ -473,10 +547,14 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                               )}
                             </div>
                             <div className="min-w-0 w-full">
-                              <span className={`block text-xs font-bold leading-tight truncate ${isSelected ? 'text-white' : 'text-slate-200'}`}>
+                              <span
+                                className={`block text-xs font-bold leading-tight truncate ${isSelected ? 'text-white' : 'text-slate-200'}`}
+                              >
                                 {shortLabel}
                               </span>
-                              <span className={`text-[10px] font-mono block truncate w-full mt-0.5 ${isSelected ? 'text-emerald-300' : 'text-slate-500'}`}>
+                              <span
+                                className={`text-[10px] font-mono block truncate w-full mt-0.5 ${isSelected ? 'text-emerald-300' : 'text-slate-500'}`}
+                              >
                                 {badgeText}
                               </span>
                             </div>
@@ -491,7 +569,9 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label htmlFor="ai-endpoint">API Endpoint URL</Label>
-                        <span className="text-[11px] text-slate-500 font-mono">OpenAI Compatible</span>
+                        <span className="text-[11px] text-slate-500 font-mono">
+                          OpenAI Compatible
+                        </span>
                       </div>
                       <Input
                         id="ai-endpoint"
@@ -533,7 +613,9 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                           className="flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-2 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/20 transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                           title="Deteksi otomatis model yang tersedia dari endpoint (pakai API key yang sama)"
                         >
-                          <RefreshCw className={`h-3.5 w-3.5 ${aiModelsLoading ? 'animate-spin' : ''}`} />
+                          <RefreshCw
+                            className={`h-3.5 w-3.5 ${aiModelsLoading ? 'animate-spin' : ''}`}
+                          />
                           <span>{aiModelsLoading ? 'Cek...' : 'Auto'}</span>
                         </button>
                       </div>
@@ -595,7 +677,10 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                         <div className="flex items-center gap-2">
                           <Label htmlFor="ai-key">LLM API Key</Label>
                           {aiConfig?.api_key_set && (
-                            <Badge variant="success" className="text-[10px] py-0 px-1.5 font-mono font-normal">
+                            <Badge
+                              variant="success"
+                              className="text-[10px] py-0 px-1.5 font-mono font-normal"
+                            >
                               <Check className="h-3 w-3" />
                               Tersimpan: {aiConfig.api_key_masked}
                             </Badge>
@@ -624,7 +709,11 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                               setAiApiKeyInput(e.target.value);
                               setAiTestResult(null);
                             }}
-                            placeholder={aiConfig?.api_key_set ? "Biarkan kosong untuk memakai key tersimpan" : "Masukkan API Key (sk-...)"}
+                            placeholder={
+                              aiConfig?.api_key_set
+                                ? 'Biarkan kosong untuk memakai key tersimpan'
+                                : 'Masukkan API Key (sk-...)'
+                            }
                             className="font-mono text-xs pr-10"
                           />
                           <Button
@@ -635,7 +724,11 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                             className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 text-slate-400 hover:text-white"
                             tabIndex={-1}
                           >
-                            {aiShowKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                            {aiShowKey ? (
+                              <EyeOff className="h-3.5 w-3.5" />
+                            ) : (
+                              <Eye className="h-3.5 w-3.5" />
+                            )}
                           </Button>
                         </div>
 
@@ -646,7 +739,9 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                           disabled={aiTesting}
                           className="flex-shrink-0"
                         >
-                          <RefreshCw className={`h-3.5 w-3.5 ${aiTesting ? 'animate-spin text-emerald-400' : ''}`} />
+                          <RefreshCw
+                            className={`h-3.5 w-3.5 ${aiTesting ? 'animate-spin text-emerald-400' : ''}`}
+                          />
                           <span>{aiTesting ? 'Menguji...' : 'Uji Koneksi'}</span>
                         </Button>
                       </div>
@@ -654,11 +749,13 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
 
                     {/* AI Test Result Alert */}
                     {aiTestResult && (
-                      <div className={`p-3.5 rounded-xl border text-xs flex items-start justify-between gap-3 animate-in fade-in-50 duration-150 ${
-                        aiTestResult.ok
-                          ? 'border-emerald-500/40 bg-emerald-950/40 text-emerald-200'
-                          : 'border-red-500/40 bg-red-950/40 text-red-200'
-                      }`}>
+                      <div
+                        className={`p-3.5 rounded-xl border text-xs flex items-start justify-between gap-3 animate-in fade-in-50 duration-150 ${
+                          aiTestResult.ok
+                            ? 'border-emerald-500/40 bg-emerald-950/40 text-emerald-200'
+                            : 'border-red-500/40 bg-red-950/40 text-red-200'
+                        }`}
+                      >
                         <div className="flex items-start gap-2.5 min-w-0">
                           {aiTestResult.ok ? (
                             <CheckCircle2 className="h-4 w-4 text-emerald-400 flex-shrink-0 mt-0.5" />
@@ -667,10 +764,14 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                           )}
                           <div className="min-w-0">
                             <p className="font-semibold text-xs">
-                              {aiTestResult.ok ? 'Koneksi AI Berhasil Terhubung!' : 'Koneksi AI Gagal'}
+                              {aiTestResult.ok
+                                ? 'Koneksi AI Berhasil Terhubung!'
+                                : 'Koneksi AI Gagal'}
                             </p>
                             <p className="font-mono text-[11px] opacity-90 mt-0.5 break-all">
-                              {aiTestResult.ok ? (aiTestResult.message || `Respon: "${aiTestResult.reply}"`) : aiTestResult.error}
+                              {aiTestResult.ok
+                                ? aiTestResult.message || `Respon: "${aiTestResult.reply}"`
+                                : aiTestResult.error}
                             </p>
                           </div>
                         </div>
@@ -741,7 +842,10 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                       <div className="flex items-center gap-2">
                         <Label htmlFor="groq-key">Groq Cloud API Key</Label>
                         {aiConfig?.groq_key_set && (
-                          <Badge variant="success" className="text-[10px] py-0 px-1.5 font-mono font-normal">
+                          <Badge
+                            variant="success"
+                            className="text-[10px] py-0 px-1.5 font-mono font-normal"
+                          >
                             <Check className="h-3 w-3" />
                             Tersimpan: {aiConfig.groq_key_masked}
                           </Badge>
@@ -769,7 +873,11 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                             setAiGroqKeyInput(e.target.value);
                             setAiGroqTestResult(null);
                           }}
-                          placeholder={aiConfig?.groq_key_set ? "Biarkan kosong untuk memakai key tersimpan" : "Masukkan Groq API Key (gsk_...)"}
+                          placeholder={
+                            aiConfig?.groq_key_set
+                              ? 'Biarkan kosong untuk memakai key tersimpan'
+                              : 'Masukkan Groq API Key (gsk_...)'
+                          }
                           className="font-mono text-xs pr-10"
                         />
                         <Button
@@ -780,7 +888,11 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                           className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 text-slate-400 hover:text-white"
                           tabIndex={-1}
                         >
-                          {aiShowGroqKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                          {aiShowGroqKey ? (
+                            <EyeOff className="h-3.5 w-3.5" />
+                          ) : (
+                            <Eye className="h-3.5 w-3.5" />
+                          )}
                         </Button>
                       </div>
 
@@ -791,7 +903,9 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                         disabled={aiTestingGroq}
                         className="flex-shrink-0"
                       >
-                        <RefreshCw className={`h-3.5 w-3.5 ${aiTestingGroq ? 'animate-spin text-emerald-400' : ''}`} />
+                        <RefreshCw
+                          className={`h-3.5 w-3.5 ${aiTestingGroq ? 'animate-spin text-emerald-400' : ''}`}
+                        />
                         <span>{aiTestingGroq ? 'Memeriksa...' : 'Uji Groq Key'}</span>
                       </Button>
                     </div>
@@ -799,11 +913,13 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
 
                   {/* Groq Test Result */}
                   {aiGroqTestResult && (
-                    <div className={`p-3.5 rounded-xl border text-xs flex items-start justify-between gap-3 animate-in fade-in-50 duration-150 ${
-                      aiGroqTestResult.ok
-                        ? 'border-emerald-500/40 bg-emerald-950/40 text-emerald-200'
-                        : 'border-red-500/40 bg-red-950/40 text-red-200'
-                    }`}>
+                    <div
+                      className={`p-3.5 rounded-xl border text-xs flex items-start justify-between gap-3 animate-in fade-in-50 duration-150 ${
+                        aiGroqTestResult.ok
+                          ? 'border-emerald-500/40 bg-emerald-950/40 text-emerald-200'
+                          : 'border-red-500/40 bg-red-950/40 text-red-200'
+                      }`}
+                    >
                       <div className="flex items-start gap-2.5 min-w-0">
                         {aiGroqTestResult.ok ? (
                           <CheckCircle2 className="h-4 w-4 text-emerald-400 flex-shrink-0 mt-0.5" />
@@ -812,10 +928,14 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                         )}
                         <div className="min-w-0">
                           <p className="font-semibold text-xs">
-                            {aiGroqTestResult.ok ? 'Groq API Key Valid & Siap Digunakan!' : 'Uji Groq Gagal'}
+                            {aiGroqTestResult.ok
+                              ? 'Groq API Key Valid & Siap Digunakan!'
+                              : 'Uji Groq Gagal'}
                           </p>
                           <p className="font-mono text-[11px] opacity-90 mt-0.5">
-                            {aiGroqTestResult.ok ? aiGroqTestResult.message : aiGroqTestResult.error}
+                            {aiGroqTestResult.ok
+                              ? aiGroqTestResult.message
+                              : aiGroqTestResult.error}
                           </p>
                         </div>
                       </div>
@@ -833,10 +953,21 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
 
                   {/* Step Guide Callout */}
                   <div className="p-4 rounded-xl border border-slate-800/80 bg-[#131820] text-xs text-slate-300 space-y-1.5">
-                    <span className="font-bold text-white block">Panduan Singkat Dapatkan Key:</span>
-                    <p>1. Kunjungi <strong>console.groq.com/keys</strong> dan masuk dengan akun Google / GitHub.</p>
-                    <p>2. Klik tombol <strong>"Create API Key"</strong> dan salin string berawalan <code className="font-mono text-emerald-300">gsk_...</code>.</p>
-                    <p>3. Tempel pada kolom di atas, lalu klik <strong>"Simpan & Sambungkan"</strong> pada footer di bawah.</p>
+                    <span className="font-bold text-white block">
+                      Panduan Singkat Dapatkan Key:
+                    </span>
+                    <p>
+                      1. Kunjungi <strong>console.groq.com/keys</strong> dan masuk dengan akun
+                      Google / GitHub.
+                    </p>
+                    <p>
+                      2. Klik tombol <strong>"Create API Key"</strong> dan salin string berawalan{' '}
+                      <code className="font-mono text-emerald-300">gsk_...</code>.
+                    </p>
+                    <p>
+                      3. Tempel pada kolom di atas, lalu klik <strong>"Simpan & Sambungkan"</strong>{' '}
+                      pada footer di bawah.
+                    </p>
                   </div>
                 </div>
               )}
@@ -880,21 +1011,32 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                                 Google OAuth Aktif
                               </Badge>
                             </div>
-                            <p className="text-xs text-slate-400 font-mono mt-0.5">{ytChannel.customUrl || '@asal.sharing'}</p>
+                            <p className="text-xs text-slate-400 font-mono mt-0.5">
+                              {ytChannel.customUrl || '@asal.sharing'}
+                            </p>
                             <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
-                              Channel YouTube resmi Anda tersambung. Klip video yang selesai dirender dapat langsung di-upload sebagai Shorts.
+                              Channel YouTube resmi Anda tersambung. Klip video yang selesai
+                              dirender dapat langsung di-upload sebagai Shorts.
                             </p>
                           </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-slate-800/80">
                           <div className="p-3 rounded-lg bg-[#0b0f14] border border-slate-800 text-center sm:text-left">
-                            <span className="text-[11px] text-slate-400 block font-medium uppercase">Subscribers</span>
-                            <span className="text-lg font-bold text-slate-100 mt-0.5 block font-['Outfit']">{(ytChannel as any).subscriberCount || '2'}</span>
+                            <span className="text-[11px] text-slate-400 block font-medium uppercase">
+                              Subscribers
+                            </span>
+                            <span className="text-lg font-bold text-slate-100 mt-0.5 block font-['Outfit']">
+                              {ytChannel.subscriberCount || '2'}
+                            </span>
                           </div>
                           <div className="p-3 rounded-lg bg-[#0b0f14] border border-slate-800 text-center sm:text-left">
-                            <span className="text-[11px] text-slate-400 block font-medium uppercase">Total Video</span>
-                            <span className="text-lg font-bold text-slate-100 mt-0.5 block font-['Outfit']">{(ytChannel as any).videoCount || '5'}</span>
+                            <span className="text-[11px] text-slate-400 block font-medium uppercase">
+                              Total Video
+                            </span>
+                            <span className="text-lg font-bold text-slate-100 mt-0.5 block font-['Outfit']">
+                              {ytChannel.videoCount || '5'}
+                            </span>
                           </div>
                         </div>
                       </Card>
@@ -903,15 +1045,21 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                       <div className="p-4 rounded-xl border border-slate-800/80 bg-[#131820] space-y-2 text-xs">
                         <div className="flex justify-between items-center text-slate-400 pb-2 border-b border-slate-800/60">
                           <span>Channel ID:</span>
-                          <span className="font-mono text-slate-200 text-xs">{(ytChannel as any).id || 'UCmUbuH3agtBcNREw5VfzPlw'}</span>
+                          <span className="font-mono text-slate-200 text-xs">
+                            {ytChannel.id || 'UCmUbuH3agtBcNREw5VfzPlw'}
+                          </span>
                         </div>
                         <div className="flex justify-between items-center text-slate-400 pb-2 border-b border-slate-800/60">
                           <span>Permissions:</span>
-                          <span className="font-mono text-emerald-400 text-xs">youtube.upload, youtube.readonly</span>
+                          <span className="font-mono text-emerald-400 text-xs">
+                            youtube.upload, youtube.readonly
+                          </span>
                         </div>
                         <div className="flex justify-between items-center text-slate-400">
                           <span>Status Token:</span>
-                          <span className="font-mono text-emerald-400 text-xs">Valid & Auto-Refresh</span>
+                          <span className="font-mono text-emerald-400 text-xs">
+                            Valid & Auto-Refresh
+                          </span>
                         </div>
                       </div>
 
@@ -923,15 +1071,15 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                           onClick={() => checkYouTubeStatus(true)}
                           disabled={isCheckingYtStatus}
                         >
-                          <RefreshCw className={`h-3.5 w-3.5 ${isCheckingYtStatus ? 'animate-spin text-emerald-400' : ''}`} />
-                          <span>{isCheckingYtStatus ? 'Memeriksa...' : 'Tes Ulang Koneksi YouTube'}</span>
+                          <RefreshCw
+                            className={`h-3.5 w-3.5 ${isCheckingYtStatus ? 'animate-spin text-emerald-400' : ''}`}
+                          />
+                          <span>
+                            {isCheckingYtStatus ? 'Memeriksa...' : 'Tes Ulang Koneksi YouTube'}
+                          </span>
                         </Button>
 
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={handleDisconnectYouTube}
-                        >
+                        <Button variant="destructive" size="sm" onClick={handleDisconnectYouTube}>
                           Putuskan Akun YouTube
                         </Button>
                       </div>
@@ -944,23 +1092,36 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                       </div>
 
                       <div className="space-y-1.5 max-w-md mx-auto">
-                        <h4 className="text-base font-bold text-white font-['Outfit']">Hubungkan Channel YouTube</h4>
+                        <h4 className="text-base font-bold text-white font-['Outfit']">
+                          Hubungkan Channel YouTube
+                        </h4>
                         <p className="text-xs text-slate-400 leading-relaxed">
-                          Otorisasikan channel YouTube Anda melalui Google OAuth agar VisionClipper dapat memposting klip Shorts langsung dalam satu klik.
+                          Otorisasikan channel YouTube Anda melalui Google OAuth agar VisionClipper
+                          dapat memposting klip Shorts langsung dalam satu klik.
                         </p>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-lg mx-auto text-left text-xs">
                         <div className="p-3 rounded-xl bg-[#0b0f14] border border-slate-800">
-                          <span className="font-bold text-slate-200 block mb-0.5">🚀 1-Klik Upload</span>
-                          <span className="text-slate-400 text-[11px]">Upload langsung ke Shorts</span>
+                          <span className="font-bold text-slate-200 block mb-0.5">
+                            🚀 1-Klik Upload
+                          </span>
+                          <span className="text-slate-400 text-[11px]">
+                            Upload langsung ke Shorts
+                          </span>
                         </div>
                         <div className="p-3 rounded-xl bg-[#0b0f14] border border-slate-800">
-                          <span className="font-bold text-slate-200 block mb-0.5">🏷️ Auto Tagging</span>
-                          <span className="text-slate-400 text-[11px]">Judul, deskripsi & #Shorts</span>
+                          <span className="font-bold text-slate-200 block mb-0.5">
+                            🏷️ Auto Tagging
+                          </span>
+                          <span className="text-slate-400 text-[11px]">
+                            Judul, deskripsi & #Shorts
+                          </span>
                         </div>
                         <div className="p-3 rounded-xl bg-[#0b0f14] border border-slate-800">
-                          <span className="font-bold text-slate-200 block mb-0.5">🔒 Token Lokal</span>
+                          <span className="font-bold text-slate-200 block mb-0.5">
+                            🔒 Token Lokal
+                          </span>
                           <span className="text-slate-400 text-[11px]">Aman di komputer Anda</span>
                         </div>
                       </div>
@@ -1001,20 +1162,39 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                     </Label>
 
                     <ol className="relative space-y-3">
-                      <span className="absolute left-[15px] top-3 bottom-3 w-px bg-gradient-to-b from-cyan-500/50 via-slate-700/60 to-transparent" aria-hidden="true" />
+                      <span
+                        className="absolute left-[15px] top-3 bottom-3 w-px bg-gradient-to-b from-cyan-500/50 via-slate-700/60 to-transparent"
+                        aria-hidden="true"
+                      />
                       {[
-                        { title: 'Render Klip Video', desc: 'Pilih kandidat klip terbaik di dashboard dan render dengan preset subtitle TikTok Viral.' },
-                        { title: 'Klik Tombol TikTok', desc: 'Klik tombol logo TikTok pada kartu klip yang selesai dirender untuk menyalin caption.' },
-                        { title: 'Auto Copy Caption', desc: 'Caption hook menarik dan 5 hashtag viral langsung tersalin otomatis ke clipboard.' },
-                        { title: 'Drag & Drop ke Web Studio', desc: 'Buka TikTok Studio Web, drag video dari folder clips, dan paste caption (Ctrl+V / ⌘V).' },
+                        {
+                          title: 'Render Klip Video',
+                          desc: 'Pilih kandidat klip terbaik di dashboard dan render dengan preset subtitle TikTok Viral.',
+                        },
+                        {
+                          title: 'Klik Tombol TikTok',
+                          desc: 'Klik tombol logo TikTok pada kartu klip yang selesai dirender untuk menyalin caption.',
+                        },
+                        {
+                          title: 'Auto Copy Caption',
+                          desc: 'Caption hook menarik dan 5 hashtag viral langsung tersalin otomatis ke clipboard.',
+                        },
+                        {
+                          title: 'Drag & Drop ke Web Studio',
+                          desc: 'Buka TikTok Studio Web, drag video dari folder clips, dan paste caption (Ctrl+V / ⌘V).',
+                        },
                       ].map((step, i) => (
                         <li key={step.title} className="relative flex items-start gap-3.5">
                           <span className="relative z-10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-cyan-500/40 bg-[#0b0f14] text-[11px] font-mono font-bold text-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.15)]">
                             {i + 1}
                           </span>
                           <div className="min-w-0 flex-1 rounded-xl border border-slate-800/80 bg-[#131820] px-4 py-3">
-                            <span className="block text-xs font-bold text-cyan-300 font-['Outfit']">{step.title}</span>
-                            <span className="mt-0.5 block text-xs text-slate-400 leading-relaxed">{step.desc}</span>
+                            <span className="block text-xs font-bold text-cyan-300 font-['Outfit']">
+                              {step.title}
+                            </span>
+                            <span className="mt-0.5 block text-xs text-slate-400 leading-relaxed">
+                              {step.desc}
+                            </span>
                           </div>
                         </li>
                       ))}
@@ -1025,7 +1205,9 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                   <Card className="border-slate-800/80 bg-[#131820] p-5 space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                       <div>
-                        <h4 className="text-sm font-bold text-white font-['Outfit']">Buka TikTok Creator Center</h4>
+                        <h4 className="text-sm font-bold text-white font-['Outfit']">
+                          Buka TikTok Creator Center
+                        </h4>
                         <p className="text-xs text-slate-400 mt-0.5">
                           Akses portal upload resmi TikTok di browser untuk mulai memposting video.
                         </p>
@@ -1045,91 +1227,98 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                     <Separator />
 
                     <div className="text-xs text-slate-400 space-y-1">
-                      <p className="font-semibold text-slate-300">Standar Ekspor VisionClipper untuk TikTok:</p>
-                      <p>• Resolusi: <strong>1080 x 1920 (9:16 Vertikal)</strong> dengan Smart Face Tracking otomatis.</p>
-                      <p>• Video Codec: <strong>H.264 High Profile @ 60 FPS, CRF 18, FastStart</strong>.</p>
-                      <p>• Audio: <strong>AAC 192 kbps Stereo</strong> (Audio Enhancer loudness normalization -14 LUFS).</p>
-                      <p>• Durasi Rekomendasi: <strong>60 - 90 detik</strong> untuk kualifikasi TikTok Creator Rewards Program.</p>
+                      <p className="font-semibold text-slate-300">
+                        Standar Ekspor VisionClipper untuk TikTok:
+                      </p>
+                      <p>
+                        • Resolusi: <strong>1080 x 1920 (9:16 Vertikal)</strong> dengan Smart Face
+                        Tracking otomatis.
+                      </p>
+                      <p>
+                        • Video Codec:{' '}
+                        <strong>H.264 High Profile @ 60 FPS, CRF 18, FastStart</strong>.
+                      </p>
+                      <p>
+                        • Audio: <strong>AAC 192 kbps Stereo</strong> (Audio Enhancer loudness
+                        normalization -14 LUFS).
+                      </p>
+                      <p>
+                        • Durasi Rekomendasi: <strong>60 - 90 detik</strong> untuk kualifikasi
+                        TikTok Creator Rewards Program.
+                      </p>
                     </div>
                   </Card>
                 </div>
               )}
-
             </div>
 
             {/* Bottom Footer Bar */}
             <div className="px-6 py-4 border-t border-slate-800/80 bg-[#0f141b] flex items-center justify-between flex-shrink-0">
               <p className="hidden sm:block text-[11px] text-slate-500 truncate pr-4">
                 {activeTab === 'ai' && 'Simpan konfigurasi untuk mengaktifkan engine analisis AI.'}
-                {activeTab === 'whisper' && 'Simpan untuk mengaktifkan transkripsi & subtitle otomatis.'}
-                {activeTab === 'youtube' && 'Sambungkan channel untuk mengaktifkan upload Shorts otomatis.'}
+                {activeTab === 'whisper' &&
+                  'Simpan untuk mengaktifkan transkripsi & subtitle otomatis.'}
+                {activeTab === 'youtube' &&
+                  'Sambungkan channel untuk mengaktifkan upload Shorts otomatis.'}
                 {activeTab === 'tiktok' && 'Ikuti alur 4 langkah untuk posting klip ke TikTok.'}
               </p>
 
               <div className="flex items-center gap-2 ml-auto">
-                <Button
-                  variant="outline"
-                  onClick={() => onOpenChange(false)}
-                >
+                <Button variant="outline" onClick={() => onOpenChange(false)}>
                   Tutup
                 </Button>
 
-              {(activeTab === 'ai' || activeTab === 'whisper') ? (
-                <Button
-                  variant="default"
-                  onClick={handleSaveAiConfig}
-                  disabled={aiSaving}
-                >
-                  {aiSaving ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      <span>Menyimpan...</span>
-                    </>
+                {activeTab === 'ai' || activeTab === 'whisper' ? (
+                  <Button variant="default" onClick={handleSaveAiConfig} disabled={aiSaving}>
+                    {aiSaving ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        <span>Menyimpan...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="h-4 w-4 stroke-[2.5]" />
+                        <span>Simpan & Sambungkan ke Engine</span>
+                      </>
+                    )}
+                  </Button>
+                ) : activeTab === 'youtube' ? (
+                  ytConnected ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => checkYouTubeStatus(true)}
+                      disabled={isCheckingYtStatus}
+                    >
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${isCheckingYtStatus ? 'animate-spin text-emerald-400' : ''}`}
+                      />
+                      <span>Tes Status YouTube</span>
+                    </Button>
                   ) : (
-                    <>
-                      <Check className="h-4 w-4 stroke-[2.5]" />
-                      <span>Simpan & Sambungkan ke Engine</span>
-                    </>
-                  )}
-                </Button>
-              ) : activeTab === 'youtube' ? (
-                ytConnected ? (
-                  <Button
-                    variant="outline"
-                    onClick={() => checkYouTubeStatus(true)}
-                    disabled={isCheckingYtStatus}
-                  >
-                    <RefreshCw className={`h-3.5 w-3.5 ${isCheckingYtStatus ? 'animate-spin text-emerald-400' : ''}`} />
-                    <span>Tes Status YouTube</span>
-                  </Button>
+                    <Button
+                      variant="default"
+                      onClick={handleConnectYouTube}
+                      className="bg-red-600 hover:bg-red-500 text-white font-bold"
+                    >
+                      <YouTubeLogo className="h-4 w-4" />
+                      <span>Hubungkan YouTube</span>
+                    </Button>
+                  )
                 ) : (
-                  <Button
-                    variant="default"
-                    onClick={handleConnectYouTube}
-                    className="bg-red-600 hover:bg-red-500 text-white font-bold"
+                  <a
+                    href="https://www.tiktok.com/creator-center/upload"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-500 hover:from-cyan-500 hover:to-teal-400 px-4 py-2 text-xs font-bold text-white transition-all shadow-sm active:scale-95"
                   >
-                    <YouTubeLogo className="h-4 w-4" />
-                    <span>Hubungkan YouTube</span>
-                  </Button>
-                )
-              ) : (
-                <a
-                  href="https://www.tiktok.com/creator-center/upload"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-500 hover:from-cyan-500 hover:to-teal-400 px-4 py-2 text-xs font-bold text-white transition-all shadow-sm active:scale-95"
-                >
-                  <span>Buka TikTok Studio</span>
-                  <ArrowUpRight className="h-4 w-4" />
-                </a>
-              )}
+                    <span>Buka TikTok Studio</span>
+                    <ArrowUpRight className="h-4 w-4" />
+                  </a>
+                )}
               </div>
             </div>
-
           </main>
-
         </div>
-
       </div>
     </div>
   );

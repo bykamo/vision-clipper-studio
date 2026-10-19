@@ -1,18 +1,12 @@
 export type FramingMode = 'smart_crop' | 'fit_blur' | 'split_screen';
 
-export type SubtitleAnimation = 
-  | 'word_pop' 
-  | 'karaoke' 
-  | 'bounce' 
-  | 'glow_pulse' 
-  | 'slide_up' 
-  | 'none';
+export type SubtitleAnimation =
+  'word_pop' | 'karaoke' | 'bounce' | 'glow_pulse' | 'slide_up' | 'none';
 
-export type SubtitlePresetId = 
+export type SubtitlePresetId =
   | 'tiktok_viral'
   | 'classic_karaoke'
   | 'minimalist'
-  | 'translation_read'
   | 'word_pop'
   | 'no_subtitle';
 
@@ -35,6 +29,4 @@ export interface SubtitleStyleConfig {
   wordsPerLine: number;
   allCaps: boolean;
   positionY: number;
-  showEmoji: boolean;
 }
-

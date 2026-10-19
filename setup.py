@@ -15,6 +15,7 @@ setup(
         "python-dotenv",
         "opencv-python-headless>=4.8.0",
         "moviepy",
+        "proglog",
         "yt-dlp",
         "youtube-transcript-api>=1.2.4,<2.0.0",
         "webvtt-py",
@@ -23,10 +24,8 @@ setup(
         "google-auth-oauthlib",
         "google-auth-httplib2",
         "google-api-python-client",
-        # Emoji berwarna: Pillow merasterisasi NotoColorEmoji, fontTools membaca
-        # metrik font yang sama dengan yang dipakai libass (lihat emoji_overlay.py).
+        # Dipakai moviepy untuk membaca/menulis frame gambar.
         "pillow>=10.1.0",
-        "fonttools>=4.40.0",
     ],
     entry_points={
         "console_scripts": [
@@ -39,5 +38,5 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.8",
+    python_requires=">=3.10",
 )

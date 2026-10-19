@@ -882,7 +882,7 @@ for _f in os.listdir(TEMP_ANALYSIS_DIR):
 
 
 @app.get("/api/analyze")
-async def analyze(request: Request, mode: str = "", source: str = "", num_clips: str = "5", whisper_model: str = "groq", source_lang: str = "id", target_lang: str = "id"):
+async def analyze(request: Request, mode: str = "", source: str = "", num_clips: str = "5", whisper_model: str = "groq", source_lang: str = "id"):
     """Phase 1: Transcribe + LLM analysis only. Returns SSE stream with [ANALYSIS_RESULT] JSON."""
     if _worker_is_active():
         return JSONResponse(status_code=409, content={"error": "A worker is already processing a request"})
@@ -894,8 +894,6 @@ async def analyze(request: Request, mode: str = "", source: str = "", num_clips:
         return JSONResponse(status_code=400, content={"error": "Invalid transcription model. Hanya 'groq' yang didukung."})
     if source_lang not in {"id", "en", "auto"}:
         return JSONResponse(status_code=400, content={"error": "Invalid source language"})
-    if target_lang not in {"id", "en", "none"}:
-        return JSONResponse(status_code=400, content={"error": "Invalid target language"})
     try:
         clip_count = int(num_clips)
     except ValueError:
@@ -917,7 +915,6 @@ async def analyze(request: Request, mode: str = "", source: str = "", num_clips:
         "--mode", mode or "hook",
         "--model", whisper_model,
         "--source-lang", source_lang,
-        "--target-lang", target_lang,
         "--analyze-only"
     ]
 
@@ -969,11 +966,13 @@ async def render_selected(request: Request):
         sub_position = max(30, min(85, int(sub_position)))
     except (TypeError, ValueError):
         sub_position = 68
-    show_emoji = bool(data.get("show_emoji", True))
+    # Frontend always sends this key; default to enabled to match the analyze
+    # endpoint and the UI toggle's initial state.
+    watermark_enabled = bool(data.get("watermark_enabled", True))
 
     if not _valid_analysis_id(analysis_id) or not isinstance(clip_indices, list) or not clip_indices:
         return JSONResponse(status_code=400, content={"error": "Missing analysis_id or clip_indices"})
-    if sub_style not in {"tiktok_viral", "classic_karaoke", "minimalist", "word_pop", "translation_read", "no_subtitle", "none"}:
+    if sub_style not in {"tiktok_viral", "classic_karaoke", "minimalist", "word_pop", "no_subtitle", "none"}:
         return JSONResponse(status_code=400, content={"error": "Invalid subtitle style"})
     if framing_mode not in {"smart_crop", "fit_blur", "split_screen"}:
         return JSONResponse(status_code=400, content={"error": "Invalid framing mode"})
@@ -1012,14 +1011,6 @@ async def render_selected(request: Request):
         "--framing-mode", framing_mode,
         "--sub-position", str(sub_position),
     ]
-    if show_emoji:
-        cmd.append("--show-emoji")
-    else:
-        cmd.append("--no-emoji")
-    if bool(data.get("inject_emoji", True)):
-        cmd.append("--inject-emoji")
-    else:
-        cmd.append("--no-inject-emoji")
     source_watermark = str(data.get("source_watermark", "")).strip()
     account_watermark = str(data.get("account_watermark", "")).strip()
     if watermark_enabled:
@@ -1035,7 +1026,7 @@ async def render_selected(request: Request):
 
 
 @app.get("/stream")
-async def stream(request: Request, mode: str = "", source_type: str = "", source: str = "", num_clips: str = "5", sub_style: str = "tiktok_viral", whisper_model: str = "groq", framing_mode: str = "smart_crop", sub_position: str = "68", show_emoji: str = "true", watermark_enabled: str = "true", source_watermark: str = "", account_watermark: str = "", source_lang: str = "id", target_lang: str = "id"):
+async def stream(request: Request, mode: str = "", source_type: str = "", source: str = "", num_clips: str = "5", sub_style: str = "tiktok_viral", whisper_model: str = "groq", framing_mode: str = "smart_crop", sub_position: str = "68", watermark_enabled: str = "true", source_watermark: str = "", account_watermark: str = "", source_lang: str = "id"):
     """Legacy streaming endpoint protected with synchronized worker slot."""
     if _worker_is_active():
         return JSONResponse(status_code=409, content={"error": "A worker is already processing a request"})
@@ -1048,8 +1039,6 @@ async def stream(request: Request, mode: str = "", source_type: str = "", source
         sub_pos_int = max(30, min(85, int(sub_position)))
     except (TypeError, ValueError):
         sub_pos_int = 68
-    emoji_bool = show_emoji.lower() in {"1", "true", "yes"}
-
     try:
         job_id = _reserve_worker_slot()
     except RuntimeError:
@@ -1065,18 +1054,7 @@ async def stream(request: Request, mode: str = "", source_type: str = "", source
         "--framing-mode", framing_mode,
         "--sub-position", str(sub_pos_int),
         "--source-lang", source_lang if source_lang in {"id", "en", "auto"} else "id",
-        "--target-lang", target_lang if target_lang in {"id", "en", "none"} else "id",
     ]
-    if emoji_bool:
-        cmd.append("--show-emoji")
-    else:
-        cmd.append("--no-emoji")
-    inject_param = str(request.query_params.get("inject_emoji", "true")).lower()
-    if inject_param in {"0", "false", "no"}:
-        cmd.append("--no-inject-emoji")
-    else:
-        cmd.append("--inject-emoji")
-
     wm_bool = watermark_enabled.lower() in {"1", "true", "yes"}
     if wm_bool:
         cmd.append("--watermark-enabled")

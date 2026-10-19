@@ -41,10 +41,20 @@ vision-clipper-studio/
 │   ├── database.py           # SQLite Session Manager
 │   ├── utils.py              # Log Utilities
 │   └── bg_server.py          # Background Server Launcher
-├── frontend/                 # HTML/JS/CSS Assets
-│   ├── index.html            # Dashboard HTML
-│   ├── app.js                # Client-side Logic (SSE)
-│   └── styles.css            # CSS UI Design
+├── frontend/                 # React 19 + Vite + Tailwind v4 Dashboard
+│   ├── index.html            # Vite entry HTML
+│   ├── package.json          # Dependencies & scripts (dev / build / lint)
+│   ├── vite.config.ts        # Dev server :3000 + proxy ke backend :5050
+│   ├── src/
+│   │   ├── App.tsx           # Root component
+│   │   ├── main.tsx          # React entry point
+│   │   ├── index.css         # Tailwind + iOS mockup/transport styles
+│   │   ├── components/       # Dashboard, PhonePreview, Settings, dll
+│   │   ├── data/             # Preset subtitle
+│   │   ├── lib/              # Helper (cn)
+│   │   └── types/            # Shared TypeScript types
+│   ├── public/               # Logo & mockup assets
+│   └── dist/                 # Hasil build (dibuat oleh `npm run build`)
 ├── scripts/                  # Helper Scripts
 │   ├── install_mac.sh        # macOS/Linux Installer
 │   ├── uninstall_mac.sh      # macOS/Linux Clean Uninstaller
@@ -206,6 +216,28 @@ Klip yang sudah dirender sebelumnya dapat dibuka kembali langsung menggunakan di
 | `vision-clipper: command not found` | Muat ulang shell dengan `source ~/.zshrc` (Mac) atau buka terminal baru (Windows). |
 | API Error / timeout | Jalankan `vision-clipper config` untuk memastikan Endpoint dan API Key sudah benar. |
 | Port 5050 bentrok | Matikan instance sebelumnya dengan `vision-clipper stop`. |
+| UI tampil kosong / fallback | `frontend/dist` belum ada. Jalankan `cd frontend && npm install && npm run build`. |
+
+---
+
+## 🧑‍💻 Development
+
+```bash
+# Backend (port 5050) — serve frontend/dist
+.venv/bin/python -m backend.main
+
+# Frontend dev server (port 3000, proxy /api -> :5050)
+cd frontend && npm run dev
+
+# Typecheck (strict TS) — jalankan sebelum commit
+cd frontend && npm run lint
+
+# Build produksi (wajib sebelum `pa`/`python -m backend.main` melayani UI baru)
+cd frontend && npm run build
+
+# Test backend (unittest, 136 test)
+.venv/bin/python -m unittest discover -s backend -p "test_*.py"
+```
 
 ---
 

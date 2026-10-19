@@ -2,7 +2,6 @@ import sqlite3
 import os
 import json
 from contextlib import contextmanager
-from typing import List, Dict, Any, Optional
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(PROJECT_ROOT, "vision_clipper.db")

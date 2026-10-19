@@ -1,4 +1,3 @@
-import React from 'react';
 import { SimpleClipperDashboard } from './components/SimpleClipperDashboard';
 
 export default function App() {

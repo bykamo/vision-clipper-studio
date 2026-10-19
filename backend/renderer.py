@@ -4,7 +4,6 @@ import sys
 import math
 import time
 import json
-import random
 import subprocess
 import cv2
 import numpy as np
@@ -16,137 +15,7 @@ from backend.utils import (
     get_ffmpeg_binary,
     get_ffprobe_binary,
     TEMP_DIR,
-    FONTS_DIR,
 )
-
-# ── FONT EMOJI ──
-# Mode warna: NotoColorEmoji.ttf (CBDT bitmap) dirender native oleh libass sehingga
-# emoji tampil BERWARNA persis seperti emoji asli di HP. Mode fallback: NotoEmoji.ttf
-# (monokrom) + tint warna EMOJI_COLORS, dipakai jika font warna tidak tersedia atau
-# probe libass gagal merender bitmap warna.
-EMOJI_FONT_COLOR = "Noto Color Emoji"
-EMOJI_FONT_MONO = "Noto Emoji"
-EMOJI_COLOR_FONT_FILE = "NotoColorEmoji.ttf"
-EMOJI_MONO_FONT_FILE = "NotoEmoji.ttf"
-# Override manual: "color" | "mono" | None (auto-detect via probe)
-EMOJI_FONT_MODE_OVERRIDE = os.environ.get("EMOJI_FONT_MODE") or None
-
-
-def _probe_color_emoji_support():
-    """Cek apakah libass (bundled ffmpeg) mampu merender NotoColorEmoji (CBDT) berwarna.
-
-    Render 1 frame ASS berisi emoji via bundled ffmpeg -> rawvideo gray+u/v analisis
-    sederhana: frame di-render sebagai bgr24 lalu dicek saturasi kroma piksel emoji.
-    Emoji berwarna -> ada piksel dengan saturasi tinggi. Tofu/monokrom -> abu-abu.
-    Hasil di-cache di temp/.emoji_color_probe.json (key: path ffmpeg + mtime font).
-    """
-    global _COLOR_EMOJI_SUPPORTED
-    if _COLOR_EMOJI_SUPPORTED is not None:
-        return _COLOR_EMOJI_SUPPORTED
-
-    cache_path = os.path.join(TEMP_DIR, ".emoji_color_probe.json")
-    try:
-        ffmpeg_bin = get_ffmpeg_binary()
-    except Exception:
-        ffmpeg_bin = "ffmpeg"
-    font_path = os.path.join(FONTS_DIR, EMOJI_COLOR_FONT_FILE)
-    if not os.path.exists(font_path):
-        _COLOR_EMOJI_SUPPORTED = False
-        return False
-    try:
-        font_key = f"{ffmpeg_bin}|{os.path.getmtime(font_path)}|{os.path.getmtime(ffmpeg_bin) if os.path.exists(ffmpeg_bin) else 0}"
-    except OSError:
-        font_key = None
-
-    if font_key:
-        try:
-            with open(cache_path, "r", encoding="utf-8") as fh:
-                cached = json.load(fh)
-            if cached.get("key") == font_key:
-                _COLOR_EMOJI_SUPPORTED = bool(cached.get("supported"))
-                return _COLOR_EMOJI_SUPPORTED
-        except Exception:
-            pass
-
-    supported = False
-    probe_ass = os.path.join(TEMP_DIR, ".emoji_probe.ass")
-    try:
-        with open(probe_ass, "w", encoding="utf-8") as fh:
-            fh.write(
-                "[Script Info]\nScriptType: v4.00+\nPlayResX: 320\nPlayResY: 180\n"
-                "WrapStyle: 2\n\n[V4+ Styles]\n"
-                "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
-                f"Style: Probe,{EMOJI_FONT_COLOR},48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,5,10,10,10,1\n"
-                "\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
-                "Dialogue: 0,0:00:00.00,0:00:05.00,Probe,,0,0,0,,\U0001F525\U0001F4B0\U0001F60E\n"
-            )
-        escaped_ass = _escape_filter_path(probe_ass)
-        escaped_fonts = _escape_filter_path(FONTS_DIR)
-        cmd = [
-            ffmpeg_bin, "-hide_banner", "-loglevel", "error", "-y",
-            "-f", "lavfi", "-i", "color=c=black:s=320x180:d=1",
-            "-vf", f"subtitles='{escaped_ass}':fontsdir='{escaped_fonts}',format=bgr24",
-            "-frames:v", "1", "-f", "rawvideo", "-",
-        ]
-        raw = subprocess.run(cmd, capture_output=True, timeout=30)
-        buf = raw.stdout
-        if raw.returncode == 0 and len(buf) >= 320 * 180 * 3:
-            arr = np.frombuffer(buf[: 320 * 180 * 3], dtype=np.uint8).reshape(180, 320, 3)
-            mx = arr.max(axis=2).astype(np.int16)
-            mn = arr.min(axis=2).astype(np.int16)
-            sat = mx - mn
-            # Emoji CBDT berwarna menghasilkan banyak piksel saturasi tinggi;
-            # tofu/monokrom hanya abu-abu (saturasi ~0).
-            supported = bool((sat > 60).sum() > 200)
-    except Exception:
-        supported = False
-    finally:
-        try:
-            if os.path.exists(probe_ass):
-                os.remove(probe_ass)
-        except Exception:
-            pass
-
-    _COLOR_EMOJI_SUPPORTED = supported
-    if font_key:
-        try:
-            with open(cache_path, "w", encoding="utf-8") as fh:
-                json.dump({"key": font_key, "supported": supported}, fh)
-        except Exception:
-            pass
-    return supported
-
-
-def _get_active_emoji_font():
-    """Kembalikan nama family font emoji aktif: warna (CBDT) atau monokrom fallback."""
-    # Baca env saat dipanggil (bukan saat import) agar mudah di-override test.
-    mode = (os.environ.get("EMOJI_FONT_MODE") or "").strip().lower()
-    if mode == "mono":
-        return EMOJI_FONT_MONO
-    if mode == "color":
-        return EMOJI_FONT_COLOR
-    color_file = os.path.join(FONTS_DIR, EMOJI_COLOR_FONT_FILE)
-    if os.path.exists(color_file) and _probe_color_emoji_support():
-        return EMOJI_FONT_COLOR
-    return EMOJI_FONT_MONO
-
-
-_COLOR_EMOJI_SUPPORTED = None
-
-
-def _emoji_overlay_available():
-    """Apakah emoji berwarna bisa ditempel sebagai overlay PNG?
-
-    Butuh Pillow + fontTools + NotoColorEmoji.ttf. Jika tidak tersedia, pipeline
-    otomatis memakai font emoji monokrom (fallback lama) supaya render tidak gagal.
-    """
-    if os.environ.get("EMOJI_OVERLAY", "").strip().lower() in {"0", "false", "no", "off"}:
-        return False
-    try:
-        from backend.emoji_overlay import emoji_overlay_supported
-        return emoji_overlay_supported(FONTS_DIR)
-    except Exception:
-        return False
 
 try:
     from backend.utils import env_float, env_bool
@@ -199,26 +68,36 @@ STYLE_CHUNK_LIMITS = {
     "minimalist": {"max_words": 4, "max_chars": 16},
 }
 
-# ── MODE TERJEMAHAN (audio bahasa sumber, subtitle bahasa target) ──
-# Subtitle terjemahan TIDAK memakai highlight per-kata: timing kata hasil
-# terjemahan hanya proporsional terhadap panjang karakter (lihat
-# transcriber.split_segment_into_words), sehingga highlight tidak pernah
-# sinkron dengan audio aslinya. Mode ini menampilkan kalimat utuh dengan
-# waktu baca minimum (reading-time floor).
-TRANSLATION_CHUNK_MAX_WORDS = 7
-TRANSLATION_CHUNK_MAX_CHARS = 34   # total 2 baris
-TRANSLATION_LINE_CHARS = 17        # per baris (aman di 840px, font 66)
-TRANSLATION_READ_CPS = 13.0        # karakter/detik untuk pembaca non-native
-TRANSLATION_MIN_CUE = 1.2          # detik tampil minimum
-TRANSLATION_MAX_CUE = 5.0
-TRANSLATION_CUE_HOLD = 0.4         # tahan cue sampai jeda hening berikutnya
-TRANSLATION_CHUNK_MAX_GAP = 0.6    # jeda antar kata -> batas cue baru
-TRANSLATION_MAX_DRIFT = 1.4        # batas lag kumulatif akibat reading floor
+# Emoji tidak lagi dirender di subtitle (fitur emoji dihapus). Pola ini hanya
+# dipakai untuk MEMBUANG emoji dari teks, karena font subtitle
+# (Plus Jakarta Sans / Montserrat / Impact) tidak punya glyph emoji sehingga
+# karakter emoji akan tampil sebagai kotak kosong (tofu).
+_EMOJI_CHAR_RANGES = (
+    r"\U0001F000-\U0001FAFF"      # emoticon, pictograph, transport, symbol
+    r"\u2190-\u21FF"              # panah
+    r"\u2300-\u23FF"              # misc technical
+    r"\u2460-\u24FF"              # enclosed alphanumerics
+    r"\u25A0-\u25FF"              # geometric shapes
+    r"\u2600-\u27BF"              # misc symbols & dingbats
+    r"\u2B00-\u2BFF"              # misc symbols and arrows
+    r"\u3030\u303D\u3297\u3299"   # CJK symbols
+    r"\u2122\u2139\u2049\u203C"   # trademark / info / punctuation emoji
+)
+_EMOJI_CLUSTER = (
+    r"[\U0001F1E6-\U0001F1FF]{2}"
+    rf"|[{_EMOJI_CHAR_RANGES}][\uFE0E\uFE0F]?[\U0001F3FB-\U0001F3FF]?"
+    rf"(?:\u200D[{_EMOJI_CHAR_RANGES}][\uFE0E\uFE0F]?[\U0001F3FB-\U0001F3FF]?)*"
+    r"|\u20E3"
+)
+_EMOJI_PATTERN = re.compile(f"({_EMOJI_CLUSTER})")
 
-STYLE_CHUNK_LIMITS["translation_read"] = {
-    "max_words": TRANSLATION_CHUNK_MAX_WORDS,
-    "max_chars": TRANSLATION_CHUNK_MAX_CHARS,
-}
+def _strip_emoji(text: str) -> str:
+    """Buang seluruh emoji + variation selector dari teks subtitle."""
+    if not text:
+        return ""
+    cleaned = _EMOJI_PATTERN.sub("", str(text))
+    cleaned = cleaned.replace("\ufe0e", "").replace("\ufe0f", "").replace("\u200d", "")
+    return re.sub(r"\s{2,}", " ", cleaned).strip()
 
 def _escape_ass_text(text: str) -> str:
     """Escape ASS/SSA control characters and strip raw newlines."""
@@ -230,15 +109,10 @@ def _escape_ass_text(text: str) -> str:
     return sanitized
 
 def _display_len(text: str) -> int:
-    """Panjang teks yang benar-benar memakan lebar baris (emoji tidak dihitung).
-
-    Emoji dirender lebih kecil daripada teks dan pada mode overlay digambar
-    sebagai PNG, jadi menghitungnya sebagai karakter akan membuat baris
-    terlihat jauh lebih panjang dari aslinya dan memicu pemenggalan dini.
-    """
+    """Panjang teks yang memakan lebar baris (emoji sudah dibuang lebih awal)."""
     if not text:
         return 0
-    return len(_EMOJI_PATTERN.sub("", text).strip())
+    return len(_strip_emoji(text))
 
 def _sanitize_word_timestamps(words, clip_start, clip_end, min_word_dur=0.18):
     """
@@ -251,7 +125,7 @@ def _sanitize_word_timestamps(words, clip_start, clip_end, min_word_dur=0.18):
     for w in words:
         w_start = max(0.0, min(max_clip_dur, float(w.get("start", 0.0)) - clip_start))
         w_end = max(0.0, min(max_clip_dur, float(w.get("end", 0.0)) - clip_start))
-        text = _escape_ass_text(w.get("word", ""))
+        text = _escape_ass_text(_strip_emoji(w.get("word", "")))
         if not text:
             continue
         if w_end <= w_start:
@@ -265,7 +139,7 @@ def _sanitize_word_timestamps(words, clip_start, clip_end, min_word_dur=0.18):
     
     # Monotonic clamping: ensure no word overlaps another
     sanitized = []
-    for i, w in enumerate(cleaned):
+    for _i, w in enumerate(cleaned):
         s = max(0.0, min(max_clip_dur, w["start"]))
         e = max(0.0, min(max_clip_dur, max(w["end"], s + min_word_dur)))
         
@@ -276,293 +150,6 @@ def _sanitize_word_timestamps(words, clip_start, clip_end, min_word_dur=0.18):
         sanitized.append({"word": w["word"], "start": s, "end": e})
         
     return sanitized
-
-# Kamus Kata Kunci Viral untuk Auto-Emoji Insertion.
-# Setiap kata kunci punya BEBERAPA kandidat emoji yang cocok maknanya dengan kalimat;
-# satu kandidat dipilih acak supaya subtitle tidak monoton. Kandidat pertama = default.
-# WAJIB: semua emoji di sini harus ada di font backend/fonts/NotoEmoji.ttf,
-# kalau tidak akan muncul kotak kosong (tofu). Diverifikasi oleh test_renderer.
-EMOJI_KEYWORDS = {
-    # Keuangan / Bisnis / Karier
-    "uang": ("💰", "💵", "🤑"),
-    "duit": ("💸", "💰", "💵"),
-    "kaya": ("🤑", "💰", "💎"),
-    "cuan": ("💵", "💰", "📈"),
-    "bisnis": ("📈", "💼", "🏢"),
-    "investasi": ("📊", "📈", "💹"),
-    "modal": ("💵", "💰", "🏦"),
-    "kerja": ("💼", "🛠️", "💪"),
-    "gaji": ("💰", "💵", "🧾"),
-    "karir": ("👔", "📈", "🎯"),
-    "untung": ("📈", "💹", "🎉"),
-    "rugi": ("📉", "💸", "😖"),
-    "saham": ("📊", "📈", "💹"),
-    "omset": ("💸", "📈", "💰"),
-    "omzet": ("💸", "📈", "💰"),
-    # Emosi & Reaksi
-    "kaget": ("😱", "😲", "🤯"),
-    "shock": ("🤯", "😱", "⚡"),
-    "kecewa": ("😞", "😔", "💔"),
-    "marah": ("😡", "🤬", "🔥"),
-    "bahaya": ("⚠️", "🚨", "☠️"),
-    "masalah": ("🚨", "⚠️", "🧩"),
-    "takut": ("😨", "😰", "😱"),
-    "hancur": ("💥", "🧨", "💔"),
-    "stres": ("😫", "😖", "🌀"),
-    "capek": ("😮‍💨", "😩", "🥱"),
-    # Mindset & Inspirasi
-    "otak": ("🧠", "💡", "⚙️"),
-    "pikiran": ("🧠", "💭", "💡"),
-    "mindset": ("💡", "🧠", "🎯"),
-    "ide": ("💡", "✨", "🧠"),
-    "fokus": ("🎯", "🔍", "🧘"),
-    "sukses": ("🏆", "🚀", "🌟"),
-    "menang": ("🥇", "🏆", "✌️"),
-    "juara": ("👑", "🏆", "🥇"),
-    "waktu": ("⏱️", "⏰", "⌛"),
-    "disiplin": ("⚡", "⏰", "🎯"),
-    "rahasia": ("🤫", "🔒", "🕵️"),
-    "kunci": ("🔑", "🗝️", "🔓"),
-    "target": ("🎯", "📌", "🏹"),
-    "kebiasaan": ("🔄", "🔁", "♻️"),
-    # Viral / Energetik
-    "viral": ("🚀", "🔥", "📢"),
-    "meledak": ("💥", "🧨", "🔥"),
-    "api": ("🔥", "🚒", "💥"),
-    "batu": ("🗿", "🪨", "💪"),
-    "mati": ("💀", "⚰️", "🥀"),
-    "keren": ("✨", "😎", "🔥"),
-    "gila": ("🤯", "😵", "🌀"),
-    "parah": ("💀", "😵", "🚨"),
-    "bohong": ("🤥", "🚫", "🙊"),
-    "salah": ("❌", "🚫", "🙅"),
-    "benar": ("✅", "👍", "💯"),
-    "stop": ("🛑", "✋", "🚫"),
-    "mulai": ("🚀", "▶️", "🏁"),
-}
-
-def _inject_emojis_to_words(words, min_gap=4):
-    """
-    Suntikkan emoji kontekstual pada kata kunci viral dengan frekuensi terkontrol.
-    Maksimal 1 emoji per min_gap kata untuk menjaga kerapian & estetika subtitle.
-    Emoji dipilih acak dari kandidat yang cocok dengan makna kalimat.
-    """
-    if not words:
-        return words
-
-    decorated = []
-    last_emoji_idx = -min_gap
-
-    for i, w in enumerate(words):
-        raw_word = re.sub(r"[^\w]", "", w.get("word", "").lower())
-        matched_emoji = None
-        if i - last_emoji_idx >= min_gap:
-            for kw, candidates in EMOJI_KEYWORDS.items():
-                if raw_word == kw or (len(raw_word) >= 4 and raw_word.startswith(kw)):
-                    matched_emoji = random.choice(candidates)
-                    break
-
-        if matched_emoji:
-            new_text = f"{w['word']} {matched_emoji}"
-            last_emoji_idx = i
-            decorated.append({**w, "word": new_text})
-        else:
-            decorated.append(w)
-
-    return decorated
-
-# Palet warna aksen ASS (&HAABBGGRR / &HBBGGRR&) kontras tinggi untuk variasi emoji viral
-EMOJI_COLORS = {
-    "🔥": "&H0070FF&",  # Api (Orange menyala)
-    "🚀": "&HFFCC00&",  # Roket (Electric Cyan/Blue)
-    "💡": "&H00FFFF&",  # Ide/Mindset (Kuning cerah)
-    "💰": "&H00E676&",  # Cuan (Hijau Emerald)
-    "💵": "&H00E676&",  # Uang (Hijau Emerald)
-    "💸": "&H00E676&",  # Cash terbang (Hijau)
-    "📈": "&H00D4FF&",  # Untung (Emas)
-    "📉": "&H0000FF&",  # Rugi (Merah)
-    "🏆": "&H00D4FF&",  # Juara (Emas)
-    "👑": "&H00D4FF&",  # Mahkota (Emas)
-    "🥇": "&H00D4FF&",  # Medali (Emas)
-    "⚡": "&H00FFFF&",  # Petir (Kuning)
-    "🧠": "&HFFB6C1&",  # Otak (Pink)
-    "🎯": "&H0044FF&",  # Target (Merah-Orange)
-    "🔑": "&H00D4FF&",  # Kunci (Emas)
-    "🚨": "&H0033FF&",  # Sirine (Merah)
-    "⚠️": "&H00BFFF&",  # Warning (Amber)
-    "🛑": "&H0000FF&",  # Stop (Merah)
-    "❌": "&H0000FF&",  # Salah (Merah)
-    "✅": "&H00E676&",  # Benar (Hijau)
-    "✨": "&H00FFFF&",  # Keren (Kuning bintang)
-    "🗿": "&HE0E0E0&",  # Batu (Silver)
-    "💀": "&HE0E0E0&",  # Tengkorak (Putih tulang)
-    "😱": "&H00BFFF&",  # Kaget (Amber)
-    "🤯": "&H00BFFF&",  # Shock (Amber)
-    # --- Pelengkap kandidat acak (emoji tanpa entri memakai warna default amber) ---
-    "💎": "&HFFCC00&",  # Berlian (Cyan terang)
-    "🏦": "&H00D4FF&",  # Bank (Emas)
-    "🏢": "&H00D4FF&",  # Kantor (Emas)
-    "💹": "&H00E676&",  # Grafik naik (Hijau)
-    "🎉": "&H00FFFF&",  # Perayaan (Kuning)
-    "💔": "&H0000FF&",  # Patah hati (Merah)
-    "☠️": "&H0000FF&",  # Bahaya (Merah)
-    "🧨": "&H0000FF&",  # Petasan (Merah)
-    "🔒": "&H00D4FF&",  # Terkunci (Emas)
-    "🔓": "&H00E676&",  # Terbuka (Hijau)
-    "🗝️": "&H00D4FF&",  # Kunci antik (Emas)
-    "📌": "&H0044FF&",  # Pin (Merah-orange)
-    "📅": "&H00D4FF&",  # Kalender (Emas)
-    "⏰": "&H00D4FF&",  # Alarm (Emas)
-    "⏱️": "&H00D4FF&",  # Stopwatch (Emas)
-    "⌛": "&H00D4FF&",  # Hourglass (Emas)
-    "✋": "&H0000FF&",  # Stop tangan (Merah)
-    "⛔": "&H0000FF&",  # Dilarang (Merah)
-    "💯": "&H00E676&",  # Seratus (Hijau)
-    "👍": "&H00E676&",  # Jempol (Hijau)
-    "😎": "&H00FFFF&",  # Keren (Kuning)
-    "😪": "&H00D4FF&",  # Ngantuk (Emas)
-    "🥱": "&H00D4FF&",  # Menguap (Emas)
-    "💪": "&H00E676&",  # Kekuatan (Hijau)
-    "🧘": "&H00FFFF&",  # Meditasi (Kuning)
-    "🤓": "&H00FFFF&",  # Kutu buku (Kuning)
-    "💭": "&H00FFFF&",  # Pikiran (Kuning)
-    "🔍": "&H00D4FF&",  # Cari (Emas)
-    "🔧": "&H00D4FF&",  # Kunci pas (Emas)
-    "🧩": "&H00FFFF&",  # Puzzle (Kuning)
-    "🧾": "&H00D4FF&",  # Struk (Emas)
-    "🥀": "&H0000FF&",  # Bunga layu (Merah)
-    "⚰️": "&HE0E0E0&",  # Peti (Silver)
-    "⛰️": "&HE0E0E0&",  # Gunung (Silver)
-    "🪨": "&HE0E0E0&",  # Batu (Silver)
-    "🌟": "&H00FFFF&",  # Bintang (Kuning)
-    "✌️": "&H00E676&",  # Victory (Hijau)
-    "🏁": "&H00FFFF&",  # Finish (Kuning)
-    "👻": "&H00FFFF&",  # Hantu (Kuning)
-    "🙅": "&H0000FF&",  # Tidak (Merah)
-    "🙊": "&H0000FF&",  # Tutup mulut (Merah)
-    "🚫": "&H0000FF&",  # Dilarang (Merah)
-    "🚒": "&H0000FF&",  # Pemadam (Merah)
-    "😵": "&H00BFFF&",  # Pusing (Amber)
-    "😖": "&H00BFFF&",  # Frustasi (Amber)
-    "😔": "&H00BFFF&",  # Sedih (Amber)
-    "😞": "&H00BFFF&",  # Kecewa (Amber)
-    "😡": "&H0000FF&",  # Marah (Merah)
-    "🤬": "&H0000FF&",  # Marah besar (Merah)
-    "😨": "&H00BFFF&",  # Takut (Amber)
-    "😰": "&H00BFFF&",  # Cemas (Amber)
-    "😲": "&H00BFFF&",  # Terkejut (Amber)
-    "😩": "&H00BFFF&",  # Lelah (Amber)
-    "😫": "&H00BFFF&",  # Sangat lelah (Amber)
-    "🤥": "&H0000FF&",  # Bohong (Merah)
-    "🤫": "&H00D4FF&",  # Ssst (Emas)
-    "🔄": "&H00FFFF&",  # Ulang (Kuning)
-    "🔁": "&H00FFFF&",  # Repeat (Kuning)
-    "♻️": "&H00E676&",  # Daur ulang (Hijau)
-    "⚙️": "&H00D4FF&",  # Gear (Emas)
-    "🛠️": "&H00D4FF&",  # Perkakas (Emas)
-    "👔": "&H00D4FF&",  # Dasi (Emas)
-    "🕵️": "&H00D4FF&",  # Detektif (Emas)
-    "💼": "&H00D4FF&",  # Tas kerja (Emas)
-    "📢": "&H00FFFF&",  # Megafon (Kuning)
-    "📊": "&H00D4FF&",  # Bar chart (Emas)
-    "🏹": "&H0044FF&",  # Panah (Merah-orange)
-    "🎯": "&H0044FF&",  # Target (Merah-orange)
-}
-
-# Rentang karakter emoji yang tercakup oleh font Noto Emoji.
-# PENTING: daftar ini harus lengkap. Emoji yang TIDAK cocok akan ditulis mentah dan
-# dirender memakai font subtitle (Plus Jakarta Sans / Montserrat / Impact) yang tidak
-# memiliki glyph-nya, sehingga muncul "kotak kosong" / tofu.
-# Contoh nyata: ⏱ (U+23F1) pada kata kunci "waktu" ada di blok Misc Technical (U+2300),
-# di luar rentang lama -> tampil sebagai kotak kosong.
-_EMOJI_CHAR_RANGES = (
-    r"\U0001F000-\U0001FAFF"      # emoticon, pictograph, transport, symbol, extended-A
-    r"\u2190-\u21FF"              # panah (↔ ↕ ⇄)
-    r"\u2300-\u23FF"              # misc technical (⌚ ⏰ ⏱ ⏲ ⏳)
-    r"\u2460-\u24FF"              # enclosed alphanumerics (① Ⓜ)
-    r"\u25A0-\u25FF"              # geometric shapes (▶ ◀ ● ■)
-    r"\u2600-\u27BF"              # misc symbols & dingbats (⚠ ✨ ✂)
-    r"\u2B00-\u2BFF"              # misc symbols and arrows (⭐ ⬛ ⬜)
-    r"\u3030\u303D\u3297\u3299"   # CJK symbols (〰 〽 ㊗ ㊙)
-    r"\u2122\u2139\u2049\u203C"   # ™ ℹ ‼ ⁉
-)
-_EMOJI_CHAR = f"[{_EMOJI_CHAR_RANGES}]"
-
-# Satu "cluster" emoji: base + variation selector + skin tone + rangkaian ZWJ.
-# Cluster diperlakukan sebagai satu kesatuan agar urutan seperti 😮‍💨 tidak terpotong
-# oleh tag {\fn...} di tengahnya.
-_EMOJI_CLUSTER = (
-    r"[\U0001F1E6-\U0001F1FF]{2}"                                        # bendera (2 regional indicator)
-    rf"|{_EMOJI_CHAR}[\uFE0E\uFE0F]?[\U0001F3FB-\U0001F3FF]?"
-    rf"(?:\u200D{_EMOJI_CHAR}[\uFE0E\uFE0F]?[\U0001F3FB-\U0001F3FF]?)*"  # rangkaian ZWJ
-    r"|\u20E3"                                                           # keycap
-)
-_EMOJI_PATTERN = re.compile(f"({_EMOJI_CLUSTER})")
-
-# Saat True, emoji TIDAK digambar oleh libass melainkan diganti placeholder
-# transparan; gambar emoji berwarna asli ditempel sebagai overlay PNG di atas
-# video (lihat backend/emoji_overlay.py). Di-set oleh generate_ass_subtitles()
-# agar seluruh style generator memakai perilaku yang sama.
-_EMOJI_OVERLAY_MODE = False
-
-
-def _format_ass_word(text, base_color="&HFFFFFF&", alpha_hide=False, uppercase=False):
-    """
-    Format kata agar karakter emoji memakai font emoji yang tepat.
-
-    Tiga mode:
-    - Overlay (``_EMOJI_OVERLAY_MODE``): emoji ditulis memakai Noto Emoji tapi
-      100% transparan. libass tetap MENYISAKAN ruang selebar emoji tersebut,
-      lalu PNG emoji berwarna asli ditempel persis di ruang itu oleh ffmpeg.
-      Hasil akhir: emoji persis seperti di HP (warna penuh), tanpa tint.
-    - Warna native (Noto Color Emoji): hanya jika libass benar-benar mampu
-      merender bitmap CBDT (probe lolos).
-    - Fallback monokrom (Noto Emoji): emoji di-tint warna aksen EMOJI_COLORS.
-    """
-    if not text:
-        return text
-
-    emoji_font = _get_active_emoji_font()
-    color_mode = emoji_font == EMOJI_FONT_COLOR
-
-    def _replace_emoji(match):
-        em = match.group(1)
-        if em in ("\ufe0e", "\ufe0f", "\u200d"):
-            return ""
-        # Font emoji tidak butuh variation selector
-        em = em.replace("\ufe0e", "").replace("\ufe0f", "")
-        if _EMOJI_OVERLAY_MODE:
-            # Placeholder transparan: ruang tetap disisakan untuk overlay PNG.
-            # Bila kata ini memang sedang disembunyikan (alpha_hide), jangan
-            # sentuh alpha sama sekali supaya sisa kata tetap ikut tersembunyi.
-            if alpha_hide:
-                return f"{{\\fn{EMOJI_FONT_MONO}}}{em}{{\\fn}}"
-            return f"{{\\fn{EMOJI_FONT_MONO}\\alpha&HFF&}}{em}{{\\fn\\alpha&H00&}}"
-        if color_mode:
-            # Warna asli dari bitmap CBDT font - tanpa tint
-            return f"{{\\fn{emoji_font}}}{em}{{\\fn}}"
-        color = (
-            EMOJI_COLORS.get(em)
-            or EMOJI_COLORS.get(f"{em}\ufe0f")
-            or EMOJI_COLORS.get(em[:1])
-            or "&H00D4FF&"
-        )
-        if alpha_hide:
-            return f"{{\\fn{emoji_font}\\alpha&HFF&}}{em}{{\\fn\\alpha&H00&}}"
-        return f"{{\\fn{emoji_font}\\c{color}}}{em}{{\\fn\\c{base_color}}}"
-
-    if uppercase:
-        parts = _EMOJI_PATTERN.split(text)
-        new_parts = []
-        for p in parts:
-            m = _EMOJI_PATTERN.match(p)
-            if m:
-                new_parts.append(_replace_emoji(m))
-            else:
-                new_parts.append(p.upper())
-        return "".join(new_parts)
-
-    return _EMOJI_PATTERN.sub(_replace_emoji, text)
 
 def _calc_margin_v(sub_position=68):
     """Konversi posisi persentase dari atas layar ke nilai ASS MarginV (dari bawah).
@@ -633,32 +220,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         f.write(ass_content)
 
 
-def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, sub_style="tiktok_viral", sub_position=68, show_emoji=True, watermark_enabled=True, source_watermark="", account_watermark="", inject_emoji=False, emoji_overlay=None, translation_mode=False):
-    """Generate .ass subtitle file for specified style with optional glass-effect watermark badges.
-
-    ``emoji_overlay``: True = tulis emoji sebagai placeholder transparan supaya
-    bisa ditimpa PNG emoji berwarna asli (lihat backend/emoji_overlay.py).
-    None = deteksi otomatis (aktif bila Pillow + NotoColorEmoji.ttf tersedia).
-    """
-    global _EMOJI_OVERLAY_MODE
-    if emoji_overlay is None:
-        emoji_overlay = _emoji_overlay_available()
-    previous_overlay_mode = _EMOJI_OVERLAY_MODE
-    _EMOJI_OVERLAY_MODE = bool(emoji_overlay) and bool(show_emoji)
-
-    try:
-        _generate_ass_body(
-            segments, out_ass_path, clip_start, clip_end, sub_style, sub_position,
-            show_emoji, watermark_enabled, source_watermark, account_watermark, inject_emoji,
-            translation_mode=translation_mode,
-        )
-    finally:
-        _EMOJI_OVERLAY_MODE = previous_overlay_mode
-
+def generate_ass_subtitles(segments, out_ass_path, clip_start, clip_end, sub_style="tiktok_viral", sub_position=68, watermark_enabled=True, source_watermark="", account_watermark=""):
+    """Generate .ass subtitle file for specified style with optional glass-effect watermark badges."""
+    _generate_ass_body(
+        segments, out_ass_path, clip_start, clip_end, sub_style, sub_position,
+        watermark_enabled, source_watermark, account_watermark,
+    )
 
 def _generate_ass_body(segments, out_ass_path, clip_start, clip_end, sub_style, sub_position,
-                       show_emoji, watermark_enabled, source_watermark, account_watermark,
-                       inject_emoji, translation_mode=False):
+                       watermark_enabled, source_watermark, account_watermark):
     has_wm = watermark_enabled and bool((source_watermark or "").strip() or (account_watermark or "").strip())
     extra_styles, extra_dialogues = ("", [])
     if has_wm:
@@ -692,50 +262,12 @@ def _generate_ass_body(segments, out_ass_path, clip_start, clip_end, sub_style, 
             _generate_standalone_watermark_ass(out_ass_path, clip_start, clip_end, source_watermark, account_watermark)
         return
 
-    # Mode terjemahan: audio != subtitle, jadi highlight per-kata menyesatkan
-    # (timing kata hasil terjemahan hanya proporsional terhadap panjang
-    # karakter). Emoji TIDAK dimatikan: teks hasil terjemahan dari LLM hampir
-    # tidak pernah mengandung emoji, jadi injeksi kata kunci adalah satu-satunya
-    # sumber emoji pada mode ini.
-    translation = bool(translation_mode) or sub_style == "translation_read"
-
-    # Emoji asli dari transkrip dirender jika show_emoji aktif.
-    # Injeksi emoji kata kunci (EMOJI_KEYWORDS) hanya jika inject_emoji=True
-    # (opsional, default OFF - lihat flag --inject-emoji di worker).
-    if inject_emoji and show_emoji:
-        sanitized_words = _inject_emojis_to_words(sanitized_words)
-    elif not show_emoji:
-        # show_emoji=False: buang semua emoji dari teks subtitle
-        sanitized_words = [
-            {**w, "word": _EMOJI_PATTERN.sub("", w["word"]).strip()} for w in sanitized_words
-        ]
-
     margin_v = _calc_margin_v(sub_position)
 
-    cues = None
-    if translation:
-        chunks = _chunk_words(
-            sanitized_words,
-            max_words=TRANSLATION_CHUNK_MAX_WORDS,
-            max_chars=TRANSLATION_CHUNK_MAX_CHARS,
-            uppercase=False,
-            break_on_comma=False,
-            max_gap=TRANSLATION_CHUNK_MAX_GAP,
-        )
-        cues = _schedule_cues(chunks)
-
-    if sub_style == "translation_read" or (
-        translation and sub_style in ("tiktok_viral", "classic_karaoke", "word_pop")
-    ):
-        # Preset bergaya kata (viral/karaoke/word pop) tidak cocok untuk teks
-        # terjemahan: otomatis dialihkan ke tampilan kalimat yang mudah dibaca.
-        _generate_translation_read_style(cues, out_ass_path, clip_start, clip_end,
-                                         margin_v=margin_v, extra_styles=extra_styles,
-                                         extra_dialogues=extra_dialogues)
-    elif sub_style == "minimalist":
+    if sub_style == "minimalist":
         _generate_minimalist_style(sanitized_words, out_ass_path, clip_start, clip_end,
                                    margin_v=margin_v, extra_styles=extra_styles,
-                                   extra_dialogues=extra_dialogues, cues=cues)
+                                   extra_dialogues=extra_dialogues)
     elif sub_style == "classic_karaoke":
         _generate_classic_karaoke_style(sanitized_words, out_ass_path, clip_start, clip_end, margin_v=margin_v, extra_styles=extra_styles, extra_dialogues=extra_dialogues)
     elif sub_style == "word_pop":
@@ -745,23 +277,15 @@ def _generate_ass_body(segments, out_ass_path, clip_start, clip_end, sub_style, 
 
 
 def _chunk_words(words, max_words=2, max_chars=14, uppercase=False,
-                 break_on_comma=True, max_gap=None):
+                 break_on_comma=True):
     """Split sanitized words into display chunks that fit the 9:16 safe width.
 
     The character budget is enforced BEFORE a word is added, so a chunk can
     never exceed ``max_chars`` (except when a single word is itself longer).
     Previously the limit was checked after appending, which produced over-long
     lines that spilled past the left/right safe-zone margins.
-
-    ``break_on_comma=False`` dipakai mode terjemahan: koma di bahasa Indonesia
-    sangat sering, memotong di koma menghasilkan fragmen seperti
-    "Konsisten itu" / "lebih penting".
-
-    ``max_gap`` (detik) memaksa cue baru saat ada jeda hening, sehingga batas
-    cue mengikuti frasa alami pembicara, bukan sekadar hitungan karakter.
     """
     chunks, current_chunk, current_len = [], [], 0
-    prev_end = None
     terminators = ".?!," if break_on_comma else ".?!"
 
     for word_info in words:
@@ -771,19 +295,11 @@ def _chunk_words(words, max_words=2, max_chars=14, uppercase=False,
         if not text:
             continue
 
-        gap_break = (
-            max_gap is not None
-            and prev_end is not None
-            and float(word_info["start"]) - prev_end >= max_gap
-        )
-
         # +1 accounts for the joining space when the chunk already has content.
-        # Emoji tidak dihitung: lebarnya kecil dan pada mode overlay digambar
-        # sebagai PNG di luar alur teks.
         text_len = _display_len(text)
         projected = current_len + text_len + (1 if current_chunk else 0)
         if current_chunk and (
-            gap_break or len(current_chunk) >= max_words or projected > max_chars
+            len(current_chunk) >= max_words or projected > max_chars
         ):
             chunks.append(current_chunk)
             current_chunk, current_len = [], 0
@@ -791,7 +307,6 @@ def _chunk_words(words, max_words=2, max_chars=14, uppercase=False,
 
         current_chunk.append({"word": text, "start": word_info["start"], "end": word_info["end"]})
         current_len = projected
-        prev_end = float(word_info["end"])
 
         # A sentence terminator naturally closes the current chunk.
         if text[-1] in terminators:
@@ -801,96 +316,6 @@ def _chunk_words(words, max_words=2, max_chars=14, uppercase=False,
     if current_chunk:
         chunks.append(current_chunk)
     return chunks
-
-def _split_words_into_lines(words, max_line_chars=TRANSLATION_LINE_CHARS, max_lines=2):
-    """Bagi satu cue jadi maksimal ``max_lines`` baris yang seimbang.
-
-    Pemotongan HANYA di batas kata (tidak pernah memotong kata), dan dipilih
-    titik yang mendekati panjang rata-rata supaya tidak ada satu kata
-    menggantung sendirian di baris kedua.
-    """
-    if not words:
-        return []
-    if len(words) == 1:
-        return [words]
-
-    # Emoji tidak dihitung (digambar lebih kecil / sebagai PNG overlay).
-    total_chars = _display_len(" ".join(w["word"] for w in words))
-    if total_chars <= max_line_chars:
-        # Sudah muat satu baris: jangan dipecah. Memaksa 2 baris pada cue
-        # pendek menghasilkan tampilan janggal seperti "online" / "ini".
-        return [words]
-
-    target = total_chars / max(1, max_lines)
-
-    lines, current, current_len = [], [], 0
-    for w in words:
-        word = w["word"]
-        word_len = _display_len(word)
-        projected = current_len + word_len + (1 if current else 0)
-        over_budget = projected > max_line_chars
-        balanced = len(lines) < max_lines - 1 and bool(current) and current_len >= target
-        if current and (over_budget or balanced):
-            lines.append(current)
-            current, current_len = [], 0
-            projected = word_len
-        current.append(w)
-        current_len = projected
-
-    if current:
-        lines.append(current)
-
-    # Overflow (kata tunggal yang sangat panjang) digabung ke baris terakhir;
-    # libass akan wrap sendiri karena WrapStyle: 0.
-    if len(lines) > max_lines:
-        head = lines[:max_lines - 1]
-        tail = [w for line in lines[max_lines - 1:] for w in line]
-        lines = head + [tail]
-    return lines
-
-def _schedule_cues(chunks, cps=TRANSLATION_READ_CPS, min_dur=TRANSLATION_MIN_CUE,
-                   max_dur=TRANSLATION_MAX_CUE, hold=TRANSLATION_CUE_HOLD,
-                   max_drift=TRANSLATION_MAX_DRIFT, gap=0.04):
-    """Beri tiap cue waktu baca minimum tanpa pernah menabrak cue berikutnya.
-
-    Durasi audio tidak bisa diulur, jadi lever yang dipakai:
-    1. tahan cue lebih lama (reading-time floor = panjang teks / ``cps``),
-    2. cue berikutnya baru muncul setelah cue sebelumnya selesai dibaca,
-       sehingga subtitle boleh sedikit tertinggal dari audio,
-    3. batasi lag kumulatif (``max_drift``) supaya subtitle tidak makin
-       tertinggal jauh di bagian bicara cepat. Bila anggaran lag habis, cue
-       dipangkas ke ``min_dur`` — lebih baik cepat daripada tidak sinkron.
-    """
-    if not chunks:
-        return []
-
-    cues = []
-    cursor = 0.0
-    for i, chunk in enumerate(chunks):
-        text = " ".join(w["word"] for w in chunk)
-        natural_start = float(chunk[0]["start"])
-        natural_end = float(chunk[-1]["end"])
-        next_natural = float(chunks[i + 1][0]["start"]) if i + 1 < len(chunks) else None
-
-        # Tidak boleh tampil sebelum audionya, tidak boleh menabrak cue sebelumnya.
-        start = max(natural_start, cursor)
-        need = max(min_dur, len(text) / max(1.0, cps))
-        end = min(max(natural_end, start + need), start + max_dur)
-
-        # Batasi lag cue BERIKUTNYA, bukan cue ini: kalau cue ini terlalu lama
-        # tampil, cue selanjutnya makin tertinggal dari audio.
-        if next_natural is not None:
-            end = min(end, max(start + min_dur, next_natural + max_drift - gap))
-        else:
-            end = min(end, natural_end + hold + max_drift)
-
-        end = max(end, start + min_dur)
-
-        cues.append({"words": chunk, "text": text, "start": start, "end": end})
-        cursor = end + gap
-
-    return cues
-
 
 def _generate_tiktok_viral_style(words, out_ass_path, clip_start, clip_end, margin_v=600, extra_styles="", extra_dialogues=None):
     """🎬 TikTok Viral: Plus Jakarta Sans Bold + Outline Tipis Modern + Highlight Kuning Pop."""
@@ -927,13 +352,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 display = []
                 for j in range(len(chunk)):
                     raw_word = chunk[j]["word"]
-                    if j < i: 
-                        display.append(_format_ass_word(raw_word, base_color="&HFFFFFF&"))
-                    elif j == i: 
-                        pop_word = _format_ass_word(raw_word, base_color="&H0000FFFF&")
-                        display.append(f"{{\\c&H0000FFFF&}}{{\\fs92}}{pop_word}{{\\fs84}}{{\\c&HFFFFFF&}}")
-                    else: 
-                        display.append(f"{{\\alpha&HFF&}}{_format_ass_word(raw_word, alpha_hide=True)}{{\\alpha&H00&}}")
+                    if j < i:
+                        display.append(raw_word)
+                    elif j == i:
+                        display.append(f"{{\\c&H0000FFFF&}}{{\\fs92}}{raw_word}{{\\fs84}}{{\\c&HFFFFFF&}}")
+                    else:
+                        display.append(f"{{\\alpha&HFF&}}{raw_word}{{\\alpha&H00&}}")
                 f.write(f"Dialogue: 0,{start_ass},{end_ass},ViralStyle,,0,0,0,,{' '.join(display)}\n")
 
 
@@ -974,84 +398,18 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     raw_word = chunk[j]["word"]
                     if j < i:
                         # Kata yang sudah lewat: Tetap putih bersih
-                        display.append(f"{{\\c&H00FFFFFF&}}{_format_ass_word(raw_word, base_color='&H00FFFFFF&')}")
+                        display.append(f"{{\\c&H00FFFFFF&}}{raw_word}")
                     elif j == i:
                         # Kata aktif: Highlight Electric Cyan / Mint cerah (&H00D4F500&) dengan pop font
-                        karaoke_word = _format_ass_word(raw_word, base_color="&H00D4F500&")
-                        display.append(f"{{\\c&H00D4F500&}}{{\\fs94}}{karaoke_word}{{\\fs84}}{{\\c&H00FFFFFF&}}")
+                        display.append(f"{{\\c&H00D4F500&}}{{\\fs94}}{raw_word}{{\\fs84}}{{\\c&H00FFFFFF&}}")
                     else:
                         # Kata mendatang: Putih solid
-                        display.append(f"{{\\c&H00FFFFFF&}}{_format_ass_word(raw_word, base_color='&H00FFFFFF&')}")
+                        display.append(f"{{\\c&H00FFFFFF&}}{raw_word}")
                 f.write(f"Dialogue: 0,{start_ass},{end_ass},KaraokeStyle,,0,0,0,,{' '.join(display)}\n")
 
 
-def _write_static_cue_ass(cues, out_ass_path, style_line, style_name,
-                          extra_styles="", extra_dialogues=None,
-                          line_chars=TRANSLATION_LINE_CHARS, fade_ms=70):
-    """Tulis .ass berisi cue kalimat statis (1-2 baris) tanpa animasi per kata."""
-    styles_block = f"{style_line}\n"
-    if extra_styles:
-        styles_block += f"{extra_styles}\n"
-
-    ass_header = f"""[Script Info]
-ScriptType: v4.00+
-PlayResX: 1080
-PlayResY: 1920
-WrapStyle: {SAFE_WRAP_STYLE}
-
-[V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-{styles_block}
-[Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-"""
-    with open(out_ass_path, "w", encoding="utf-8") as f:
-        f.write(ass_header)
-        for d in (extra_dialogues or []):
-            f.write(f"{d}\n")
-        for cue in cues:
-            lines = _split_words_into_lines(cue["words"], line_chars)
-            rendered = "\\N".join(
-                " ".join(_format_ass_word(w["word"], base_color="&HFFFFFF&") for w in line)
-                for line in lines
-            )
-            if fade_ms:
-                # Fade halus: mata pembaca non-native butuh penanda "teks baru".
-                rendered = f"{{\\fad({fade_ms},{fade_ms})}}{rendered}"
-            f.write(
-                f"Dialogue: 0,{format_ass_timestamp(cue['start'])},"
-                f"{format_ass_timestamp(cue['end'])},{style_name},,0,0,0,,{rendered}\n"
-            )
-
-def _generate_translation_read_style(cues, out_ass_path, clip_start, clip_end, margin_v=600,
-                                     extra_styles="", extra_dialogues=None):
-    """📖 Terjemahan Mudah Dibaca: kalimat utuh 1-2 baris, tanpa highlight per kata.
-
-    BorderStyle 3 (opaque box) dengan Outline sebagai padding memberi latar
-    gelap tipis supaya teks tetap terbaca di atas footage yang ramai.
-    """
-    style_line = (
-        "Style: ReadStyle,Plus Jakarta Sans,66,&H00FFFFFF,&H000000FF,&H78000000,&H80000000,"
-        f"-1,0,0,0,100,100,0.4,0,3,12,2,2,{SAFE_MARGIN_H},{SAFE_MARGIN_H},{margin_v},1"
-    )
-    _write_static_cue_ass(
-        cues, out_ass_path, style_line, "ReadStyle",
-        extra_styles=extra_styles, extra_dialogues=extra_dialogues,
-    )
-
-def _generate_minimalist_style(words, out_ass_path, clip_start, clip_end, margin_v=560, extra_styles="", extra_dialogues=None, cues=None):
+def _generate_minimalist_style(words, out_ass_path, clip_start, clip_end, margin_v=560, extra_styles="", extra_dialogues=None):
     """✨ Minimalist: Teks putih bersih statis, elegan dan tidak mengganggu konten podcast."""
-    if cues is not None:
-        # Mode terjemahan: pakai cue terjadwal + pemenggalan 2 baris.
-        style_line = (
-            "Style: MinimalStyle,Plus Jakarta Sans,74,&H00FFFFFF,&H000000FF,&H00151515,&HAA000000,"
-            f"-1,0,0,0,100,100,0,0,1,5,3,2,{SAFE_MARGIN_H},{SAFE_MARGIN_H},{margin_v},1"
-        )
-        _write_static_cue_ass(
-            cues, out_ass_path, style_line, "MinimalStyle",
-            extra_styles=extra_styles, extra_dialogues=extra_dialogues, fade_ms=0,
-        )
-        return
     styles_block = f"Style: MinimalStyle,Plus Jakarta Sans,74,&H00FFFFFF,&H000000FF,&H00151515,&HAA000000,-1,0,0,0,100,100,0,0,1,5,3,2,{SAFE_MARGIN_H},{SAFE_MARGIN_H},{margin_v},1\n"
     if extra_styles:
         styles_block += f"{extra_styles}\n"
@@ -1080,7 +438,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         for chunk in chunks:
             start_ass = format_ass_timestamp(chunk[0]["start"])
             end_ass = format_ass_timestamp(chunk[-1]["end"])
-            text_line = " ".join([_format_ass_word(w["word"], base_color="&HFFFFFF&") for w in chunk])
+            text_line = " ".join(w["word"] for w in chunk)
             f.write(f"Dialogue: 0,{start_ass},{end_ass},MinimalStyle,,0,0,0,,{text_line}\n")
 
 
@@ -1115,9 +473,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             start_ass = format_ass_timestamp(w["start"])
             next_start = words[i+1]["start"] if i + 1 < len(words) else w["end"]
             end_ass = format_ass_timestamp(max(w["end"], next_start))
-            # Emoji harus lewat _format_ass_word agar dibungkus font Noto Emoji
-            # (menulis teks mentah akan menghasilkan kotak kosong / tofu).
-            text = _format_ass_word(w["word"], base_color="&HFFFFFF&", uppercase=True)
+            text = w["word"].upper()
             # Auto-shrink long single words so they never spill past the safe width.
             word_len = max(1, len(w["word"].strip()))
             fit_fs = int(usable_w / (glyph_ratio * word_len))
@@ -1282,10 +638,10 @@ def apply_fit_blur(video_path, start_time, end_time, output_path, job_id=None):
     # Foreground: scale to 1080:-1 (approx 1080x608), dinaikkan 10% dari posisi tengah
     # Posisi tengah = (H-h)/2. Dinaikkan 10% (192px) = (H-h)/2 - (H*0.10)
     fc_filter = (
-        f"[0:v]split=2[bg_in][fg_in];"
-        f"[bg_in]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5,eq=brightness=-0.08[bg];"
-        f"[fg_in]scale=1080:-1[fg];"
-        f"[bg][fg]overlay=(W-w)/2:(H-h)/2-(H*0.05)[v]"
+        "[0:v]split=2[bg_in][fg_in];"
+        "[bg_in]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5,eq=brightness=-0.08[bg];"
+        "[fg_in]scale=1080:-1[fg];"
+        "[bg][fg]overlay=(W-w)/2:(H-h)/2-(H*0.05)[v]"
     )
 
     cmd = [
@@ -1431,7 +787,7 @@ def _build_shot_trajectory(total_frames, sample_indices, sample_values, cut_fram
 
     out = np.empty(total_frames, dtype=np.float64)
     prev_final = float(default_x)
-    for s, e in zip(starts, ends):
+    for s, e in zip(starts, ends, strict=True):
         mask = (idx >= s) & (idx < e)
         shot_idx = idx[mask]
         shot_vals = vals[mask].copy()
@@ -1783,7 +1139,6 @@ def compute_smart_crop_trajectory(video_path, start_time, end_time, job_id=None)
                             detected_target = True
                             bx1, by1, bx2, by2 = best_box
                             current_target_x = (bx1 + (bx2 - bx1) / 2.0) * scale_x
-                            last_valid_x = current_target_x
                 except Exception:
                     pass
 
@@ -1797,7 +1152,6 @@ def compute_smart_crop_trajectory(video_path, start_time, end_time, job_id=None)
                         if fw >= (ana_w * 0.04) and (fy + fh / 2) < ana_h * 0.75:
                             detected_target = True
                             current_target_x = (fx + (fw / 2.0)) * scale_x
-                            last_valid_x = current_target_x
                 except Exception:
                     pass
 
@@ -1953,7 +1307,7 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
     cmd_path = os.path.join(TEMP_DIR, f"temp_cropcmd_{int(time.time()*1000)}.txt")
     try:
         chain = build_smart_crop_chain(trajectory, cmd_path)
-        log(f"[Pass 2/2] Rendering Video 9:16 (1 pass encode)...", job_id=job_id)
+        log("[Pass 2/2] Rendering Video 9:16 (1 pass encode)...", job_id=job_id)
         ffmpeg_cmd = [
             get_ffmpeg_binary(), "-y",
             "-ss", str(start_time),
@@ -2025,7 +1379,7 @@ def _validate_rendered_video(file_path: str, min_duration: float = 0.5) -> bool:
     except Exception:
         return False
 
-def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job_id=None, sub_style="tiktok_viral", framing_mode="smart_crop", sub_position=68, show_emoji=True, watermark_enabled=True, source_watermark="", account_watermark="", inject_emoji=False, translation_mode=False):
+def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job_id=None, sub_style="tiktok_viral", framing_mode="smart_crop", sub_position=68, watermark_enabled=True, source_watermark="", account_watermark=""):
     start = max(0.0, float(clip_info.get("start", 0.0)) - 0.2)
     end = float(clip_info.get("end", 0.0)) + 1.2
     duration = end - start
@@ -2053,14 +1407,6 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
             os.remove(ass_file)
         except Exception:
             pass
-    # Emoji berwarna asli: libass tidak bisa merender font emoji berwarna, jadi
-    # emoji ditulis sebagai placeholder transparan di ASS lalu ditempel sebagai
-    # PNG berwarna lewat ffmpeg overlay (lihat backend/emoji_overlay.py).
-    use_emoji_overlay = (
-        show_emoji
-        and sub_style not in ("none", "no_subtitle")
-        and _emoji_overlay_available()
-    )
     generate_ass_subtitles(
         segments,
         ass_file,
@@ -2068,13 +1414,9 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
         end,
         sub_style=sub_style,
         sub_position=sub_position,
-        show_emoji=show_emoji,
         watermark_enabled=watermark_enabled,
         source_watermark=source_watermark,
         account_watermark=account_watermark,
-        inject_emoji=inject_emoji,
-        emoji_overlay=use_emoji_overlay,
-        translation_mode=translation_mode,
     )
     crop_cmd_file = os.path.join(TEMP_DIR, f"temp_cropcmd_{index}_{int(time.time()*1000)}.txt")
     
@@ -2114,39 +1456,13 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
     # sehingga seluruh klip hanya di-encode satu kali (tanpa file intermediate).
     grade_chain = "eq=contrast=1.1:brightness=0.02:saturation=1.2,unsharp=5:5:0.4:5:5:0.0"
     has_subtitles = os.path.exists(ass_file) and os.path.getsize(ass_file) > 0
-    escaped_fonts_dir = _escape_filter_path(FONTS_DIR) if (FONTS_DIR and os.path.exists(FONTS_DIR)) else ""
-    fonts_opt = f":fontsdir='{escaped_fonts_dir}'" if escaped_fonts_dir else ""
-    subtitle_filter = f",subtitles='{escaped_ass}'{fonts_opt}" if has_subtitles else ""
+    subtitle_filter = f",subtitles='{escaped_ass}'" if has_subtitles else ""
     subtitle_stage = f"{grade_chain}{subtitle_filter}"
     fade_filter = f"fade=t=out:st={fade_out_start}:d=0.5"
 
-    # Emoji berwarna asli ditempel setelah subtitle, sebelum fade (agar ikut fade).
-    emoji_overlays = []
-    if use_emoji_overlay and has_subtitles:
-        try:
-            from backend.emoji_overlay import plan_emoji_overlays
-            emoji_overlays = plan_emoji_overlays(
-                ass_file, FONTS_DIR, play_res_x=1080, play_res_y=1920, job_id=job_id,
-            )
-        except Exception as exc:
-            log(f"Emoji overlay dilewati (gagal menyiapkan): {exc}", job_id=job_id)
-            emoji_overlays = []
-
-    overlay_graph, overlay_inputs = "", []
-    if emoji_overlays:
-        from backend.emoji_overlay import build_overlay_graph
-        overlay_graph, overlay_inputs, overlay_last = build_overlay_graph(emoji_overlays, "[vsub]")
-        log(f"Emoji berwarna: {len(emoji_overlays)} overlay PNG ditempel ke klip {index}.", job_id=job_id)
-    else:
-        overlay_last = "[vsub]"
-
     def _assemble(prefix_graph):
-        """Tempel overlay emoji + fade di belakang graph layout/crop/subtitle."""
-        parts = [prefix_graph]
-        if overlay_graph:
-            parts.append(overlay_graph)
-        parts.append(f"{overlay_last}{fade_filter}[v]")
-        return ";".join(parts)
+        """Tempel fade di belakang graph layout/crop/subtitle."""
+        return f"{prefix_graph};[vsub]{fade_filter}[v]"
 
     ffmpeg_bin = get_ffmpeg_binary()
 
@@ -2156,14 +1472,12 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
             "-ss", str(start),
             "-t", str(duration),
             "-i", video_path,
-            *overlay_inputs,
             "-filter_complex", filter_graph,
             "-map", "[v]",
             "-map", "0:a?",
             "-af", af_filter,
             "-ar", str(AUDIO_SAMPLE_RATE),  # Wajib: loudnorm internal 192kHz
             "-avoid_negative_ts", "make_zero",
-            # Overlay PNG di-loop selamanya -> output harus dibatasi eksplisit.
             "-t", str(duration),
         ] + codec_params + ["-f", "mp4", part_out_file]
 
@@ -2186,8 +1500,8 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
 
     render_success = False
     primary_graph = None
-    # Semua graph layout berakhir di label [vsub] (hasil subtitle) supaya overlay
-    # emoji berwarna + fade bisa disambung dari titik itu.
+    # Semua graph layout berakhir di label [vsub] (hasil subtitle) supaya fade
+    # bisa disambung dari titik itu.
     try:
         if framing_mode == "fit_blur":
             log(f"Applying 16:9 Fit Blur Background for Clip {index} (Podcast/Live stream mode)...", job_id=job_id)

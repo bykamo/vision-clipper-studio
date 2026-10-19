@@ -268,7 +268,7 @@ class LocalApiSecurityTest(unittest.TestCase):
         with _WORKER_LOCK:
             main_mod._ACTIVE_JOB = None
 
-        job_id = _reserve_worker_slot()
+        _reserve_worker_slot()
         self.assertTrue(_worker_is_active())
 
         # Simulasikan slot reservasi yang hang (process=None) lebih dari 15 detik lalu

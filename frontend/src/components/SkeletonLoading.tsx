@@ -1,5 +1,3 @@
-import React from 'react';
-
 /* ─────────────────────────────────────────────────────────────
    SHIMMER PRIMITIVE
    A soft sweeping highlight used by every skeleton block.
@@ -22,7 +20,11 @@ export function Shimmer({ className = '' }: { className?: string }) {
    ───────────────────────────────────────────────────────────── */
 export function AnalyzingSkeleton() {
   return (
-    <div className="flex flex-col h-full gap-2.5" role="status" aria-label="Sedang menganalisis video">
+    <div
+      className="flex flex-col h-full gap-2.5"
+      role="status"
+      aria-label="Sedang menganalisis video"
+    >
       {/* Header skeleton */}
       <div className="flex items-center justify-between pb-2 border-b border-slate-800/80 flex-shrink-0">
         <div className="flex items-center gap-2">

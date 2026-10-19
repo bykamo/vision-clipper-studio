@@ -123,13 +123,13 @@ def start_server():
     if pid:
         print(f"[INFO] VisionClipper Studio sudah berjalan (PID: {pid})!")
         print(f"[INFO] Buka di browser: {SERVER_URL}")
-        print(f"[INFO] Untuk menghentikan: vision-clipper --stop")
+        print("[INFO] Untuk menghentikan: vision-clipper --stop")
         import webbrowser
         webbrowser.open(SERVER_URL)
         return
 
     if is_server_alive():
-        print(f"[INFO] Port 5050 sudah dipakai (mungkin instance sebelumnya).")
+        print("[INFO] Port 5050 sudah dipakai (mungkin instance sebelumnya).")
         print(f"[INFO] Buka di browser: {SERVER_URL}")
         import webbrowser
         webbrowser.open(SERVER_URL)
@@ -161,7 +161,7 @@ def start_server():
     # The background server script
     server_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bg_server.py")
 
-    print(f"[START] Meluncurkan server di background...")
+    print("[START] Meluncurkan server di background...")
     print(f"[INFO]  PID file: {PID_FILE}")
 
     # Launch as a fully detached process (survives terminal close)
@@ -190,7 +190,7 @@ def start_server():
 
     # Wait for server to come alive
     print("[WAIT] Menunggu server siap...", end="", flush=True)
-    for i in range(15):
+    for _ in range(15):
         time.sleep(1)
         print(".", end="", flush=True)
         if is_server_alive():

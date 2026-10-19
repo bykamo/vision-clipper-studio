@@ -190,6 +190,56 @@ class AnalyzerTest(unittest.TestCase):
         self.assertEqual(second_payload["model"], "model-primary")
         self.assertEqual(second_payload["messages"][0]["content"], "COMPACT prompt")
 
+    @patch("requests.post")
+    def test_auth_error_aborts_chain_immediately(self, mock_post):
+        """401/403 means the key itself is bad: stop after ONE request.
+
+        Trying every model with the same rejected credential only burns time and
+        can trigger gateway rate-limit/IP bans.
+        """
+        import requests
+
+        unauthorized = MagicMock()
+        unauthorized.status_code = 401
+        unauthorized.json.return_value = {
+            "error": {"message": "Invalid API key", "type": "authentication_error"}
+        }
+        unauthorized.text = "Invalid API key"
+        unauthorized.raise_for_status.side_effect = requests.HTTPError("401")
+
+        mock_post.return_value = unauthorized
+
+        with self.assertRaises(PermanentLLMError) as ctx:
+            call_llm_api("prompt", "model-primary", "https://api.example.com", "bad-key")
+        self.assertEqual(mock_post.call_count, 1)
+        self.assertIn("API key", str(ctx.exception))
+
+    @patch("requests.post")
+    def test_empty_model_names_are_never_sent(self, mock_post):
+        """An empty model entry in the pool must be skipped, not posted."""
+        ok = MagicMock()
+        ok.status_code = 200
+        ok.text = '{"choices": [{"message": {"content": "ok"}}]}'
+        ok.json.return_value = {"choices": [{"message": {"content": "ok"}}]}
+        mock_post.return_value = ok
+
+        with patch.dict("os.environ", {"ROUTER_FALLBACK_MODELS": "a/b, ,c/d"}):
+            call_llm_api("prompt", "", "https://api.example.com", "fake-key")
+
+        sent_models = [c.kwargs["json"]["model"] for c in mock_post.call_args_list]
+        self.assertNotIn("", sent_models)
+        self.assertEqual(sent_models, ["a/b"])
+
+    def test_missing_credentials_raise_permanent_error(self):
+        """Empty endpoint/key must fail fast with a config hint, no HTTP call."""
+        with self.assertRaises(PermanentLLMError):
+            call_llm_api("prompt", "model-primary", "", "fake-key")
+        with self.assertRaises(PermanentLLMError):
+            call_llm_api("prompt", "model-primary", "https://api.example.com", "")
+
+    def test_default_fallback_pool_has_no_empty_entries(self):
+        self.assertTrue(all(m.strip() for m in DEFAULT_FALLBACK_MODELS))
+
 
 class UtilsEnhancementTest(unittest.TestCase):
     def test_parse_timestamp_to_seconds_handles_comma_decimals(self):

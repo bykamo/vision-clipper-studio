@@ -1,7 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  PlayIcon as PlayIconOutline,
-  PauseIcon as PauseIconOutline,
   HeartIcon,
   BookmarkIcon,
   ShareIcon,
@@ -12,7 +10,7 @@ import {
   HomeIcon,
   UserGroupIcon,
   UserIcon as UserIconOutline,
-  ShieldCheckIcon
+  ShieldCheckIcon,
 } from '@heroicons/react/24/outline';
 import { SiTiktok, SiInstagram, SiYoutubeshorts } from 'react-icons/si';
 import {
@@ -27,7 +25,7 @@ import {
   ChatBubbleOvalLeftEllipsisIcon as ChatBubbleOvalLeftEllipsisIconSolid,
   SpeakerWaveIcon,
   SpeakerXMarkIcon,
-  ViewfinderCircleIcon
+  ViewfinderCircleIcon,
 } from '@heroicons/react/24/solid';
 
 export type SocialOverlayType = 'tiktok' | 'reels' | 'shorts' | 'none';
@@ -43,7 +41,6 @@ interface PhonePreviewProps {
   isRenderedClip?: boolean;
   isProcessing?: boolean;
   subPosition?: number;
-  showEmoji?: boolean;
   watermarkEnabled?: boolean;
   sourceWatermark?: string;
   accountWatermark?: string;
@@ -61,11 +58,10 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   isRenderedClip = false,
   isProcessing = false,
   subPosition = 68,
-  showEmoji = true,
   watermarkEnabled = true,
   sourceWatermark = '',
   accountWatermark = '',
-  initialOverlay = 'tiktok'
+  initialOverlay = 'tiktok',
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -74,12 +70,13 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   const [hasLoadedMetadata, setHasLoadedMetadata] = useState(false);
   const [mediaError, setMediaError] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1.0);
-  const [centerAnimation, setCenterAnimation] = useState<'play' | 'pause' | null>(null);
   const [showPlayPulse, setShowPlayPulse] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [showSafeZone, setShowSafeZone] = useState(false);
-  const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'friends' | 'inbox' | 'profile'>('home');
+  const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'friends' | 'inbox' | 'profile'>(
+    'home',
+  );
 
   // Social Overlay Mode State: TikTok (default), Reels, Shorts, or Off
   const [overlayMode, setOverlayMode] = useState<SocialOverlayType>(() => {
@@ -100,7 +97,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   };
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const animTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   // Tracks whether the current mute state was forced by the browser autoplay
   // policy (not an explicit user choice). When true, the first user gesture
@@ -140,16 +136,13 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   }, []);
 
   // Check if source is a local playable video file path
-  const isLocalFile = Boolean(videoSource && !videoSource.startsWith('http://') && !videoSource.startsWith('https://'));
-  const videoStreamUrl = isLocalFile && videoSource ? `/api/video-stream?path=${encodeURIComponent(videoSource.trim())}` : '';
-
-  const triggerAnimation = (type: 'play' | 'pause') => {
-    setCenterAnimation(type);
-    if (animTimerRef.current) clearTimeout(animTimerRef.current);
-    animTimerRef.current = setTimeout(() => {
-      setCenterAnimation(null);
-    }, 600);
-  };
+  const isLocalFile = Boolean(
+    videoSource && !videoSource.startsWith('http://') && !videoSource.startsWith('https://'),
+  );
+  const videoStreamUrl =
+    isLocalFile && videoSource
+      ? `/api/video-stream?path=${encodeURIComponent(videoSource.trim())}`
+      : '';
 
   // Attempts to start playback with sound. If the browser blocks audible
   // autoplay (no user gesture yet), it falls back to muted playback and marks
@@ -157,7 +150,8 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   const startPlayback = (video: HTMLVideoElement, withSound: boolean) => {
     video.muted = withSound ? false : true;
     if (withSound) video.volume = 1;
-    return video.play()
+    return video
+      .play()
       .then(() => {
         setIsPlaying(true);
         if (withSound) {
@@ -172,9 +166,16 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
           video.muted = true;
           autoplayMutedRef.current = true;
           setIsMuted(true);
-          return video.play()
-            .then(() => { setIsPlaying(true); return true; })
-            .catch(() => { setIsPlaying(false); return false; });
+          return video
+            .play()
+            .then(() => {
+              setIsPlaying(true);
+              return true;
+            })
+            .catch(() => {
+              setIsPlaying(false);
+              return false;
+            });
         }
         setIsPlaying(false);
         return false;
@@ -192,6 +193,10 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
       videoRef.current.currentTime = previewClip.start;
       void startPlayback(videoRef.current, !isMuted);
     }
+    // `isMuted` is intentionally excluded: it is only the *initial* mute state
+    // for a newly loaded source. Re-running on mute changes would re-seek the
+    // video back to the clip start every time the user taps the mute button.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewClip?.start, previewClip?.end, videoStreamUrl, isRenderedClip]);
 
   // Enforce clip end boundary
@@ -207,12 +212,21 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
   // Reset transport readout whenever the source changes so the bar clearly
   // falls back to the "no playback" state until new metadata arrives.
-  useEffect(() => {
+  // Adjusting state during render (instead of in an effect) avoids a frame
+  // where the old timecode is still shown against the new source.
+  const [prevStreamUrl, setPrevStreamUrl] = useState(videoStreamUrl);
+  if (prevStreamUrl !== videoStreamUrl) {
+    setPrevStreamUrl(videoStreamUrl);
     setCurrentTime(0);
     setDuration(0);
     setHasLoadedMetadata(false);
     setMediaError(false);
     setIsPlaying(false);
+  }
+
+  // Ref writes must not happen during render, so clear the autoplay-forced mute
+  // flag in an effect that also fires when the source changes.
+  useEffect(() => {
     autoplayMutedRef.current = false;
   }, [videoStreamUrl]);
 
@@ -261,7 +275,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
       video.volume = 1.0;
       autoplayMutedRef.current = false;
       setIsMuted(false);
-      triggerAnimation('play');
       return;
     }
 
@@ -278,7 +291,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
         await video.play();
         setIsMuted(!wantSound);
         setIsPlaying(true);
-        triggerAnimation('play');
       } catch {
         try {
           video.muted = true;
@@ -286,7 +298,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
           setIsMuted(true);
           await video.play();
           setIsPlaying(true);
-          triggerAnimation('play');
         } catch {
           setIsPlaying(false);
         }
@@ -296,7 +307,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
     video.pause();
     setIsPlaying(false);
-    triggerAnimation('pause');
   };
 
   const handlePreviewKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -350,7 +360,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
               KONSISTEN ITU LEBIH PENTING
             </span>
             <span className="text-white text-[15px] sm:text-[16px] tracking-wide font-black">
-              DARI MOTIVASI {showEmoji && <span>⚡</span>}
+              DARI MOTIVASI
             </span>
           </div>
         );
@@ -360,21 +370,10 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
             <span>Konsisten itu lebih penting dari motivasi</span>
           </div>
         );
-      case 'translation_read':
-        return (
-          <div className="flex flex-col items-center justify-center gap-0.5 text-center select-none bg-black/55 px-2.5 py-1.5 rounded-md">
-            <span className="font-['Plus_Jakarta_Sans',_sans-serif] font-bold text-[11.5px] text-white leading-snug drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
-              Konsisten itu lebih penting
-            </span>
-            <span className="font-['Plus_Jakarta_Sans',_sans-serif] font-bold text-[11.5px] text-white leading-snug drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
-              dari motivasi
-            </span>
-          </div>
-        );
       case 'word_pop':
         return (
           <div className="flex flex-col items-center justify-center font-['Impact',_sans-serif] font-black uppercase text-[28px] text-[#FBBF24] tracking-wider text-center drop-shadow-[0_4px_10px_rgba(0,0,0,1)] select-none animate-pulse leading-none">
-            <span>KONSISTEN! 🔥</span>
+            <span>KONSISTEN!</span>
           </div>
         );
       case 'no_subtitle':
@@ -388,7 +387,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
               KONSISTEN ITU LEBIH PENTING
             </span>
             <span className="text-white text-[16px] sm:text-[17px] tracking-wide font-black drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] mt-0.5">
-              DARI MOTIVASI {showEmoji && <span>🔥</span>}
+              DARI MOTIVASI
             </span>
           </div>
         );
@@ -412,7 +411,8 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
   const isClipRange = Boolean(previewClip && !isRenderedClip);
   const clipStart = isClipRange && previewClip ? previewClip.start : 0;
-  const clipDuration = isClipRange && previewClip ? Math.max(0, previewClip.end - previewClip.start) : 0;
+  const clipDuration =
+    isClipRange && previewClip ? Math.max(0, previewClip.end - previewClip.start) : 0;
 
   const timelineDuration = isClipRange ? clipDuration : mediaDuration;
   const timelineCurrent = isClipRange
@@ -420,7 +420,8 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     : Math.min(mediaDuration, Math.max(0, currentTime));
 
   // Timeline is only interactive once we actually know the media length.
-  const isTimelineReady = hasVideoSource && hasLoadedMetadata && !mediaError && timelineDuration > 0;
+  const isTimelineReady =
+    hasVideoSource && hasLoadedMetadata && !mediaError && timelineDuration > 0;
   // Playback controls are only blocked when there is truly nothing to play.
   const isTransportDisabled = !hasVideoSource || mediaError;
 
@@ -431,24 +432,35 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
   // Dynamic values for Social Media overlay
   const displayAccount = (accountWatermark || 'visionclipper.ai').replace(/^@/, '');
-  const displayCaption = clipCaption || clipTitle || 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore.';
-  const displayHashtags = clipHashtags && clipHashtags.length > 0
-    ? clipHashtags.map(t => t.startsWith('#') ? t : `#${t}`).slice(0, 4).join(' ')
-    : '#fyp #foryou #trending #viral';
+  const displayCaption =
+    clipCaption ||
+    clipTitle ||
+    'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore.';
+  const displayHashtags =
+    clipHashtags && clipHashtags.length > 0
+      ? clipHashtags
+          .map((t) => (t.startsWith('#') ? t : `#${t}`))
+          .slice(0, 4)
+          .join(' ')
+      : '#fyp #foryou #trending #viral';
 
   return (
     <div className="flex flex-col h-full w-full rounded-2xl bg-[#090d13] border border-slate-800/80 p-3 sm:p-3.5 shadow-xl overflow-hidden">
-
       {/* ── TOP HEADER OF PREVIEW + SOCIAL PLATFORM SWITCHER ── */}
       <div className="flex items-center justify-between mb-3 px-1 gap-2 flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <ViewfinderCircleIcon className={`h-4 w-4 flex-shrink-0 ${isRenderedClip ? 'text-amber-400' : 'text-emerald-400'}`} />
+          <ViewfinderCircleIcon
+            className={`h-4 w-4 flex-shrink-0 ${isRenderedClip ? 'text-amber-400' : 'text-emerald-400'}`}
+          />
           <div className="flex flex-col truncate">
             <h2 className="text-xs font-bold uppercase tracking-wider text-slate-200 font-['Outfit'] truncate">
               {isRenderedClip ? 'OUTPUT CLIP PREVIEW' : 'VIDEO PREVIEW'}
             </h2>
             {clipTitle && (
-              <span className="text-[10px] text-slate-400 truncate max-w-[120px] sm:max-w-[150px]" title={clipTitle}>
+              <span
+                className="text-[10px] text-slate-400 truncate max-w-[120px] sm:max-w-[150px]"
+                title={clipTitle}
+              >
                 {clipTitle}
               </span>
             )}
@@ -461,8 +473,8 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
             {[
               { id: 'tiktok', label: 'TikTok', Icon: SiTiktok, color: 'text-white' },
               { id: 'reels', label: 'Reels', Icon: SiInstagram, color: 'text-pink-400' },
-              { id: 'shorts', label: 'Shorts', Icon: SiYoutubeshorts, color: 'text-red-500' }
-            ].map(p => {
+              { id: 'shorts', label: 'Shorts', Icon: SiYoutubeshorts, color: 'text-red-500' },
+            ].map((p) => {
               const isActive = overlayMode === p.id;
               return (
                 <button
@@ -475,7 +487,9 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       : 'opacity-45 hover:opacity-100 hover:bg-slate-800/60'
                   }`}
                   title={isActive ? `Matikan tampilan ${p.label}` : `Tampilkan overlay ${p.label}`}
-                  aria-label={isActive ? `Matikan tampilan ${p.label}` : `Tampilkan overlay ${p.label}`}
+                  aria-label={
+                    isActive ? `Matikan tampilan ${p.label}` : `Tampilkan overlay ${p.label}`
+                  }
                   aria-pressed={isActive}
                 >
                   <p.Icon className={`w-3.5 h-3.5 ${isActive ? p.color : 'text-slate-300'}`} />
@@ -496,7 +510,9 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
             aria-label="Toggle TikTok 9:16 Safe Zone Overlay"
             aria-pressed={showSafeZone}
           >
-            <ShieldCheckIcon className={`w-3.5 h-3.5 ${showSafeZone ? 'text-amber-400' : 'text-slate-500'}`} />
+            <ShieldCheckIcon
+              className={`w-3.5 h-3.5 ${showSafeZone ? 'text-amber-400' : 'text-slate-500'}`}
+            />
           </button>
         </div>
       </div>
@@ -507,18 +523,17 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
           - Transparent Official iPhone 17 Pro Overlay (.iphone-frame-overlay: 389px × 800px)
           - Dynamically auto-scaled to fit 100% of available column viewport
          ───────────────────────────────────────────────────────────── */}
-      <div 
+      <div
         ref={stageRef}
         className="flex flex-1 min-h-0 w-full items-center justify-center p-1 overflow-hidden relative select-none"
       >
-
         {/* Subtle Ambient Radial Lighting Floor */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-white/[0.02] via-transparent to-transparent pointer-events-none -z-10" />
 
         {/* ─────────────────────────────────────────────────────────
             1:1 PHOTOREALISTIC iPHONE 17 PRO AUTO-SCALED WRAPPER
            ───────────────────────────────────────────────────────── */}
-        <div 
+        <div
           className="relative shrink-0 flex items-center justify-center select-none"
           style={{
             width: `${Math.round(389 * scale)}px`,
@@ -530,7 +545,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
               width: '389px',
               height: '800px',
               transform: `scale(${scale})`,
-              transformOrigin: '0 0'
+              transformOrigin: '0 0',
             }}
             className="absolute top-0 left-0"
           >
@@ -542,13 +557,11 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                 - overflow: hidden
                ───────────────────────────────────────────────────────── */}
             <div className="iphone-screen bg-[#07090e] absolute top-[14px] left-[17px] w-[356px] h-[772px] rounded-[46px] overflow-hidden shadow-2xl flex flex-col z-10">
-
               {/* Front Screen Diagonal Glass Reflection Highlight */}
               <div className="pointer-events-none absolute inset-0 z-20 bg-gradient-to-tr from-transparent via-white/[0.015] to-white/[0.04] rounded-[46px]" />
 
               {/* ── AUTHENTIC iOS STATUS BAR (Shows through transparent ears of PNG overlay) ── */}
               <div className="absolute top-[8px] inset-x-0 h-[27px] px-6 z-25 flex items-center justify-between text-white pointer-events-none select-none">
-                
                 {/* Left Flank: Authentic iOS Time (9:41 SF Pro Style) */}
                 <div className="pl-1 flex items-center">
                   <span className="text-[15px] font-semibold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)] font-sans antialiased">
@@ -556,38 +569,69 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                   </span>
                 </div>
 
-              {/* Right Flank: Authentic iOS Cellular (4 Stadium Pills) + Battery */}
-              <div className="flex items-center gap-1.5 pr-1">
-                {/* 1. iOS Cellular 4-Pill Signal Indicator */}
-                <svg className="w-[17px] h-[11.5px] text-white shrink-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]" viewBox="0 0 17.5 12" fill="none">
-                  <rect x="0.5" y="8" width="3" height="4" rx="1.5" fill="currentColor" />
-                  <rect x="5" y="5.5" width="3" height="6.5" rx="1.5" fill="currentColor" />
-                  <rect x="9.5" y="3" width="3" height="9" rx="1.5" fill="currentColor" />
-                  <rect x="14" y="0.5" width="3" height="11.5" rx="1.5" fill="currentColor" />
-                </svg>
+                {/* Right Flank: Authentic iOS Cellular (4 Stadium Pills) + Battery */}
+                <div className="flex items-center gap-1.5 pr-1">
+                  {/* 1. iOS Cellular 4-Pill Signal Indicator */}
+                  <svg
+                    className="w-[17px] h-[11.5px] text-white shrink-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]"
+                    viewBox="0 0 17.5 12"
+                    fill="none"
+                  >
+                    <rect x="0.5" y="8" width="3" height="4" rx="1.5" fill="currentColor" />
+                    <rect x="5" y="5.5" width="3" height="6.5" rx="1.5" fill="currentColor" />
+                    <rect x="9.5" y="3" width="3" height="9" rx="1.5" fill="currentColor" />
+                    <rect x="14" y="0.5" width="3" height="11.5" rx="1.5" fill="currentColor" />
+                  </svg>
 
-                {/* 2. iOS Battery Capsule */}
-                <svg className="w-[24.5px] h-[11.5px] text-white shrink-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]" viewBox="0 0 24.5 11.5" fill="none">
-                  <rect x="0.6" y="0.6" width="20.4" height="10.3" rx="3.5" stroke="currentColor" strokeWidth="1.1" strokeOpacity="0.4" />
-                  <rect x="2.1" y="2.1" width="13.8" height="7.3" rx="1.8" fill="currentColor" />
-                  <path d="M22.5 4.1C23.3 4.1 23.7 4.5 23.7 5.2V6.3C23.7 7.0 23.3 7.4 22.5 7.4" stroke="currentColor" strokeWidth="1.1" strokeOpacity="0.4" strokeLinecap="round" fill="none" />
-                </svg>
+                  {/* 2. iOS Battery Capsule */}
+                  <svg
+                    className="w-[24.5px] h-[11.5px] text-white shrink-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]"
+                    viewBox="0 0 24.5 11.5"
+                    fill="none"
+                  >
+                    <rect
+                      x="0.6"
+                      y="0.6"
+                      width="20.4"
+                      height="10.3"
+                      rx="3.5"
+                      stroke="currentColor"
+                      strokeWidth="1.1"
+                      strokeOpacity="0.4"
+                    />
+                    <rect x="2.1" y="2.1" width="13.8" height="7.3" rx="1.8" fill="currentColor" />
+                    <path
+                      d="M22.5 4.1C23.3 4.1 23.7 4.5 23.7 5.2V6.3C23.7 7.0 23.3 7.4 22.5 7.4"
+                      stroke="currentColor"
+                      strokeWidth="1.1"
+                      strokeOpacity="0.4"
+                      strokeLinecap="round"
+                      fill="none"
+                    />
+                  </svg>
+                </div>
               </div>
-            </div>
 
-            {/* OLED Screen Content Container */}
-            <div
-              className={`relative w-full h-full bg-slate-950 overflow-hidden flex items-center justify-center ${
-                videoStreamUrl ? 'cursor-pointer' : ''
-              }`}
-              onClick={videoStreamUrl ? () => void togglePlay() : undefined}
-              onKeyDown={videoStreamUrl ? handlePreviewKeyDown : undefined}
-              role={videoStreamUrl ? 'button' : undefined}
-              tabIndex={videoStreamUrl ? 0 : undefined}
-              aria-label={videoStreamUrl ? (isPlaying ? 'Pause video preview' : 'Putar video preview') : undefined}
-              title={videoStreamUrl ? (isPlaying ? 'Klik untuk pause' : 'Klik untuk putar') : undefined}
-            >
-
+              {/* OLED Screen Content Container */}
+              <div
+                className={`relative w-full h-full bg-slate-950 overflow-hidden flex items-center justify-center ${
+                  videoStreamUrl ? 'cursor-pointer' : ''
+                }`}
+                onClick={videoStreamUrl ? () => void togglePlay() : undefined}
+                onKeyDown={videoStreamUrl ? handlePreviewKeyDown : undefined}
+                role={videoStreamUrl ? 'button' : undefined}
+                tabIndex={videoStreamUrl ? 0 : undefined}
+                aria-label={
+                  videoStreamUrl
+                    ? isPlaying
+                      ? 'Pause video preview'
+                      : 'Putar video preview'
+                    : undefined
+                }
+                title={
+                  videoStreamUrl ? (isPlaying ? 'Klik untuk pause' : 'Klik untuk putar') : undefined
+                }
+              >
                 {/* ── REAL VIDEO STREAM PLAYBACK IF AVAILABLE ── */}
                 {videoStreamUrl ? (
                   <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
@@ -647,7 +691,9 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
                         <div className="flex items-center gap-1.5 rounded-full border border-white/20 bg-black/70 px-3 py-1.5 text-white shadow-lg backdrop-blur-md animate-pulse">
                           <SpeakerXMarkIcon className="h-3.5 w-3.5 text-amber-300" />
-                          <span className="text-[10px] font-semibold tracking-wide">Ketuk untuk nyalakan suara</span>
+                          <span className="text-[10px] font-semibold tracking-wide">
+                            Ketuk untuk nyalakan suara
+                          </span>
                         </div>
                       </div>
                     )}
@@ -664,7 +710,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         </p>
                       </div>
                     )}
-
                   </div>
                 ) : (
                   // ── EMPTY STATE: NO SOURCE VIDEO SELECTED ──
@@ -683,7 +728,8 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         Belum ada video
                       </p>
                       <p className="mx-auto max-w-[300px] text-[14.5px] leading-relaxed text-slate-400">
-                        Pilih video sumber atau folder klip di panel kiri untuk melihat preview di sini.
+                        Pilih video sumber atau folder klip di panel kiri untuk melihat preview di
+                        sini.
                       </p>
                     </div>
                     <span className="px-4 py-2 rounded-full border border-emerald-500/40 bg-emerald-500/10 text-[11.5px] font-bold uppercase tracking-wider font-mono text-emerald-300">
@@ -711,7 +757,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                 {/* ── 1. TIKTOK SOCIAL MEDIA UI OVERLAY ── */}
                 {overlayMode === 'tiktok' && (
                   <div className="absolute inset-0 z-20 flex flex-col pointer-events-none select-none">
-
                     {/* Top Feed Tabs: Mengikuti | Untuk Anda | Search (clears Dynamic Island) */}
                     <div className="pt-[52px] px-4 flex items-center justify-between text-white/90 flex-shrink-0">
                       {/* Left balancing spacer to keep center tabs perfectly centered */}
@@ -739,7 +784,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
                     {/* Bottom Half: Creator Info + Right Social Actions */}
                     <div className="flex items-end justify-between w-full pl-4 pr-2.5 pb-2">
-                      
                       {/* Bottom-Left: Creator Username, Caption, Music Audio */}
                       <div className="flex-1 pr-2 pb-1 space-y-1.5 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] text-left min-w-0">
                         {/* Creator Handle */}
@@ -764,18 +808,18 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
                         {/* Music Audio Ticker */}
                         <div className="flex items-center gap-1.5 text-[13px] text-white/90 pt-0.5">
-                          <MusicalNoteIcon className={`h-4 w-4 shrink-0 ${isPlaying ? 'animate-spin' : ''} stroke-[2]`} style={{ animationDuration: '4s' }} />
+                          <MusicalNoteIcon
+                            className={`h-4 w-4 shrink-0 ${isPlaying ? 'animate-spin' : ''} stroke-[2]`}
+                            style={{ animationDuration: '4s' }}
+                          />
                           <div className="w-44 overflow-hidden whitespace-nowrap">
-                            <p className="text-[13px] truncate">
-                              Suara Asli - {displayAccount}
-                            </p>
+                            <p className="text-[13px] truncate">Suara Asli - {displayAccount}</p>
                           </div>
                         </div>
                       </div>
 
                       {/* Right Side: TikTok Signature Floating Action Stack */}
                       <div className="flex flex-col items-center gap-3 pointer-events-auto shrink-0 pb-1">
-                        
                         {/* 1. Creator Avatar with Follow Red Plus */}
                         <div className="relative mb-1">
                           <div className="h-11 w-11 rounded-full border-2 border-white bg-slate-800 overflow-hidden shadow-lg flex items-center justify-center">
@@ -789,14 +833,16 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         </div>
 
                         {/* 2. Heart / Like Button */}
-                        <button 
+                        <button
                           onClick={(e) => {
                             e.stopPropagation();
                             setIsLiked(!isLiked);
                           }}
                           className="flex flex-col items-center group transition-transform active:scale-75 cursor-pointer"
                         >
-                          <div className={`p-0.5 rounded-full ${isLiked ? 'text-rose-500' : 'text-white drop-shadow-md'}`}>
+                          <div
+                            className={`p-0.5 rounded-full ${isLiked ? 'text-rose-500' : 'text-white drop-shadow-md'}`}
+                          >
                             {isLiked ? (
                               <HeartIconSolid className="h-8 w-8 text-rose-500 animate-pulse" />
                             ) : (
@@ -819,14 +865,16 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         </div>
 
                         {/* 4. Bookmark / Favorite Button */}
-                        <button 
+                        <button
                           onClick={(e) => {
                             e.stopPropagation();
                             setIsBookmarked(!isBookmarked);
                           }}
                           className="flex flex-col items-center group transition-transform active:scale-75 cursor-pointer"
                         >
-                          <div className={`p-0.5 rounded-full ${isBookmarked ? 'text-amber-400' : 'text-white drop-shadow-md'}`}>
+                          <div
+                            className={`p-0.5 rounded-full ${isBookmarked ? 'text-amber-400' : 'text-white drop-shadow-md'}`}
+                          >
                             {isBookmarked ? (
                               <BookmarkIconSolid className="h-8 w-8 text-amber-400" />
                             ) : (
@@ -849,7 +897,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         </div>
 
                         {/* 6. Rotating Vinyl Record Sound Disc (Tap to mute/unmute audio) */}
-                        <div 
+                        <div
                           onClick={(e) => {
                             e.stopPropagation();
                             toggleMute();
@@ -857,25 +905,24 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                           className="relative mt-1 cursor-pointer hover:scale-110 active:scale-95 transition-transform"
                           title={isMuted ? 'Nyalakan Audio' : 'Matikan Audio'}
                         >
-                          <div 
+                          <div
                             className={`h-9 w-9 rounded-full border border-slate-700 bg-neutral-900 shadow-xl overflow-hidden flex items-center justify-center ${
                               isPlaying && !isMuted ? 'animate-spin' : ''
                             }`}
                             style={{ animationDuration: '3.5s' }}
                           >
                             <div className="h-[18px] w-[18px] rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center">
-                              <span className={`h-1.5 w-1.5 rounded-full ${isMuted ? 'bg-rose-500' : 'bg-emerald-400'}`} />
+                              <span
+                                className={`h-1.5 w-1.5 rounded-full ${isMuted ? 'bg-rose-500' : 'bg-emerald-400'}`}
+                              />
                             </div>
                           </div>
                         </div>
-
                       </div>
-
                     </div>
 
                     {/* Bottom TikTok Tab Navigation Bar — sits above the iOS home-indicator safe area */}
                     <div className="h-[50px] border-t border-white/10 flex items-center justify-between px-1 pointer-events-auto bg-gradient-to-t from-black/85 via-black/50 to-transparent flex-shrink-0">
-                      
                       {/* 1. Beranda */}
                       <button
                         type="button"
@@ -890,7 +937,9 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         ) : (
                           <HomeIcon className="h-[23px] w-[23px] text-white/70 group-hover:text-white stroke-[2]" />
                         )}
-                        <span className={`text-[10px] mt-1 leading-none ${activeBottomTab === 'home' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}>
+                        <span
+                          className={`text-[10px] mt-1 leading-none ${activeBottomTab === 'home' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}
+                        >
                           Beranda
                         </span>
                       </button>
@@ -909,13 +958,15 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         ) : (
                           <UserGroupIcon className="h-[23px] w-[23px] text-white/70 group-hover:text-white stroke-[2]" />
                         )}
-                        <span className={`text-[10px] mt-1 leading-none ${activeBottomTab === 'friends' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}>
+                        <span
+                          className={`text-[10px] mt-1 leading-none ${activeBottomTab === 'friends' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}
+                        >
                           Teman
                         </span>
                       </button>
 
                       {/* 3. Center Create [+] Button */}
-                      <div 
+                      <div
                         onClick={(e) => e.stopPropagation()}
                         className="flex flex-col items-center justify-center flex-1 h-full cursor-pointer hover:scale-105 active:scale-95 transition-transform"
                         title="Buat Video"
@@ -946,7 +997,9 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                           )}
                           <span className="absolute -top-0.5 -right-1 h-2 w-2 rounded-full bg-rose-500 ring-1 ring-black" />
                         </div>
-                        <span className={`text-[10px] mt-1 leading-none whitespace-nowrap ${activeBottomTab === 'inbox' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}>
+                        <span
+                          className={`text-[10px] mt-1 leading-none whitespace-nowrap ${activeBottomTab === 'inbox' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}
+                        >
                           Kotak Masuk
                         </span>
                       </button>
@@ -965,16 +1018,16 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         ) : (
                           <UserIconOutline className="h-[23px] w-[23px] text-white/70 group-hover:text-white stroke-[2]" />
                         )}
-                        <span className={`text-[10px] mt-1 leading-none ${activeBottomTab === 'profile' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}>
+                        <span
+                          className={`text-[10px] mt-1 leading-none ${activeBottomTab === 'profile' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}
+                        >
                           Profil
                         </span>
                       </button>
-
                     </div>
 
                     {/* iOS home-indicator safe area (34px) */}
                     <div className="h-[34px] bg-gradient-to-b from-black/50 to-black/85 flex-shrink-0" />
-
                   </div>
                 )}
 
@@ -985,43 +1038,107 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                     <div className="pt-[46px] px-4 flex items-center justify-between text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
                       <div className="flex items-center gap-1">
                         <span className="text-[15px] font-bold tracking-tight">Reels</span>
-                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                        <svg
+                          className="w-4 h-4 text-white"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2.5}
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="m19.5 8.25-7.5 7.5-7.5-7.5"
+                          />
                         </svg>
                       </div>
-                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z" />
+                      <svg
+                        className="w-5 h-5 text-white"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z"
+                        />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z"
+                        />
                       </svg>
                     </div>
 
                     {/* Right Action Icons Column (Reels Style) */}
                     <div className="absolute right-3 bottom-14 flex flex-col items-center gap-4 z-25 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
                       <div className="flex flex-col items-center">
-                        <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" />
+                        <svg
+                          className="w-7 h-7 text-white"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z"
+                          />
                         </svg>
                         <span className="text-[11px] font-semibold text-white mt-0.5">184K</span>
                       </div>
 
                       <div className="flex flex-col items-center">
-                        <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641a4.483 4.483 0 0 1-.923 1.785A5.969 5.969 0 0 0 6 21c1.282 0 2.47-.402 3.445-1.087.81.22 1.668.337 2.555.337Z" />
+                        <svg
+                          className="w-7 h-7 text-white"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641a4.483 4.483 0 0 1-.923 1.785A5.969 5.969 0 0 0 6 21c1.282 0 2.47-.402 3.445-1.087.81.22 1.668.337 2.555.337Z"
+                          />
                         </svg>
                         <span className="text-[11px] font-semibold text-white mt-0.5">1,290</span>
                       </div>
 
                       <div className="flex flex-col items-center">
-                        <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
+                        <svg
+                          className="w-7 h-7 text-white"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5"
+                          />
                         </svg>
                         <span className="text-[11px] font-semibold text-white mt-0.5">42K</span>
                       </div>
 
                       {/* 3 dots */}
                       <div className="flex flex-col items-center">
-                        <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM12.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM18.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" />
+                        <svg
+                          className="w-7 h-7 text-white"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M6.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM12.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM18.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z"
+                          />
                         </svg>
                       </div>
 
@@ -1041,7 +1158,9 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                             {displayAccount.charAt(0).toUpperCase()}
                           </div>
                         </div>
-                        <span className="text-[14px] font-bold text-white tracking-tight">@{displayAccount}</span>
+                        <span className="text-[14px] font-bold text-white tracking-tight">
+                          @{displayAccount}
+                        </span>
                         <button className="px-2.5 py-1 rounded-md border border-white/70 text-[11.5px] font-bold text-white ml-1">
                           Ikuti
                         </button>
@@ -1062,14 +1181,36 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                     {/* Top Shorts Header (Below iOS 18/26 Status Bar) */}
                     <div className="pt-[46px] px-4 flex items-center justify-between text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
                       <div className="flex items-center gap-1">
-                        <span className="text-[15px] font-black tracking-tight text-white font-['Outfit']">Shorts</span>
+                        <span className="text-[15px] font-black tracking-tight text-white font-['Outfit']">
+                          Shorts
+                        </span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+                        <svg
+                          className="w-5 h-5 text-white"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+                          />
                         </svg>
-                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z" />
+                        <svg
+                          className="w-5 h-5 text-white"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={2}
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z"
+                          />
                         </svg>
                       </div>
                     </div>
@@ -1077,14 +1218,24 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                     {/* Right Action Icons Column (Shorts Style) */}
                     <div className="absolute right-3 bottom-14 flex flex-col items-center gap-3.5 z-25 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
                       <div className="flex flex-col items-center">
-                        <svg className="w-7 h-7 text-white" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <svg
+                          className="w-7 h-7 text-white"
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                          aria-hidden="true"
+                        >
                           <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z" />
                         </svg>
                         <span className="text-[11px] font-semibold text-white mt-0.5">312K</span>
                       </div>
 
                       <div className="flex flex-col items-center">
-                        <svg className="w-7 h-7 text-white" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                        <svg
+                          className="w-7 h-7 text-white"
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                          aria-hidden="true"
+                        >
                           <path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z" />
                         </svg>
                         <span className="text-[11px] font-semibold text-white mt-0.5">Dislike</span>
@@ -1112,7 +1263,9 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         <div className="w-7 h-7 rounded-full bg-red-600 flex items-center justify-center text-white text-[11px] font-bold">
                           {displayAccount.charAt(0).toUpperCase()}
                         </div>
-                        <span className="text-[14px] font-bold text-white tracking-tight">@{displayAccount}</span>
+                        <span className="text-[14px] font-bold text-white tracking-tight">
+                          @{displayAccount}
+                        </span>
                         <button className="px-2.5 py-1 rounded-full bg-white text-black text-[11px] font-black uppercase tracking-wider ml-1">
                           Subscribe
                         </button>
@@ -1130,15 +1283,20 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                     {sourceWatermark ? (
                       <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#121418]/75 backdrop-blur-md border border-white/15 shadow-[0_4px_12px_rgba(0,0,0,0.5)] max-w-[55%]">
                         <span className="text-[9.5px] text-white/90 font-medium truncate tracking-wide">
-                          <span className="text-cyan-400 mr-1 text-[8px]">▶</span>Source: {sourceWatermark}
+                          <span className="text-cyan-400 mr-1 text-[8px]">▶</span>Source:{' '}
+                          {sourceWatermark}
                         </span>
                       </div>
-                    ) : <div />}
+                    ) : (
+                      <div />
+                    )}
 
                     {accountWatermark ? (
                       <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#121418]/75 backdrop-blur-md border border-white/15 shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
                         <span className="text-[10px] font-bold text-amber-300 font-mono tracking-tight">
-                          {accountWatermark.startsWith('@') ? accountWatermark : `@${accountWatermark}`}
+                          {accountWatermark.startsWith('@')
+                            ? accountWatermark
+                            : `@${accountWatermark}`}
                         </span>
                       </div>
                     ) : null}
@@ -1159,12 +1317,11 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
                 {/* Video Scrubber Bar on Phone Screen (no track — it drew a stray line under the home swipe) */}
                 <div className="absolute bottom-0 inset-x-0 h-1 z-30 pointer-events-none">
-                  <div 
+                  <div
                     className="h-full bg-emerald-500 transition-all duration-100"
                     style={{ width: `${playbackProgress}%` }}
                   />
                 </div>
-
               </div>
 
               {/* ─────────────────────────────────────────────────────
@@ -1172,7 +1329,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                   - 134pt wide @ 393pt screen => 121px @ 356px, 5px tall, 9px from bottom
                  ───────────────────────────────────────────────────── */}
               <div className="absolute bottom-[9px] left-1/2 -translate-x-1/2 h-[5px] w-[121px] rounded-full bg-white/85 shadow-sm pointer-events-none z-40" />
-
             </div>
 
             {/* ─────────────────────────────────────────────────────────────
@@ -1185,17 +1341,15 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
             <img
               src="/images/mockup-apple-iphone-17-pro-2025-transparent.png"
               onError={(e) => {
-                e.currentTarget.src = 'https://www.webmobilefirst.com/img/mockups/mockup-apple-iphone-17-pro-2025-transparent.png';
+                e.currentTarget.src =
+                  'https://www.webmobilefirst.com/img/mockups/mockup-apple-iphone-17-pro-2025-transparent.png';
               }}
               alt="Apple iPhone 17 Pro Frame"
               className="iphone-frame-overlay absolute inset-0 w-[389px] h-[800px] pointer-events-none z-30 object-contain select-none"
               draggable={false}
             />
-
           </div>
-
         </div>
-
       </div>
 
       {/* ── STUDIO TRANSPORT BAR ── */}
@@ -1212,8 +1366,20 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
           className={`ios26-play flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-white transition ${
             isTransportDisabled ? 'cursor-not-allowed opacity-40 saturate-50' : 'active:scale-95'
           }`}
-          aria-label={isTransportDisabled ? 'Belum ada video untuk diputar' : isPlaying ? 'Jeda preview' : 'Putar preview'}
-          title={isTransportDisabled ? 'Belum ada video untuk diputar' : isPlaying ? 'Jeda preview' : 'Putar preview'}
+          aria-label={
+            isTransportDisabled
+              ? 'Belum ada video untuk diputar'
+              : isPlaying
+                ? 'Jeda preview'
+                : 'Putar preview'
+          }
+          title={
+            isTransportDisabled
+              ? 'Belum ada video untuk diputar'
+              : isPlaying
+                ? 'Jeda preview'
+                : 'Putar preview'
+          }
         >
           {isPlaying ? (
             <PauseIcon className="h-4 w-4 text-white" />
@@ -1232,12 +1398,16 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                   <span
                     aria-hidden
                     className={`h-1.5 w-1.5 rounded-full transition-colors duration-200 ${
-                      isPlaying ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.85)]' : 'bg-white/30'
+                      isPlaying
+                        ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.85)]'
+                        : 'bg-white/30'
                     }`}
                   />
                   {formatTime(timelineCurrent)}
                 </span>
-                <span className={`tabular-nums transition-colors duration-200 ${isPlaying ? 'text-white/55' : 'text-white/35'}`}>
+                <span
+                  className={`tabular-nums transition-colors duration-200 ${isPlaying ? 'text-white/55' : 'text-white/35'}`}
+                >
                   {formatTime(timelineDuration)}
                 </span>
               </>
@@ -1261,7 +1431,13 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
               isTimelineReady ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
             }`}
             style={{ '--ios-scrubber-progress': `${playbackProgress}%` } as React.CSSProperties}
-            aria-label={isTimelineReady ? (isClipRange ? 'Posisi di dalam klip' : 'Posisi video') : 'Belum ada video untuk diposisikan'}
+            aria-label={
+              isTimelineReady
+                ? isClipRange
+                  ? 'Posisi di dalam klip'
+                  : 'Posisi video'
+                : 'Belum ada video untuk diposisikan'
+            }
             title={
               isTimelineReady
                 ? remainingTime > 0
@@ -1281,9 +1457,15 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
             className={`ios26-glass-btn flex h-7 w-7 items-center justify-center text-white/70 hover:text-white ${
               isTransportDisabled ? 'cursor-not-allowed opacity-40' : ''
             }`}
-            title={isTransportDisabled ? 'Belum ada audio' : isMuted ? 'Nyalakan suara' : 'Matikan suara'}
+            title={
+              isTransportDisabled ? 'Belum ada audio' : isMuted ? 'Nyalakan suara' : 'Matikan suara'
+            }
           >
-            {isMuted ? <SpeakerXMarkIcon className="h-3.5 w-3.5 text-rose-400" /> : <SpeakerWaveIcon className="h-3.5 w-3.5" />}
+            {isMuted ? (
+              <SpeakerXMarkIcon className="h-3.5 w-3.5 text-rose-400" />
+            ) : (
+              <SpeakerWaveIcon className="h-3.5 w-3.5" />
+            )}
           </button>
 
           <button
@@ -1299,10 +1481,8 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
           </button>
         </div>
       </div>
-
     </div>
   );
 };
 
 export const IPhoneSocialPreview = PhonePreview;
-

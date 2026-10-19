@@ -11,61 +11,13 @@ from backend.renderer import (
     SceneCutDetector,
     _build_shot_trajectory,
     _parse_loudnorm_json,
-    _validate_rendered_video,
     _write_crop_commands,
     build_audio_filter,
     build_audio_pre_chain,
     build_split_screen_graph,
     _calc_margin_v,
-    _inject_emojis_to_words,
-    _format_ass_word,
-    _get_active_emoji_font,
-    _EMOJI_PATTERN,
-    EMOJI_KEYWORDS,
-    EMOJI_COLORS,
     generate_ass_subtitles,
-    extract_and_format_clip,
 )
-from backend.utils import FONTS_DIR
-
-
-def _read_ttf_cmap_codepoints(path):
-    """Baca semua codepoint yang punya glyph dari tabel cmap sebuah file TTF/OTF."""
-    import struct
-
-    with open(path, "rb") as fh:
-        data = fh.read()
-
-    num_tables = struct.unpack(">H", data[4:6])[0]
-    codepoints = set()
-
-    for i in range(num_tables):
-        off = 12 + i * 16
-        if data[off:off + 4] != b"cmap":
-            continue
-        cmap_off = struct.unpack(">I", data[off + 8:off + 12])[0]
-        num_sub = struct.unpack(">H", data[cmap_off + 2:cmap_off + 4])[0]
-        for j in range(num_sub):
-            rec = cmap_off + 4 + j * 8
-            _, _, sub_off = struct.unpack(">HHI", data[rec:rec + 8])
-            sub = cmap_off + sub_off
-            fmt = struct.unpack(">H", data[sub:sub + 2])[0]
-            if fmt == 4:
-                seg_x2 = struct.unpack(">H", data[sub + 6:sub + 8])[0]
-                seg = seg_x2 // 2
-                ends = struct.unpack(f">{seg}H", data[sub + 14:sub + 14 + seg_x2])
-                sp = sub + 14 + seg_x2 + 2
-                starts = struct.unpack(f">{seg}H", data[sp:sp + seg_x2])
-                for s, e in zip(starts, ends):
-                    if e != 0xFFFF:
-                        codepoints.update(range(s, e + 1))
-            elif fmt == 12:
-                ngroups = struct.unpack(">I", data[sub + 12:sub + 16])[0]
-                for g in range(ngroups):
-                    b = sub + 16 + g * 12
-                    s, e, _ = struct.unpack(">III", data[b:b + 12])
-                    codepoints.update(range(s, e + 1))
-    return codepoints
 
 
 class RendererIntegrityTest(unittest.TestCase):
@@ -295,32 +247,6 @@ class SplitScreenAndSubtitleEnhancementTest(unittest.TestCase):
         # 80% from top -> 20% from bottom: 1920 * 0.20 = 384
         self.assertEqual(_calc_margin_v(80), 384)
 
-    def test_inject_emojis_to_words_respects_keywords_and_gap(self):
-        words = [
-            {"word": "Rahasia", "start": 0.0, "end": 0.5},
-            {"word": "bisnis", "start": 0.5, "end": 1.0},
-            {"word": "ini", "start": 1.0, "end": 1.4},
-            {"word": "bikin", "start": 1.4, "end": 1.8},
-            {"word": "lo", "start": 1.8, "end": 2.2},
-            {"word": "kaya", "start": 2.2, "end": 2.6},
-        ]
-        injected = _inject_emojis_to_words(words, min_gap=4)
-        # "Rahasia" cocok -> salah satu kandidat emoji disuntikkan
-        self.assertTrue(
-            any(em.replace("\ufe0f", "") in injected[0]["word"] for em in EMOJI_KEYWORDS["rahasia"]),
-            msg=injected[0]["word"],
-        )
-        # "bisnis" dilewati karena jarak < 4 kata
-        self.assertFalse(
-            any(em.replace("\ufe0f", "") in injected[1]["word"] for em in EMOJI_KEYWORDS["bisnis"]),
-            msg=injected[1]["word"],
-        )
-        # "kaya" (idx 5, gap >= 4) cocok -> emoji disuntikkan
-        self.assertTrue(
-            any(em.replace("\ufe0f", "") in injected[5]["word"] for em in EMOJI_KEYWORDS["kaya"]),
-            msg=injected[5]["word"],
-        )
-
     @patch("backend.renderer.build_split_screen_graph")
     @patch("backend.renderer.generate_ass_subtitles")
     @patch("backend.renderer.run_command")
@@ -352,12 +278,10 @@ class SplitScreenAndSubtitleEnhancementTest(unittest.TestCase):
                 out_dir=out_dir,
                 framing_mode="split_screen",
                 sub_position=65,
-                show_emoji=True
             )
             self.assertTrue(mock_split.called)
             self.assertTrue(mock_ass.called)
             self.assertEqual(mock_ass.call_args[1]["sub_position"], 65)
-            self.assertTrue(mock_ass.call_args[1]["show_emoji"])
             self.assertTrue(os.path.exists(out))
 
     def test_generate_ass_subtitles_with_watermark_glass_effect(self):
@@ -482,127 +406,6 @@ class SplitScreenAndSubtitleEnhancementTest(unittest.TestCase):
             self.assertEqual(kwargs["source_watermark"], "YouTube Channel")
             self.assertEqual(kwargs["account_watermark"], "@clipper")
 
-    def test_generate_ass_subtitles_formats_emojis_with_emoji_font(self):
-        with tempfile.NamedTemporaryFile(suffix=".ass", delete=False) as tf:
-            ass_path = tf.name
-
-        try:
-            segments = [
-                {
-                    "start": 1.0,
-                    "end": 3.0,
-                    "words": [
-                        {"word": "konten", "start": 1.0, "end": 1.5},
-                        {"word": "viral \U0001F680", "start": 1.6, "end": 2.2}
-                    ]
-                }
-            ]
-            generate_ass_subtitles(
-                segments,
-                ass_path,
-                clip_start=0.0,
-                clip_end=4.0,
-                sub_style="tiktok_viral",
-                show_emoji=True
-            )
-
-            self.assertTrue(os.path.exists(ass_path))
-            with open(ass_path, "r", encoding="utf-8") as f:
-                content = f.read()
-
-            # Emoji asli dari transkrip harus dibungkus font emoji aktif
-            # (kalau tidak, libass akan menggambarnya sebagai kotak kosong / tofu).
-            active_font = _get_active_emoji_font()
-            self.assertIn(r"{\fn" + active_font, content)
-            self.assertIn("\U0001F680", content)
-        finally:
-            if os.path.exists(ass_path):
-                os.remove(ass_path)
-
-    def test_translation_read_style_uses_two_lines_and_reading_floor(self):
-        """Mode terjemahan: cue kalimat utuh, maks 2 baris, ada reading-time floor."""
-        from backend.renderer import _chunk_words, _schedule_cues, _split_words_into_lines
-
-        text = "Konsisten itu jauh lebih penting daripada motivasi yang datang sesaat"
-        words = [
-            {"word": w, "start": i * 0.35, "end": i * 0.35 + 0.3}
-            for i, w in enumerate(text.split())
-        ]
-        chunks = _chunk_words(words, max_words=7, max_chars=34,
-                              break_on_comma=False, max_gap=0.6)
-        cues = _schedule_cues(chunks)
-
-        self.assertTrue(cues)
-        # tidak ada cue yang tumpang tindih
-        for a, b in zip(cues, cues[1:]):
-            self.assertLessEqual(a["end"], b["start"] + 0.05)
-        # semua cue memenuhi durasi baca minimum
-        for cue in cues:
-            self.assertGreaterEqual(cue["end"] - cue["start"], 1.19)
-        # maksimal 2 baris, tidak ada kata yang hilang/terpotong
-        for cue in cues:
-            lines = _split_words_into_lines(cue["words"])
-            self.assertLessEqual(len(lines), 2)
-            self.assertEqual(
-                [w["word"] for line in lines for w in line],
-                [w["word"] for w in cue["words"]],
-            )
-
-    def test_translation_read_ass_has_no_per_word_highlight(self):
-        with tempfile.NamedTemporaryFile(suffix=".ass", delete=False) as tf:
-            ass_path = tf.name
-
-        try:
-            segments = [{
-                "start": 1.0, "end": 3.0,
-                "words": [
-                    {"word": w, "start": 1.0 + i * 0.4, "end": 1.35 + i * 0.4}
-                    for i, w in enumerate("Konsisten itu lebih penting dari motivasi".split())
-                ],
-            }]
-            generate_ass_subtitles(
-                segments, ass_path, clip_start=0.0, clip_end=4.0,
-                sub_style="translation_read", translation_mode=True,
-            )
-            with open(ass_path, "r", encoding="utf-8") as f:
-                content = f.read()
-
-            self.assertIn("ReadStyle", content)
-            self.assertNotIn("ViralStyle", content)
-            # tidak ada highlight kuning per kata
-            self.assertNotIn("&H0000FFFF&", content)
-            # cue memakai baris baru ASS (kalimat utuh)
-            self.assertIn("\\N", content)
-        finally:
-            if os.path.exists(ass_path):
-                os.remove(ass_path)
-
-    def test_translation_mode_overrides_word_style_presets(self):
-        """Preset bergaya kata otomatis dialihkan agar terjemahan mudah dibaca."""
-        with tempfile.NamedTemporaryFile(suffix=".ass", delete=False) as tf:
-            ass_path = tf.name
-
-        try:
-            segments = [{
-                "start": 1.0, "end": 3.0,
-                "words": [
-                    {"word": w, "start": 1.0 + i * 0.4, "end": 1.35 + i * 0.4}
-                    for i, w in enumerate("Ini terjemahan kalimat panjang".split())
-                ],
-            }]
-            generate_ass_subtitles(
-                segments, ass_path, clip_start=0.0, clip_end=4.0,
-                sub_style="tiktok_viral", translation_mode=True,
-            )
-            with open(ass_path, "r", encoding="utf-8") as f:
-                content = f.read()
-
-            self.assertIn("ReadStyle", content)
-            self.assertNotIn("ViralStyle", content)
-        finally:
-            if os.path.exists(ass_path):
-                os.remove(ass_path)
-
     def test_native_mode_keeps_word_highlight(self):
         """Regresi: konten native (id->id) tidak boleh berubah gayanya."""
         with tempfile.NamedTemporaryFile(suffix=".ass", delete=False) as tf:
@@ -618,7 +421,7 @@ class SplitScreenAndSubtitleEnhancementTest(unittest.TestCase):
             }]
             generate_ass_subtitles(
                 segments, ass_path, clip_start=0.0, clip_end=4.0,
-                sub_style="tiktok_viral", translation_mode=False,
+                sub_style="tiktok_viral",
             )
             with open(ass_path, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -628,126 +431,6 @@ class SplitScreenAndSubtitleEnhancementTest(unittest.TestCase):
         finally:
             if os.path.exists(ass_path):
                 os.remove(ass_path)
-
-    def test_every_keyword_emoji_is_covered_by_emoji_fonts(self):
-        """
-        Regresi 'kotak kosong': setiap emoji di EMOJI_KEYWORDS harus
-        (a) dikenali _EMOJI_PATTERN sehingga dibungkus {\fn<font> ...}, dan
-        (b) benar-benar punya glyph di font emoji monokrom (fallback) & warna.
-        """
-        mono_font_path = os.path.join(FONTS_DIR, "NotoEmoji.ttf")
-        color_font_path = os.path.join(FONTS_DIR, "NotoColorEmoji.ttf")
-        if not os.path.exists(mono_font_path):
-            self.skipTest(f"{mono_font_path} not found")
-
-        mono_cmap = _read_ttf_cmap_codepoints(mono_font_path)
-        self.assertGreater(len(mono_cmap), 100)
-        color_cmap = (
-            _read_ttf_cmap_codepoints(color_font_path)
-            if os.path.exists(color_font_path) else set()
-        )
-
-        for keyword, candidates in EMOJI_KEYWORDS.items():
-            for emoji in candidates:
-                # (a) harus dikenali sebagai cluster emoji
-                self.assertIsNotNone(
-                    _EMOJI_PATTERN.fullmatch(emoji),
-                    msg=f"keyword {keyword!r} emoji {emoji!r} tidak dikenali _EMOJI_PATTERN",
-                )
-                # (b) harus dibungkus font emoji di output ASS
-                formatted = _format_ass_word(f"kata {emoji}")
-                self.assertRegex(
-                    formatted, r"\\fn(Noto Color Emoji|Noto Emoji)",
-                    msg=f"keyword {keyword!r} emoji {emoji!r} tidak dibungkus font emoji",
-                )
-                # (c) setiap codepoint harus ada di font monokrom (fallback) & warna
-                for ch in emoji:
-                    if ch in ("\ufe0e", "\ufe0f", "\u200d"):
-                        continue
-                    self.assertIn(
-                        ord(ch), mono_cmap,
-                        msg=f"emoji {emoji!r} (keyword {keyword!r}) codepoint U+{ord(ch):04X} tidak ada di NotoEmoji.ttf",
-                    )
-                    if color_cmap:
-                        self.assertIn(
-                            ord(ch), color_cmap,
-                            msg=f"emoji {emoji!r} (keyword {keyword!r}) codepoint U+{ord(ch):04X} tidak ada di NotoColorEmoji.ttf",
-                        )
-
-    def test_color_mode_wraps_without_tint(self):
-        """Mode warna: emoji dibungkus {\fnNoto Color Emoji} TANPA tag \c tint."""
-        with patch.dict(os.environ, {"EMOJI_FONT_MODE": "color"}):
-            out = _format_ass_word("keren \U0001F525", base_color="&HFFFFFF&")
-        fire = "\U0001F525"
-        self.assertIn("{\\fnNoto Color Emoji}" + fire + "{\\fn}", out)
-        # Tidak ada tag warna tint di segmen emoji
-        emoji_segment = out.split("{\\fnNoto Color Emoji}")[1]
-        self.assertNotIn("\\c&H", emoji_segment)
-
-    def test_mono_mode_wraps_with_tint(self):
-        """Mode fallback monokrom: emoji dibungkus {\fnNoto Emoji\c<color>} (perilaku lama)."""
-        with patch.dict(os.environ, {"EMOJI_FONT_MODE": "mono"}):
-            out = _format_ass_word("keren \U0001F525", base_color="&HFFFFFF&")
-        fire = "\U0001F525"
-        self.assertIn("{\\fnNoto Emoji\\c&H0070FF&}" + fire + "{\\fn\\c&HFFFFFF&}", out)
-
-    def test_zwj_emoji_cluster_is_not_split_by_font_tags(self):
-        """😮‍💨 (capek) harus tetap satu cluster, bukan dipecah tag {\fn} di tengah ZWJ."""
-        out = _format_ass_word("capek \U0001F62E\u200D\U0001F4A8")
-        active_font = _get_active_emoji_font()
-        self.assertIn(r"{\fn" + active_font, out)
-        # hanya boleh ada satu pembuka {\fn<font> ...} untuk seluruh cluster
-        self.assertEqual(out.count(r"\fn" + active_font), 1)
-        self.assertIn("\U0001F62E\u200D\U0001F4A8", out)
-
-    def test_stopwatch_keyword_is_wrapped_with_emoji_font(self):
-        """⏱ (U+23F1) ada di blok Misc Technical, di luar rentang emoji 'umum'.
-        Regresi: dulu tidak dikenali sehingga muncul kotak kosong."""
-        out = _format_ass_word("waktu \u23F1\ufe0F")
-        active_font = _get_active_emoji_font()
-        self.assertIn(r"{\fn" + active_font, out)
-        self.assertIn("\u23F1", out)
-        self.assertNotIn("\ufe0f", out)  # variation selector dibuang
-
-    @patch("backend.renderer.generate_ass_subtitles")
-    @patch("backend.renderer.run_command")
-    @patch("backend.renderer._validate_rendered_video")
-    def test_extract_and_format_clip_includes_fontsdir(
-        self, mock_validate, mock_run, mock_ass
-    ):
-        recorded_cmds = []
-        def fake_run(cmd, *args, **kwargs):
-            recorded_cmds.append(cmd)
-            part_path = cmd[-1]
-            with open(part_path, "wb") as f:
-                f.write(b"x" * 2048)
-            return "Done"
-        mock_run.side_effect = fake_run
-        mock_validate.return_value = True
-
-        def fake_ass(segments, out_ass_path, *args, **kwargs):
-            with open(out_ass_path, "w") as f:
-                f.write("[Script Info]\n")
-        mock_ass.side_effect = fake_ass
-
-        with tempfile.TemporaryDirectory() as out_dir:
-            clip_info = {
-                "title": "Fontsdir Test",
-                "start": 0.0,
-                "end": 5.0,
-                "caption": "Test"
-            }
-            extract_and_format_clip(
-                video_path="dummy.mp4",
-                clip_info=clip_info,
-                index=1,
-                segments=[],
-                out_dir=out_dir
-            )
-            self.assertTrue(len(recorded_cmds) > 0)
-            full_cmd = " ".join(recorded_cmds[0])
-            self.assertIn("fontsdir=", full_cmd)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -216,15 +216,21 @@ def test_ai_connection(endpoint: str = None, api_key: str = None, model: str = N
         "Content-Type": "application/json",
         "Authorization": f"Bearer {selected_key}",
     }
-    payload = {
-        "model": selected_model,
-        "messages": [{"role": "user", "content": "Ping: Balas 'PONG' saja."}],
-        "max_tokens": 10,
-        "temperature": 0.1,
-    }
+    messages = [{"role": "user", "content": "Ping: Balas 'PONG' saja."}]
+    base_payload = {"model": selected_model, "messages": messages, "temperature": 0.1}
 
     try:
-        resp = requests.post(req_url, json=payload, headers=headers, timeout=20)
+        # Some gateways (e.g. tiprouter) reject/500 on `max_tokens`, so send the
+        # minimal payload first and only fall back to the capped variant.
+        resp = requests.post(req_url, json=base_payload, headers=headers, timeout=20)
+        status = getattr(resp, "status_code", None)
+        if isinstance(status, int) and status >= 500:
+            resp = requests.post(
+                req_url,
+                json={**base_payload, "max_tokens": 16},
+                headers=headers,
+                timeout=20,
+            )
         resp.raise_for_status()
         data = resp.json()
         reply = data.get("choices", [{}])[0].get("message", {}).get("content", "")
