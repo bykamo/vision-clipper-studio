@@ -33,7 +33,7 @@ import { StopIcon as StopIconSolid } from '@heroicons/react/24/solid';
 import { SubtitleStyleConfig, FramingMode } from '../types';
 import { SUBTITLE_PRESETS } from '../data/subtitlePresets';
 import { errorMessage, isAbortError } from '../lib/errors';
-import { PhonePreview } from './PhonePreview';
+import { PhonePreview, type PreviewWord } from './PhonePreview';
 import { StudioSettingsModal } from './StudioSettingsModal';
 import { AnalyzingSkeleton, RenderingSkeleton } from './SkeletonLoading';
 
@@ -222,6 +222,9 @@ export const SimpleClipperDashboard: React.FC = () => {
     caption?: string;
     hashtags?: string[];
   } | null>(null);
+  // Kata transkrip klip yang sedang dipreview, dipakai supaya subtitle di
+  // phone preview menampilkan teks asli (sinkron dengan posisi video).
+  const [previewClipWords, setPreviewClipWords] = useState<PreviewWord[]>([]);
 
   // Settings State
   const [clipCount, setClipCount] = useState<number>(4);
@@ -964,6 +967,25 @@ export const SimpleClipperDashboard: React.FC = () => {
     setSelectedPresetId((prev) => (prev === preset.presetId ? 'no_subtitle' : preset.presetId));
   };
 
+  // Ambil kata transkrip untuk klip yang sedang dipreview (dipakai subtitle preview).
+  const loadClipWords = async (index: number) => {
+    if (!analysisId) {
+      setPreviewClipWords([]);
+      return;
+    }
+    try {
+      const res = await fetch(
+        `/api/analysis-clip-words?analysis_id=${encodeURIComponent(analysisId)}&index=${index}`,
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as { words?: PreviewWord[] };
+      setPreviewClipWords(Array.isArray(data.words) ? data.words : []);
+    } catch {
+      // Preview tetap jalan dengan teks contoh bila transkrip tidak tersedia.
+      setPreviewClipWords([]);
+    }
+  };
+
   const previewCandidate = (clip: ClipCandidate) => {
     setPreviewOutputClip(null);
     setPreviewClipRange({ start: clip.start, end: clip.end });
@@ -972,6 +994,7 @@ export const SimpleClipperDashboard: React.FC = () => {
       caption: clip.caption,
       hashtags: clip.hashtags,
     });
+    void loadClipWords(clip.index);
     setClipCandidates((prev) =>
       prev.map((candidate) =>
         candidate.index === clip.index ? { ...candidate, previewed: true } : candidate,
@@ -1053,6 +1076,7 @@ export const SimpleClipperDashboard: React.FC = () => {
     setResolvedVideoPath('');
     setPreviewClipRange(null);
     setPreviewOutputClip(null);
+    setPreviewClipWords([]);
     analysisReceivedRef.current = false;
 
     const startTimestamp = new Date().toTimeString().split(' ')[0];
@@ -1217,6 +1241,7 @@ export const SimpleClipperDashboard: React.FC = () => {
     setGeneratedClips([]);
     setPreviewClipRange(null);
     setPreviewOutputClip(null);
+    setPreviewClipWords([]);
 
     const startTimestamp = new Date().toTimeString().split(' ')[0];
     setLogs((prev) => [
@@ -1961,6 +1986,7 @@ export const SimpleClipperDashboard: React.FC = () => {
             clipTitle={previewOutputClip ? previewOutputClip.title : activeClipMeta?.title}
             clipCaption={activeClipMeta?.caption}
             clipHashtags={activeClipMeta?.hashtags}
+            clipWords={previewClipWords}
             isRenderedClip={Boolean(previewOutputClip)}
             isProcessing={isProcessing}
             subPosition={subPosition}

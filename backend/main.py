@@ -947,6 +947,73 @@ async def analyze(request: Request, mode: str = "", source: str = "", num_clips:
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
+@app.get("/api/analysis-clip-words")
+async def analysis_clip_words(analysis_id: str = "", index: str = "1"):
+    """Return the transcript words inside one analysed clip.
+
+    The SSE payload deliberately drops ``segments`` to keep it small, so the
+    pre-render preview asks for the words of the clip it is currently showing.
+    That lets the subtitle preview display the real spoken text instead of a
+    hard-coded sample, in sync with the video position.
+    """
+    if not _valid_analysis_id(analysis_id):
+        return JSONResponse(status_code=400, content={"error": "Invalid analysis_id"})
+    try:
+        clip_index = int(index)
+    except (TypeError, ValueError):
+        return JSONResponse(status_code=400, content={"error": "index must be an integer"})
+
+    analysis_path = os.path.join(TEMP_ANALYSIS_DIR, f"{analysis_id}.json")
+    if not os.path.exists(analysis_path):
+        return JSONResponse(status_code=404, content={"error": "Analysis file not found"})
+
+    try:
+        with open(analysis_path, "r", encoding="utf-8") as f:
+            analysis = json.load(f)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Failed to read analysis: {e}"})
+
+    clips = analysis.get("clips") or []
+    segments = analysis.get("segments") or []
+    if not isinstance(clips, list) or not 1 <= clip_index <= len(clips):
+        return JSONResponse(status_code=400, content={"error": "clip index out of range"})
+
+    clip = clips[clip_index - 1]
+    clip_start = float(clip.get("start", 0.0))
+    clip_end = float(clip.get("end", 0.0))
+
+    words = []
+    for seg in segments:
+        seg_start = float(seg.get("start", 0.0))
+        seg_end = float(seg.get("end", 0.0))
+        if seg_end <= clip_start or seg_start >= clip_end:
+            continue
+        seg_words = seg.get("words") or []
+        if seg_words:
+            for w in seg_words:
+                w_start = float(w.get("start", 0.0))
+                w_end = float(w.get("end", 0.0))
+                if w_end > clip_start and w_start < clip_end:
+                    words.append({
+                        "word": str(w.get("word", "")).strip(),
+                        "start": round(w_start, 3),
+                        "end": round(w_end, 3),
+                    })
+        else:
+            words.append({
+                "word": str(seg.get("text", "")).strip(),
+                "start": round(seg_start, 3),
+                "end": round(seg_end, 3),
+            })
+
+    words = [w for w in words if w["word"]]
+    return JSONResponse(content={
+        "index": clip_index,
+        "start": clip_start,
+        "end": clip_end,
+        "words": words,
+    })
+
 @app.post("/api/render-selected")
 async def render_selected(request: Request):
     """Phase 2: Render only user-approved clips. Returns SSE stream."""

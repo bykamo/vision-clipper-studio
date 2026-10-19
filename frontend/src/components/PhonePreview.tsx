@@ -30,6 +30,13 @@ import {
 
 export type SocialOverlayType = 'tiktok' | 'reels' | 'shorts' | 'none';
 
+/** Satu kata transkrip (detik absolut terhadap file video sumber). */
+export interface PreviewWord {
+  word: string;
+  start: number;
+  end: number;
+}
+
 interface PhonePreviewProps {
   framingMode: 'smart_crop' | 'fit_blur' | 'split_screen';
   selectedPresetId: string;
@@ -38,6 +45,8 @@ interface PhonePreviewProps {
   clipTitle?: string;
   clipCaption?: string;
   clipHashtags?: string[];
+  /** Kata-kata transkrip di dalam klip yang sedang dipreview (sinkron dengan video). */
+  clipWords?: PreviewWord[];
   isRenderedClip?: boolean;
   isProcessing?: boolean;
   subPosition?: number;
@@ -55,6 +64,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   clipTitle,
   clipCaption,
   clipHashtags,
+  clipWords,
   isRenderedClip = false,
   isProcessing = false,
   subPosition = 68,
@@ -97,6 +107,9 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   };
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  // Panel kedua untuk mode Dual Stack (split_screen): menampilkan sisi kanan
+  // video sambil mengikuti waktu & status putar panel utama.
+  const secondaryVideoRef = useRef<HTMLVideoElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   // Tracks whether the current mute state was forced by the browser autoplay
   // policy (not an explicit user choice). When true, the first user gesture
@@ -261,6 +274,23 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     }
   };
 
+  // Panel kedua (mode Dual Stack) mengikuti panel utama: waktu, play/pause,
+  // dan selalu tanpa suara supaya tidak ada audio ganda.
+  useEffect(() => {
+    const secondary = secondaryVideoRef.current;
+    const primary = videoRef.current;
+    if (!secondary || !primary) return;
+    if (Math.abs((secondary.currentTime || 0) - (primary.currentTime || 0)) > 0.15) {
+      try {
+        secondary.currentTime = primary.currentTime;
+      } catch {
+        // metadata belum siap
+      }
+    }
+    if (primary.paused && !secondary.paused) secondary.pause();
+    if (!primary.paused && secondary.paused) void secondary.play().catch(() => undefined);
+  }, [currentTime, isPlaying, framingMode]);
+
   const togglePlay = async () => {
     const video = videoRef.current;
     if (!video) return;
@@ -329,6 +359,13 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
     setCurrentTime(nextTime);
     video.currentTime = nextTime;
+    if (secondaryVideoRef.current) {
+      try {
+        secondaryVideoRef.current.currentTime = nextTime;
+      } catch {
+        // metadata belum siap
+      }
+    }
   };
 
   const toggleMute = () => {
@@ -350,47 +387,168 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     }
   };
 
+  // ── SUBTITLE PREVIEW (teks transkrip asli, sinkron dengan posisi video) ──
+  // Batas kata/karakter per gaya harus sama dengan backend (STYLE_CHUNK_LIMITS)
+  // supaya preview benar-benar mencerminkan hasil render.
+  const SUBTITLE_LIMITS: Record<string, { maxWords: number; maxChars: number }> = {
+    tiktok_viral: { maxWords: 2, maxChars: 12 },
+    classic_karaoke: { maxWords: 3, maxChars: 12 },
+    minimalist: { maxWords: 4, maxChars: 16 },
+    word_pop: { maxWords: 1, maxChars: 12 },
+  };
+
+  /** Indeks kata yang sedang diucapkan pada `time` (detik absolut). */
+  const findActiveWordIndex = (time: number) => {
+    if (!clipWords || clipWords.length === 0) return -1;
+    for (let i = 0; i < clipWords.length; i += 1) {
+      const w = clipWords[i];
+      if (time >= w.start && time < w.end) return i;
+    }
+    // Di antara dua kata (jeda hening): tahan kata terakhir yang sudah lewat.
+    let last = -1;
+    for (let i = 0; i < clipWords.length; i += 1) {
+      if (clipWords[i].start <= time) last = i;
+      else break;
+    }
+    return last;
+  };
+
+  /** Potong transkrip jadi chunk tampilan, sama seperti backend `_chunk_words`. */
+  const chunkWords = (words: PreviewWord[], maxWords: number, maxChars: number) => {
+    const chunks: PreviewWord[][] = [];
+    let current: PreviewWord[] = [];
+    let currentLen = 0;
+    for (const w of words) {
+      const text = w.word.trim();
+      if (!text) continue;
+      const projected = currentLen + text.length + (current.length ? 1 : 0);
+      if (current.length && (current.length >= maxWords || projected > maxChars)) {
+        chunks.push(current);
+        current = [];
+        currentLen = 0;
+      }
+      current.push({ ...w, word: text });
+      currentLen += text.length + (current.length > 1 ? 1 : 0);
+      if (/[.?!,]$/.test(text)) {
+        chunks.push(current);
+        current = [];
+        currentLen = 0;
+      }
+    }
+    if (current.length) chunks.push(current);
+    return chunks;
+  };
+
+  const activeWordIndex = findActiveWordIndex(currentTime);
+  const subtitleLimit = SUBTITLE_LIMITS[selectedPresetId] ?? SUBTITLE_LIMITS.tiktok_viral;
+
+  // Chunk yang memuat kata aktif. Bila belum ada kata aktif (video di awal klip),
+  // tampilkan chunk pertama supaya gaya caption tetap terlihat.
+  const activeChunk = (() => {
+    if (!clipWords || clipWords.length === 0) return null;
+    const chunks = chunkWords(clipWords, subtitleLimit.maxWords, subtitleLimit.maxChars);
+    if (chunks.length === 0) return null;
+    if (activeWordIndex < 0) return chunks[0];
+    const active = clipWords[activeWordIndex];
+    const found = chunks.find((chunk) => chunk.some((w) => w.start === active.start && w.end === active.end));
+    return found ?? chunks[chunks.length - 1];
+  })();
+
+  /** Kata di dalam chunk aktif yang sedang di-highlight (null = tidak ada). */
+  const activeChunkWord =
+    activeChunk && activeWordIndex >= 0
+      ? (activeChunk.find(
+          (w) => w.start === clipWords?.[activeWordIndex]?.start && w.end === clipWords?.[activeWordIndex]?.end,
+        ) ?? null)
+      : null;
+
+  // Teks contoh dipakai hanya saat belum ada transkrip (sebelum analisis).
+  const hasRealTranscript = Boolean(activeChunk && activeChunk.length > 0);
+
   // Dynamic Subtitle text sample styled matching viral TikTok kinetic format
   const getSubtitleSample = () => {
     switch (selectedPresetId) {
-      case 'classic_karaoke':
+      case 'classic_karaoke': {
+        const words = activeChunk ?? [
+          { word: 'KONSISTEN', start: 0, end: 0 },
+          { word: 'ITU', start: 0, end: 0 },
+          { word: 'LEBIH', start: 0, end: 0 },
+        ];
         return (
-          <div className="flex flex-col items-center justify-center font-['Montserrat',_sans-serif] font-black uppercase text-center select-none leading-tight drop-shadow-[0_2px_8px_rgba(0,0,0,1)]">
-            <span className="text-[#38BDF8] text-[15px] sm:text-[16px] tracking-wide font-black">
-              KONSISTEN ITU LEBIH PENTING
-            </span>
-            <span className="text-white text-[15px] sm:text-[16px] tracking-wide font-black">
-              DARI MOTIVASI
-            </span>
+          <div className="flex flex-wrap items-center justify-center gap-x-1.5 font-['Montserrat',_sans-serif] font-black uppercase text-center select-none leading-tight drop-shadow-[0_2px_8px_rgba(0,0,0,1)]">
+            {words.map((w, i) => {
+              const isActive =
+                activeChunkWord !== null &&
+                w.start === activeChunkWord.start &&
+                w.end === activeChunkWord.end;
+              return (
+                <span
+                  key={`${w.word}-${i}`}
+                  className={`text-[15px] sm:text-[16px] tracking-wide font-black ${
+                    isActive ? 'text-[#00D4F5]' : 'text-white'
+                  }`}
+                >
+                  {w.word.toUpperCase()}
+                </span>
+              );
+            })}
+            {!hasRealTranscript && (
+              <span className="text-white text-[15px] sm:text-[16px] tracking-wide font-black">
+                DARI MOTIVASI
+              </span>
+            )}
           </div>
         );
-      case 'minimalist':
+      }
+      case 'minimalist': {
+        const text = activeChunk?.map((w) => w.word).join(' ') ?? 'Konsisten itu lebih penting';
         return (
           <div className="font-['Inter',_sans-serif] font-medium text-[12px] text-white tracking-wide text-center drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] select-none bg-black/60 px-3.5 py-1.5 rounded-lg border border-white/10 backdrop-blur-xs">
-            <span>Konsisten itu lebih penting dari motivasi</span>
+            <span>{text}</span>
           </div>
         );
-      case 'word_pop':
+      }
+      case 'word_pop': {
+        const word = activeChunk?.[0]?.word.toUpperCase() ?? 'KONSISTEN!';
         return (
           <div className="flex flex-col items-center justify-center font-['Impact',_sans-serif] font-black uppercase text-[28px] text-[#FBBF24] tracking-wider text-center drop-shadow-[0_4px_10px_rgba(0,0,0,1)] select-none animate-pulse leading-none">
-            <span>KONSISTEN!</span>
+            <span>{word}</span>
           </div>
         );
+      }
       case 'no_subtitle':
       case 'none':
         return null;
       case 'tiktok_viral':
-      default:
+      default: {
+        const words =
+          activeChunk && activeChunk.length > 0
+            ? activeChunk
+            : [
+                { word: 'KONSISTEN ITU', start: 0, end: 0 },
+                { word: 'LEBIH PENTING', start: 0, end: 0 },
+              ];
         return (
           <div className="flex flex-col items-center justify-center font-['Montserrat',_sans-serif] font-black uppercase text-center select-none leading-tight drop-shadow-[0_2px_10px_rgba(0,0,0,1)]">
-            <span className="text-[#FBBF24] text-[16px] sm:text-[17px] tracking-wide font-black drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
-              KONSISTEN ITU LEBIH PENTING
-            </span>
-            <span className="text-white text-[16px] sm:text-[17px] tracking-wide font-black drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] mt-0.5">
-              DARI MOTIVASI
-            </span>
+            {words.map((w, i) => {
+              const isActive =
+                activeChunkWord !== null &&
+                w.start === activeChunkWord.start &&
+                w.end === activeChunkWord.end;
+              return (
+                <span
+                  key={`${w.word}-${i}`}
+                  className={`text-[16px] sm:text-[17px] tracking-wide font-black drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] ${
+                    i === 0 ? 'text-[#FBBF24]' : 'text-white'
+                  } ${isActive ? 'scale-105' : ''} ${i > 0 ? 'mt-0.5' : ''}`}
+                >
+                  {w.word.toUpperCase()}
+                </span>
+              );
+            })}
           </div>
         );
+      }
     }
   };
 
@@ -645,24 +803,55 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                       />
                     )}
 
-                    {/* Main Video Screen */}
-                    <video
-                      ref={videoRef}
-                      src={videoStreamUrl}
-                      onLoadedMetadata={handleLoadedMetadata}
-                      onError={handleMediaError}
-                      onTimeUpdate={handleTimeUpdateWithClip}
-                      onPlay={() => setIsPlaying(true)}
-                      onPause={() => setIsPlaying(false)}
-                      onEnded={() => setIsPlaying(false)}
-                      muted={isMuted}
-                      className={`relative z-10 transition-all duration-300 ${
-                        !isRenderedClip && framingMode === 'fit_blur'
-                          ? 'w-full h-auto max-h-full object-contain'
-                          : 'w-full h-full object-cover'
-                      }`}
-                      playsInline
-                    />
+                    {/* Dual Stack (split_screen): dua panel 50:50, kiri host & kanan guest */}
+                    {!isRenderedClip && framingMode === 'split_screen' ? (
+                      <div className="relative z-10 flex h-full w-full flex-col">
+                        <div className="relative h-1/2 w-full overflow-hidden bg-black">
+                          <video
+                            ref={videoRef}
+                            src={videoStreamUrl}
+                            onLoadedMetadata={handleLoadedMetadata}
+                            onError={handleMediaError}
+                            onTimeUpdate={handleTimeUpdateWithClip}
+                            onPlay={() => setIsPlaying(true)}
+                            onPause={() => setIsPlaying(false)}
+                            onEnded={() => setIsPlaying(false)}
+                            muted={isMuted}
+                            className="h-full w-full object-cover object-left"
+                            playsInline
+                          />
+                        </div>
+                        <div className="h-[3px] w-full bg-slate-900/90" />
+                        <div className="relative h-1/2 w-full overflow-hidden bg-black">
+                          <video
+                            ref={secondaryVideoRef}
+                            src={videoStreamUrl}
+                            muted
+                            className="h-full w-full object-cover object-right"
+                            playsInline
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      /* Main Video Screen */
+                      <video
+                        ref={videoRef}
+                        src={videoStreamUrl}
+                        onLoadedMetadata={handleLoadedMetadata}
+                        onError={handleMediaError}
+                        onTimeUpdate={handleTimeUpdateWithClip}
+                        onPlay={() => setIsPlaying(true)}
+                        onPause={() => setIsPlaying(false)}
+                        onEnded={() => setIsPlaying(false)}
+                        muted={isMuted}
+                        className={`relative z-10 transition-all duration-300 ${
+                          !isRenderedClip && framingMode === 'fit_blur'
+                            ? 'w-full h-auto max-h-full object-contain'
+                            : 'w-full h-full object-cover'
+                        }`}
+                        playsInline
+                      />
+                    )}
 
                     {/* Play / Pause Tap Feedback Pulse */}
                     {showPlayPulse && (
@@ -1278,28 +1467,26 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                 )}
 
                 {/* ── LIVE GLASS WATERMARK BADGES (Top Safe Zone) ── */}
-                {watermarkEnabled && !isRenderedClip && (sourceWatermark || accountWatermark) && (
+                {/* Selalu tampil selama watermark aktif supaya branding ikut
+                    terlihat pada tahap pre-render, bukan hanya setelah render. */}
+                {watermarkEnabled && !isRenderedClip && (
                   <div className="absolute top-12 inset-x-3.5 flex items-center justify-between pointer-events-none z-30">
-                    {sourceWatermark ? (
-                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#121418]/75 backdrop-blur-md border border-white/15 shadow-[0_4px_12px_rgba(0,0,0,0.5)] max-w-[55%]">
-                        <span className="text-[9.5px] text-white/90 font-medium truncate tracking-wide">
-                          <span className="text-cyan-400 mr-1 text-[8px]">▶</span>Source:{' '}
-                          {sourceWatermark}
-                        </span>
-                      </div>
-                    ) : (
-                      <div />
-                    )}
+                    <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#121418]/75 backdrop-blur-md border border-white/15 shadow-[0_4px_12px_rgba(0,0,0,0.5)] max-w-[55%]">
+                      <span className="text-[9.5px] text-white/90 font-medium truncate tracking-wide">
+                        <span className="text-cyan-400 mr-1 text-[8px]">▶</span>Source:{' '}
+                        {sourceWatermark || 'Nama Channel'}
+                      </span>
+                    </div>
 
-                    {accountWatermark ? (
-                      <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#121418]/75 backdrop-blur-md border border-white/15 shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
-                        <span className="text-[10px] font-bold text-amber-300 font-mono tracking-tight">
-                          {accountWatermark.startsWith('@')
+                    <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#121418]/75 backdrop-blur-md border border-white/15 shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
+                      <span className="text-[10px] font-bold text-amber-300 font-mono tracking-tight">
+                        {accountWatermark
+                          ? accountWatermark.startsWith('@')
                             ? accountWatermark
-                            : `@${accountWatermark}`}
-                        </span>
-                      </div>
-                    ) : null}
+                            : `@${accountWatermark}`
+                          : '@akun_kamu'}
+                      </span>
+                    </div>
                   </div>
                 )}
 
