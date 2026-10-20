@@ -116,30 +116,69 @@ const StepCard: React.FC<{
   hint?: string;
   right?: React.ReactNode;
   isLast?: boolean;
+  /** Sembunyikan step (dipakai untuk alur bertahap 1→2 lalu 3→5). */
+  hidden?: boolean;
+  /**
+   * Delay (ms) animasi pop untuk badge angka + isi kartu.
+   * `undefined` = tanpa animasi (step 1–2 yang sudah tampil sejak awal).
+   */
+  revealBase?: number;
+  /**
+   * Delay (ms) animasi garis putus penghubung ke step berikutnya.
+   * Garis menggambar dulu, baru badge step berikutnya muncul.
+   */
+  connectorDelay?: number;
   children: React.ReactNode;
-}> = ({ step, icon, title, hint, right, isLast, children }) => (
-  <div className="relative pl-9">
-    {!isLast && (
+}> = ({
+  step,
+  icon,
+  title,
+  hint,
+  right,
+  isLast,
+  hidden,
+  revealBase,
+  connectorDelay,
+  children,
+}) => {
+  if (hidden) return null;
+  const animateBadge = typeof revealBase === 'number';
+  const animateConnector = typeof connectorDelay === 'number';
+
+  return (
+    <div data-step={step} className="relative pl-9">
+      {!isLast && (
+        <span
+          className={`absolute left-[13px] top-8 -bottom-2 w-px ${
+            animateConnector
+              ? 'step-connector'
+              : 'bg-gradient-to-b from-emerald-500/40 to-slate-800/40'
+          }`}
+          style={animateConnector ? { animationDelay: `${connectorDelay}ms` } : undefined}
+          aria-hidden
+        />
+      )}
       <span
-        className="absolute left-[13px] top-8 -bottom-2 w-px bg-gradient-to-b from-emerald-500/40 to-slate-800/40"
-        aria-hidden
-      />
-    )}
-    <span className="absolute left-0 top-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-emerald-500/40 bg-[#0b0f14] text-emerald-300 font-['Outfit'] font-extrabold text-[11px] shadow-[0_0_0_3px_rgba(16,185,129,0.08)]">
-      {step}
-    </span>
-    <div className="pb-3.5">
-      <div className="flex items-center gap-1.5 mb-2 min-h-[20px]" title={hint}>
-        <span className="text-emerald-400 flex-shrink-0">{icon}</span>
-        <span className="text-[10.5px] font-bold text-slate-100 uppercase tracking-wider font-['Outfit'] truncate">
-          {title}
-        </span>
-        {right && <div className="ml-auto flex-shrink-0">{right}</div>}
+        className={`absolute left-0 top-0.5 flex h-7 w-7 items-center justify-center rounded-full border border-emerald-500/40 bg-[#0b0f14] text-emerald-300 font-['Outfit'] font-extrabold text-[11px] shadow-[0_0_0_3px_rgba(16,185,129,0.08)] ${
+          animateBadge ? 'step-badge' : ''
+        }`}
+        style={animateBadge ? { animationDelay: `${revealBase}ms` } : undefined}
+      >
+        {step}
+      </span>
+      <div className="pb-3.5">
+        <div className="flex items-center gap-1.5 mb-2 min-h-[20px]" title={hint}>
+          <span className="text-emerald-400 flex-shrink-0">{icon}</span>
+          <span className="text-[10.5px] font-bold text-slate-100 uppercase tracking-wider font-['Outfit'] truncate">
+            {title}
+          </span>
+          {right && <div className="ml-auto flex-shrink-0">{right}</div>}
+        </div>
+        {children}
       </div>
-      {children}
     </div>
-  </div>
-);
+  );
+};
 
 /** 1..10 number pill picker (replaces the +/- stepper) */
 const NumberPills: React.FC<{ value: number; onChange: (n: number) => void }> = ({
@@ -228,6 +267,10 @@ export const SimpleClipperDashboard: React.FC = () => {
 
   // Settings State
   const [clipCount, setClipCount] = useState<number>(4);
+  // Alur sidebar bertahap: step 1–2 tampil dulu, step 3–5 dibuka setelah
+  // pre-render (analisis dimulai / hasil render dimuat). Sekali terbuka,
+  // tetap terbuka sampai workflow di-reset.
+  const [advancedStepsUnlocked, setAdvancedStepsUnlocked] = useState<boolean>(false);
   // Groq Whisper Cloud adalah satu-satunya model transkripsi (pilihan utama/default).
   const transcriptionModel = 'groq';
   // Default = tanpa subtitle. Gaya caption dipilih lewat check/uncheck pada kartu.
@@ -522,10 +565,27 @@ export const SimpleClipperDashboard: React.FC = () => {
   };
 
   const terminalRef = useRef<HTMLDivElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const renderAbortControllerRef = useRef<AbortController | null>(null);
   const analysisReceivedRef = useRef(false);
   const confirmedClipCount = clipCandidates.filter((c) => c.decision === 'approved').length;
+
+  // Alur bertahap pada sidebar: awalnya hanya step 1 & 2 (sumber + jumlah klip).
+  // Step 3–5 (framing, caption, branding) baru dibuka setelah tahap pra-render
+  // siap, yaitu saat analisis dimulai / klip preview / render selesai.
+  const advancedStepsVisible = advancedStepsUnlocked || phase !== 'config';
+
+  // Saat step 3–5 terbuka, pastikan sidebar ikut bergeser sedikit supaya
+  // animasi masuknya terlihat (hanya scroll kalau memang perlu).
+  useEffect(() => {
+    if (!advancedStepsVisible) return;
+    const timer = window.setTimeout(() => {
+      const target = sidebarRef.current?.querySelector('[data-step="3"]');
+      target?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 380);
+    return () => window.clearTimeout(timer);
+  }, [advancedStepsVisible]);
 
   const resetWorkflow = (clearSource = false) => {
     if (eventSourceRef.current) {
@@ -555,6 +615,7 @@ export const SimpleClipperDashboard: React.FC = () => {
     setYtUploadResult(null);
     setYtUploadErrorMessage(null);
     setSourceKind('video');
+    setAdvancedStepsUnlocked(false);
     if (clearSource) setVideoPathInput('');
   };
 
@@ -577,6 +638,8 @@ export const SimpleClipperDashboard: React.FC = () => {
       resetWorkflow(false);
       setVideoPathInput(data.output_dir);
       setSourceKind('render-folder');
+      // Hasil render sudah ada -> seluruh langkah lanjutan (3–5) langsung terbuka.
+      setAdvancedStepsUnlocked(true);
       setOutputDir(data.output_dir);
       setGeneratedClips(clips);
       setPreviewOutputClip({
@@ -1068,6 +1131,8 @@ export const SimpleClipperDashboard: React.FC = () => {
     setIsProcessing(true);
     setStatus('processing');
     setPhase('analyzing');
+    // Pre-render dimulai -> buka step 3–5 dengan animasi berurutan.
+    setAdvancedStepsUnlocked(true);
     setProgress(0);
     setGeneratedClips([]);
     setOutputDir('');
@@ -1646,6 +1711,7 @@ export const SimpleClipperDashboard: React.FC = () => {
       <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-3 gap-3 px-3 pb-3 pt-3">
         {/* ── COLUMN 1: LEFT SIDEBAR (SETTINGS & CONTROLS) ── */}
         <aside
+          ref={sidebarRef}
           className={`flex min-h-0 flex-col rounded-2xl border ${themeClasses.sidebar} p-3.5 overflow-y-auto scrollbar-thin`}
         >
           {/* ═══ WORKFLOW STEPPER (numbered vertical timeline) ═══ */}
@@ -1729,6 +1795,8 @@ export const SimpleClipperDashboard: React.FC = () => {
           {/* STEP 02 — JUMLAH KLIP */}
           <StepCard
             step={2}
+            isLast={!advancedStepsVisible}
+            connectorDelay={advancedStepsVisible ? 0 : undefined}
             icon={<Square3Stack3DIcon className="h-4 w-4 stroke-[2]" />}
             title="Output Klip"
             hint="Jumlah klip yang dihasilkan"
@@ -1748,6 +1816,9 @@ export const SimpleClipperDashboard: React.FC = () => {
           {/* STEP 03 — FRAMING / LAYOUT */}
           <StepCard
             step={3}
+            hidden={!advancedStepsVisible}
+            revealBase={260}
+            connectorDelay={520}
             icon={<PhotoIcon className="h-4 w-4 stroke-[2]" />}
             title="Framing 9:16"
             hint="Gaya framing video"
@@ -1809,6 +1880,9 @@ export const SimpleClipperDashboard: React.FC = () => {
           {/* STEP 04 — CAPTION / SUBTITLE */}
           <StepCard
             step={4}
+            hidden={!advancedStepsVisible}
+            revealBase={780}
+            connectorDelay={1040}
             icon={<SwatchIcon className="h-4 w-4 stroke-[2]" />}
             title="Gaya Caption"
             hint="Klik untuk pakai, klik lagi untuk lepas"
@@ -1882,6 +1956,8 @@ export const SimpleClipperDashboard: React.FC = () => {
           {/* STEP 05 — BRANDING / WATERMARK */}
           <StepCard
             step={5}
+            hidden={!advancedStepsVisible}
+            revealBase={1300}
             icon={<ShieldCheckIcon className="h-4 w-4 stroke-[2]" />}
             title="Branding"
             hint="Label kaca sumber & akun"
