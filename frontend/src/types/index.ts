@@ -4,11 +4,7 @@ export type SubtitleAnimation =
   'word_pop' | 'karaoke' | 'bounce' | 'glow_pulse' | 'slide_up' | 'none';
 
 export type SubtitlePresetId =
-  | 'tiktok_viral'
-  | 'classic_karaoke'
-  | 'minimalist'
-  | 'word_pop'
-  | 'no_subtitle';
+  'tiktok_viral' | 'classic_karaoke' | 'minimalist' | 'word_pop' | 'no_subtitle';
 
 export interface SubtitleStyleConfig {
   presetId: SubtitlePresetId;

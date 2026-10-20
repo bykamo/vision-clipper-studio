@@ -34,7 +34,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install ruff
           pip install fastapi uvicorn pydantic requests python-dotenv \
-            opencv-python-headless numpy moviepy proglog pillow fonttools \
+            opencv-python-headless numpy moviepy proglog pillow \
             webvtt-py google-auth google-auth-oauthlib google-auth-httplib2 \
             google-api-python-client yt-dlp
 

@@ -450,7 +450,9 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     if (chunks.length === 0) return null;
     if (activeWordIndex < 0) return chunks[0];
     const active = clipWords[activeWordIndex];
-    const found = chunks.find((chunk) => chunk.some((w) => w.start === active.start && w.end === active.end));
+    const found = chunks.find((chunk) =>
+      chunk.some((w) => w.start === active.start && w.end === active.end),
+    );
     return found ?? chunks[chunks.length - 1];
   })();
 
@@ -458,7 +460,9 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   const activeChunkWord =
     activeChunk && activeWordIndex >= 0
       ? (activeChunk.find(
-          (w) => w.start === clipWords?.[activeWordIndex]?.start && w.end === clipWords?.[activeWordIndex]?.end,
+          (w) =>
+            w.start === clipWords?.[activeWordIndex]?.start &&
+            w.end === clipWords?.[activeWordIndex]?.end,
         ) ?? null)
       : null;
 

@@ -129,18 +129,7 @@ const StepCard: React.FC<{
    */
   connectorDelay?: number;
   children: React.ReactNode;
-}> = ({
-  step,
-  icon,
-  title,
-  hint,
-  right,
-  isLast,
-  hidden,
-  revealBase,
-  connectorDelay,
-  children,
-}) => {
+}> = ({ step, icon, title, hint, right, isLast, hidden, revealBase, connectorDelay, children }) => {
   if (hidden) return null;
   const animateBadge = typeof revealBase === 'number';
   const animateConnector = typeof connectorDelay === 'number';
@@ -1948,7 +1937,6 @@ export const SimpleClipperDashboard: React.FC = () => {
                     </button>
                   ))}
                 </div>
-
               </div>
             )}
           </StepCard>
