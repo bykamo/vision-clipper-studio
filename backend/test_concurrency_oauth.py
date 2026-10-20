@@ -15,6 +15,14 @@ from backend.main import (
 from backend import youtube_uploader
 
 
+# Kredensial dummy: CI tidak punya file .env, jadi get_auth_url() akan raise
+# ValueError tanpa ini. Nilainya tidak dipakai untuk request jaringan apa pun.
+_OAUTH_ENV = {
+    "YOUTUBE_CLIENT_ID": "test-client-id.apps.googleusercontent.com",
+    "YOUTUBE_CLIENT_SECRET": "test-client-secret",
+}
+
+
 class ConcurrencyAndOAuthTest(unittest.TestCase):
     def setUp(self):
         # Reset state aktif
@@ -74,6 +82,7 @@ class ConcurrencyAndOAuthTest(unittest.TestCase):
         self.assertEqual(res_invalid.status_code, 307)
         self.assertIn("youtube_auth=failed", res_invalid.headers.get("location", ""))
 
+    @patch.dict(os.environ, _OAUTH_ENV)
     def test_youtube_oauth_exchange_reuses_pkce_verifier(self):
         _, state = youtube_uploader.get_auth_url()
         verifier = youtube_uploader._PENDING_OAUTH_STATES[state].get("code_verifier")
@@ -103,6 +112,7 @@ class ConcurrencyAndOAuthTest(unittest.TestCase):
                  patch.object(youtube_uploader.requests, "post", side_effect=AssertionError("OAuth flow must not fall back")):
                 self.assertTrue(youtube_uploader.save_credentials_from_code("auth-code", state=state))
 
+    @patch.dict(os.environ, _OAUTH_ENV)
     def test_youtube_oauth_fallback_reuses_pkce_verifier(self):
         _, state = youtube_uploader.get_auth_url()
         verifier = youtube_uploader._PENDING_OAUTH_STATES[state].get("code_verifier")

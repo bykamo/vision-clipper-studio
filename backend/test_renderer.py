@@ -28,8 +28,9 @@ class RendererIntegrityTest(unittest.TestCase):
             tf.flush()
             self.assertFalse(_validate_rendered_video(tf.name))
 
+    @patch("backend.renderer.get_ffprobe_binary", return_value="ffprobe")
     @patch("backend.renderer.subprocess.run")
-    def test_validate_rendered_video_accepts_valid_probe(self, mock_run):
+    def test_validate_rendered_video_accepts_valid_probe(self, mock_run, _mock_ffprobe):
         with tempfile.NamedTemporaryFile(suffix=".mp4") as tf:
             tf.write(b"x" * 2048)
             tf.flush()

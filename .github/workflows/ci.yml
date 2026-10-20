@@ -36,7 +36,8 @@ jobs:
           pip install fastapi uvicorn pydantic requests python-dotenv \
             opencv-python-headless numpy moviepy proglog pillow \
             webvtt-py google-auth google-auth-oauthlib google-auth-httplib2 \
-            google-api-python-client yt-dlp
+            google-api-python-client yt-dlp \
+            httpx youtube-transcript-api
 
       - name: Ruff (bug-level rules)
         run: ruff check backend
