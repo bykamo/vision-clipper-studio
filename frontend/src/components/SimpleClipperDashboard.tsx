@@ -255,7 +255,7 @@ export const SimpleClipperDashboard: React.FC = () => {
   const [previewClipWords, setPreviewClipWords] = useState<PreviewWord[]>([]);
 
   // Settings State
-  const [clipCount, setClipCount] = useState<number>(4);
+  const [clipCount, setClipCount] = useState<number>(6);
   // Alur sidebar bertahap: step 1–2 tampil dulu, step 3–5 dibuka setelah
   // pre-render (analisis dimulai / hasil render dimuat). Sekali terbuka,
   // tetap terbuka sampai workflow di-reset.
@@ -1576,72 +1576,76 @@ export const SimpleClipperDashboard: React.FC = () => {
 
   return (
     <div
-      className={`flex h-screen w-screen flex-col overflow-hidden ${themeClasses.bg} font-['Instrument_Sans',_'Plus_Jakarta_Sans',_sans-serif] antialiased`}
+      className={`flex h-screen w-screen flex-col overflow-hidden max-lg:h-auto max-lg:min-h-[100dvh] max-lg:w-full max-lg:overflow-visible ${themeClasses.bg} font-['Instrument_Sans',_'Plus_Jakarta_Sans',_sans-serif] antialiased`}
     >
       {/* ─────────────────────────────────────────────────────────────
           1. TOP APP HEADER
          ───────────────────────────────────────────────────────────── */}
       <header
-        className={`flex h-14 flex-shrink-0 items-center justify-between ${themeClasses.header} rounded-2xl border px-5 shadow-lg z-20 mx-3 mt-3`}
+        className={`flex h-14 flex-shrink-0 items-center justify-between max-lg:h-auto max-lg:flex-wrap max-lg:gap-2 max-lg:px-3 max-lg:py-2.5 max-md:h-12 max-md:flex-nowrap max-md:gap-1.5 max-md:px-2.5 max-md:py-1.5 ${themeClasses.header} rounded-2xl border px-5 shadow-lg z-20 mx-3 mt-3`}
       >
         {/* Left: Brand Logo & Title */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 max-lg:order-1 max-md:min-w-0">
           <img
             src="/images/logo-banner-transparent.png"
             alt="VisionClipper Studio"
-            className="h-9 w-auto object-contain select-none filter drop-shadow-sm"
+            className="h-9 max-md:h-6 w-auto object-contain select-none filter drop-shadow-sm"
           />
         </div>
 
         {/* Center: Mode Switcher Pills */}
-        <div className="flex items-center rounded-full bg-slate-900/90 p-1 border border-slate-800 font-['Outfit',_sans-serif]">
+        <div className="flex items-center rounded-full bg-slate-900/90 p-1 border border-slate-800 font-['Outfit',_sans-serif] max-lg:order-3 max-lg:w-full max-lg:justify-center max-md:order-2 max-md:w-auto max-md:flex-none max-md:p-0.5">
           <button
             onClick={() => setActiveTab('hook')}
-            className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold transition-all ${
+            title="Hook Cutter"
+            className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold transition-all max-lg:flex-1 max-lg:justify-center max-md:flex-none max-md:gap-1 max-md:px-2 max-md:py-1 ${
               activeTab === 'hook' ? themeClasses.pillActive : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <ScissorsIcon className="h-3.5 w-3.5 stroke-[2]" />
-            <span>Hook Cutter</span>
+            <span className="max-md:hidden">Hook Cutter</span>
+            <span className="hidden max-md:inline text-[10px]">Hook</span>
           </button>
 
           <button
             onClick={() => setActiveTab('affiliate')}
-            className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold transition-all ${
+            title="Affiliate Clipper"
+            className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold transition-all max-lg:flex-1 max-lg:justify-center max-md:flex-none max-md:gap-1 max-md:px-2 max-md:py-1 ${
               activeTab === 'affiliate'
                 ? themeClasses.pillActive
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <ShoppingBagIcon className="h-3.5 w-3.5 stroke-[2]" />
-            <span>Affiliate Clipper</span>
+            <span className="max-md:hidden">Affiliate Clipper</span>
+            <span className="hidden max-md:inline text-[10px]">Affiliate</span>
           </button>
         </div>
 
         {/* Right: Active Processing Badge & Studio Settings Icon */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 max-lg:order-2 max-lg:ml-auto max-md:order-3 max-md:gap-1.5">
           {status === 'processing' ? (
-            <div className="flex items-center gap-2 rounded-full bg-amber-950/60 border border-amber-500/40 px-3 py-1 text-xs font-bold text-amber-400 font-['Outfit',_sans-serif]">
+            <div className="flex items-center gap-2 rounded-full bg-amber-950/60 border border-amber-500/40 px-3 py-1 max-md:px-2 max-md:py-0.5 text-xs font-bold text-amber-400 font-['Outfit',_sans-serif]">
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"></span>
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500"></span>
               </span>
-              <span className="tracking-wider uppercase text-[10px]">PROCESSING</span>
+              <span className="tracking-wider uppercase text-[10px] max-md:hidden">PROCESSING</span>
             </div>
           ) : status === 'complete' ? (
-            <div className="flex items-center gap-1.5 rounded-full bg-emerald-950/60 border border-emerald-500/40 px-3 py-1 text-xs font-semibold text-emerald-400 font-['Outfit',_sans-serif]">
+            <div className="flex items-center gap-1.5 rounded-full bg-emerald-950/60 border border-emerald-500/40 px-3 py-1 max-md:px-2 max-md:py-0.5 text-xs font-semibold text-emerald-400 font-['Outfit',_sans-serif]">
               <CheckIcon className="h-3 w-3 stroke-[3]" />
-              <span className="tracking-wider uppercase text-[10px]">COMPLETE</span>
+              <span className="tracking-wider uppercase text-[10px] max-md:hidden">COMPLETE</span>
             </div>
           ) : status === 'error' ? (
-            <div className="flex items-center gap-1.5 rounded-full bg-rose-950/60 border border-rose-500/40 px-3 py-1 text-xs font-semibold text-rose-400 font-['Outfit',_sans-serif]">
+            <div className="flex items-center gap-1.5 rounded-full bg-rose-950/60 border border-rose-500/40 px-3 py-1 max-md:px-2 max-md:py-0.5 text-xs font-semibold text-rose-400 font-['Outfit',_sans-serif]">
               <span className="h-2 w-2 rounded-full bg-rose-500"></span>
-              <span className="tracking-wider uppercase text-[10px]">ERROR</span>
+              <span className="tracking-wider uppercase text-[10px] max-md:hidden">ERROR</span>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 rounded-full bg-emerald-950/60 border border-emerald-500/40 px-3 py-1 text-xs font-semibold text-emerald-400 font-['Outfit',_sans-serif]">
+            <div className="flex items-center gap-1.5 rounded-full bg-emerald-950/60 border border-emerald-500/40 px-3 py-1 max-md:px-2 max-md:py-0.5 text-xs font-semibold text-emerald-400 font-['Outfit',_sans-serif]">
               <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span className="tracking-wider uppercase text-[10px]">READY</span>
+              <span className="tracking-wider uppercase text-[10px] max-md:hidden">READY</span>
             </div>
           )}
 
@@ -1649,7 +1653,7 @@ export const SimpleClipperDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => handleOpenSettings()}
-            className={`relative flex h-9 w-9 items-center justify-center rounded-xl border transition-all shadow-sm active:scale-95 cursor-pointer ${
+            className={`relative flex h-9 w-9 max-md:h-8 max-md:w-8 items-center justify-center rounded-xl border transition-all shadow-sm active:scale-95 cursor-pointer ${
               aiConfig && !aiConfig.ready
                 ? 'border-amber-500/60 bg-amber-500/20 text-amber-300 ring-2 ring-amber-500/30 animate-pulse'
                 : 'border-slate-800 bg-slate-900/90 text-slate-300 hover:text-emerald-400 hover:border-emerald-500/40 hover:bg-slate-800'
@@ -1657,7 +1661,7 @@ export const SimpleClipperDashboard: React.FC = () => {
             title="Pengaturan Studio (Model AI, YouTube, TikTok)"
           >
             <Cog6ToothIcon
-              className={`h-5 w-5 stroke-[1.8] ${aiConfig && !aiConfig.ready ? 'text-amber-400' : 'text-slate-300 hover:text-emerald-400'}`}
+              className={`h-5 w-5 max-md:h-4 max-md:w-4 stroke-[1.8] ${aiConfig && !aiConfig.ready ? 'text-amber-400' : 'text-slate-300 hover:text-emerald-400'}`}
             />
             {aiConfig && !aiConfig.ready ? (
               <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
@@ -1675,7 +1679,7 @@ export const SimpleClipperDashboard: React.FC = () => {
 
       {/* AI Warning Banner when not configured */}
       {aiConfig && !aiConfig.ready && (
-        <div className="flex items-center justify-between bg-gradient-to-r from-amber-950/90 via-amber-900/60 to-slate-950/90 border-b border-amber-500/40 px-5 py-2 text-xs text-amber-200 z-10 shadow-sm flex-shrink-0">
+        <div className="flex items-center justify-between max-lg:flex-col max-lg:items-start max-lg:gap-2 max-lg:px-4 bg-gradient-to-r from-amber-950/90 via-amber-900/60 to-slate-950/90 border-b border-amber-500/40 px-5 py-2 text-xs text-amber-200 z-10 shadow-sm flex-shrink-0">
           <div className="flex items-center gap-2.5">
             <ExclamationTriangleIcon className="h-4 w-4 text-amber-400 flex-shrink-0" />
             <span>
@@ -1686,7 +1690,7 @@ export const SimpleClipperDashboard: React.FC = () => {
           </div>
           <button
             onClick={() => handleOpenSettings('ai')}
-            className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-all shadow-sm active:scale-95 cursor-pointer ml-3 flex-shrink-0"
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-all shadow-sm active:scale-95 cursor-pointer ml-3 max-lg:ml-0 flex-shrink-0"
           >
             <Cog6ToothIcon className="h-3.5 w-3.5 stroke-[2.5]" />
             <span>Buka Pengaturan AI</span>
@@ -1697,11 +1701,11 @@ export const SimpleClipperDashboard: React.FC = () => {
       {/* ─────────────────────────────────────────────────────────────
           2. MAIN CONTENT: 3-COLUMN WORKSPACE
          ───────────────────────────────────────────────────────────── */}
-      <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-3 gap-3 px-3 pb-3 pt-3">
+      <div className="flex-1 min-h-0 overflow-hidden grid grid-cols-1 lg:grid-cols-3 gap-3 px-3 pb-3 pt-3 max-lg:flex-none max-lg:overflow-visible">
         {/* ── COLUMN 1: LEFT SIDEBAR (SETTINGS & CONTROLS) ── */}
         <aside
           ref={sidebarRef}
-          className={`flex min-h-0 flex-col rounded-2xl border ${themeClasses.sidebar} p-3.5 overflow-y-auto scrollbar-thin`}
+          className={`flex min-h-0 flex-col rounded-2xl border ${themeClasses.sidebar} p-3.5 overflow-y-auto scrollbar-thin max-lg:overflow-visible`}
         >
           {/* ═══ WORKFLOW STEPPER (numbered vertical timeline) ═══ */}
 
@@ -2000,7 +2004,7 @@ export const SimpleClipperDashboard: React.FC = () => {
           </StepCard>
 
           {/* STICKY BOTTOM GENERATE BUTTON */}
-          <div className="mt-auto pt-2.5 flex items-center gap-2 sticky bottom-0 bg-[#0e1218] border-t border-slate-800/80 pb-1.5">
+          <div className="mt-auto pt-2.5 flex items-center gap-2 sticky bottom-0 bg-[#0e1218] border-t border-slate-800/80 pb-1.5 max-lg:static max-lg:mt-2">
             <button
               onClick={sourceKind === 'render-folder' ? undefined : handleStartProcessing}
               disabled={isProcessing || sourceKind === 'render-folder'}
@@ -2039,7 +2043,7 @@ export const SimpleClipperDashboard: React.FC = () => {
 
         {/* ── COLUMN 2: CENTER WORKSPACE (iPHONE PREVIEW MOCKUP) ── */}
         {/* PhonePreview renders its own card (bg/border/padding) — no extra wrapper here */}
-        <section className="flex min-h-0 flex-col overflow-hidden">
+        <section className="flex min-h-0 flex-col overflow-hidden max-lg:overflow-visible max-lg:min-h-[560px]">
           <PhonePreview
             framingMode={framingMode}
             selectedPresetId={selectedPresetId}
@@ -2054,18 +2058,18 @@ export const SimpleClipperDashboard: React.FC = () => {
             isRenderedClip={Boolean(previewOutputClip)}
             isProcessing={isProcessing}
             subPosition={subPosition}
-            watermarkEnabled={watermarkEnabled}
+            watermarkEnabled={watermarkEnabled && advancedStepsVisible}
             sourceWatermark={sourceWatermark}
             accountWatermark={accountWatermark}
           />
         </section>
 
         {/* ── COLUMN 3: RIGHT WORKSPACE (60% WORKSPACE / 40% PERMANENT LOG) ── */}
-        <main className="flex min-h-0 flex-col h-full overflow-hidden">
+        <main className="flex min-h-0 flex-col h-full overflow-hidden max-lg:h-auto">
           {/* ── TOP SECTION: 60% WORKSPACE (CLIP PREVIEW / OUTPUT / STATUS) ── */}
-          <div className="flex-[6] min-h-0 flex flex-col overflow-hidden">
+          <div className="flex-[6] min-h-0 flex flex-col overflow-hidden max-lg:flex-none">
             <div
-              className={`rounded-2xl border border-slate-800/80 ${themeClasses.card} flex flex-col h-full overflow-hidden`}
+              className={`rounded-2xl border border-slate-800/80 ${themeClasses.card} flex flex-col h-full max-lg:h-[400px] overflow-hidden`}
             >
               {/* PERSISTENT TERMINAL HEADER (all phases) */}
               <div className="flex h-8 items-center justify-between px-3.5 border-b border-slate-800/80 bg-[#161b22] flex-shrink-0">
@@ -2575,8 +2579,8 @@ export const SimpleClipperDashboard: React.FC = () => {
           </div>
 
           {/* ── BOTTOM SECTION: PERMANENT PROCESS LOG (40% SPACE) ── */}
-          <div className="flex-[4] min-h-0 flex flex-col overflow-hidden pt-2">
-            <div className="rounded-xl border border-slate-800/90 bg-[#0d1117] overflow-hidden flex flex-col h-full">
+          <div className="flex-[4] min-h-0 flex flex-col overflow-hidden pt-2 max-lg:flex-none">
+            <div className="rounded-xl border border-slate-800/90 bg-[#0d1117] overflow-hidden flex flex-col h-full max-lg:h-[260px]">
               {/* Terminal Window Header */}
               <div className="flex h-8 items-center justify-between px-3.5 border-b border-slate-800/80 bg-[#161b22] flex-shrink-0">
                 {/* Left: macOS Window Circles & Dynamic Phase Title */}
@@ -2812,7 +2816,7 @@ export const SimpleClipperDashboard: React.FC = () => {
          ───────────────────────────────────────────────────────────── */}
       {ttModalOpen && selectedClipForTt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-lg rounded-2xl bg-slate-900 p-6 shadow-2xl border border-slate-800 text-slate-100 flex flex-col max-h-[90vh] overflow-y-auto">
+          <div className="w-full max-w-lg rounded-2xl bg-slate-900 p-6 max-sm:p-4 shadow-2xl border border-slate-800 text-slate-100 flex flex-col max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
               <div className="flex items-center gap-2.5">
@@ -2940,7 +2944,7 @@ export const SimpleClipperDashboard: React.FC = () => {
          ───────────────────────────────────────────────────────────── */}
       {ytModalOpen && selectedClipForYt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-lg rounded-2xl bg-slate-900 p-6 shadow-2xl border border-slate-800 text-slate-100 flex flex-col max-h-[90vh] overflow-y-auto">
+          <div className="w-full max-w-lg rounded-2xl bg-slate-900 p-6 max-sm:p-4 shadow-2xl border border-slate-800 text-slate-100 flex flex-col max-h-[90vh] overflow-y-auto">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
               <div className="flex items-center gap-2.5">
@@ -3328,7 +3332,7 @@ export const SimpleClipperDashboard: React.FC = () => {
       {toast && (
         <aside
           aria-live="polite"
-          className="fixed bottom-6 right-6 z-50 flex items-start gap-3 p-4 rounded-2xl bg-[#161d27]/95 border border-slate-700/80 shadow-[0_20px_50px_rgba(0,0,0,0.85)] backdrop-blur-xl max-w-sm w-full animate-in slide-in-from-bottom-5 fade-in duration-300"
+          className="fixed bottom-6 right-6 z-50 flex items-start gap-3 p-4 rounded-2xl bg-[#161d27]/95 border border-slate-700/80 shadow-[0_20px_50px_rgba(0,0,0,0.85)] backdrop-blur-xl max-w-sm w-full animate-in slide-in-from-bottom-5 fade-in duration-300 max-lg:bottom-4 max-lg:right-4 max-lg:left-4 max-lg:w-auto"
         >
           <div
             className={`flex h-9 w-9 items-center justify-center rounded-xl flex-shrink-0 ${

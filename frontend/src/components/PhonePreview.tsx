@@ -607,9 +607,9 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
       : '#fyp #foryou #trending #viral';
 
   return (
-    <div className="flex flex-col h-full w-full rounded-2xl bg-[#090d13] border border-slate-800/80 p-3 sm:p-3.5 shadow-xl overflow-hidden">
+    <div className="flex flex-col h-full max-lg:h-auto w-full rounded-2xl bg-[#090d13] border border-slate-800/80 p-3 sm:p-3.5 max-sm:p-2.5 shadow-xl overflow-hidden">
       {/* ── TOP HEADER OF PREVIEW + SOCIAL PLATFORM SWITCHER ── */}
-      <div className="flex items-center justify-between mb-3 px-1 gap-2 flex-shrink-0">
+      <div className="flex items-center justify-between mb-3 max-sm:mb-2 px-1 gap-2 max-sm:gap-1.5 flex-shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <ViewfinderCircleIcon
             className={`h-4 w-4 flex-shrink-0 ${isRenderedClip ? 'text-amber-400' : 'text-emerald-400'}`}
@@ -687,7 +687,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
          ───────────────────────────────────────────────────────────── */}
       <div
         ref={stageRef}
-        className="flex flex-1 min-h-0 w-full items-center justify-center p-1 overflow-hidden relative select-none"
+        className="flex flex-1 min-h-0 w-full items-center justify-center p-1 overflow-hidden relative select-none max-lg:flex-none max-lg:min-h-[460px]"
       >
         {/* Subtle Ambient Radial Lighting Floor */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-white/[0.02] via-transparent to-transparent pointer-events-none -z-10" />
@@ -1471,8 +1471,9 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                 )}
 
                 {/* ── LIVE GLASS WATERMARK BADGES (Top Safe Zone) ── */}
-                {/* Selalu tampil selama watermark aktif supaya branding ikut
-                    terlihat pada tahap pre-render, bukan hanya setelah render. */}
+                {/* Parent hanya mengaktifkan `watermarkEnabled` setelah step
+                    Branding terbuka (pre-render), jadi badge tidak muncul di
+                    tahap config awal. */}
                 {watermarkEnabled && !isRenderedClip && (
                   <div className="absolute top-12 inset-x-3.5 flex items-center justify-between pointer-events-none z-30">
                     <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#121418]/75 backdrop-blur-md border border-white/15 shadow-[0_4px_12px_rgba(0,0,0,0.5)] max-w-[55%]">

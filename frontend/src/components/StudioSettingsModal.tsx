@@ -213,6 +213,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
   const navItems: Array<{
     key: 'ai' | 'whisper' | 'youtube' | 'tiktok';
     label: string;
+    short: string;
     desc: string;
     icon: React.ReactNode;
     activeChip: string;
@@ -223,6 +224,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
     {
       key: 'ai',
       label: 'Model AI (LLM)',
+      short: 'AI',
       desc: 'Analisis & Scoring',
       icon: <Cpu className="h-4 w-4" />,
       activeChip: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300',
@@ -233,6 +235,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
     {
       key: 'whisper',
       label: 'Groq Whisper',
+      short: 'Whisper',
       desc: 'Transkripsi LPU ~3s',
       icon: <GroqLogo className="h-4 w-4" />,
       activeChip: 'bg-orange-500/15 border-orange-500/40 text-orange-300',
@@ -243,6 +246,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
     {
       key: 'youtube',
       label: 'YouTube Shorts',
+      short: 'YouTube',
       desc: 'Channel & Upload',
       icon: <YouTubeLogo className="h-4 w-4" />,
       activeChip: 'bg-red-500/15 border-red-500/40 text-red-400',
@@ -253,6 +257,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
     {
       key: 'tiktok',
       label: 'TikTok Studio',
+      short: 'TikTok',
       desc: 'Golden Codec 9:16',
       icon: <TikTokLogo className="h-4 w-4" />,
       activeChip: 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300',
@@ -269,30 +274,30 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-3 sm:p-5 md:p-8 animate-in fade-in-0 duration-200">
-      <div className="relative w-full max-w-5xl h-[680px] max-h-[92vh] rounded-2xl border border-slate-800/80 bg-[#0f141b] p-0 shadow-[0_25px_60px_rgba(0,0,0,0.85)] text-slate-100 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 font-['Instrument_Sans',_'Plus_Jakarta_Sans',_sans-serif]">
+      <div className="relative w-full max-w-5xl h-[680px] max-h-[92vh] max-md:h-[calc(100dvh-1.5rem)] max-md:max-h-[calc(100dvh-1.5rem)] max-md:rounded-xl rounded-2xl border border-slate-800/80 bg-[#0f141b] p-0 shadow-[0_25px_60px_rgba(0,0,0,0.85)] text-slate-100 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 font-['Instrument_Sans',_'Plus_Jakarta_Sans',_sans-serif]">
         {/* Ambient top glow */}
         <div
-          className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 h-48 w-[420px] rounded-full bg-emerald-500/10 blur-[80px]"
+          className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 h-48 w-full max-w-[420px] rounded-full bg-emerald-500/10 blur-[80px]"
           aria-hidden="true"
         />
 
         {/* Top Header Bar */}
-        <div className="relative px-6 py-4 border-b border-slate-800/80 flex items-center justify-between bg-[#0f141b] flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/20 to-slate-800 border border-emerald-500/40 text-emerald-400 shadow-sm flex-shrink-0">
-              <Settings2 className="h-5 w-5 stroke-[1.8]" />
+        <div className="relative px-6 max-md:px-3.5 py-4 max-md:py-2.5 border-b border-slate-800/80 flex items-center justify-between bg-[#0f141b] flex-shrink-0 gap-2">
+          <div className="flex items-center gap-3 max-md:gap-2 min-w-0">
+            <div className="flex h-9 w-9 max-md:h-8 max-md:w-8 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/20 to-slate-800 border border-emerald-500/40 text-emerald-400 shadow-sm flex-shrink-0">
+              <Settings2 className="h-5 w-5 max-md:h-4 max-md:w-4 stroke-[1.8]" />
             </div>
-            <div>
-              <h2 className="text-base font-bold tracking-tight text-white font-['Outfit']">
+            <div className="min-w-0">
+              <h2 className="text-base max-md:text-sm font-bold tracking-tight text-white font-['Outfit'] truncate">
                 Pengaturan Studio
               </h2>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-400 max-md:hidden">
                 Kelola AI LLM engine, transkripsi audio Whisper, dan integrasi channel publikasi.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <span
               className={`hidden md:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
                 aiConfig?.groq_key_set
@@ -333,13 +338,13 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
         {/* Master-Detail Split Layout */}
         <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
           {/* ─── LEFT SIDEBAR NAVIGATION ─── */}
-          <aside className="w-full md:w-64 bg-[#0e1218] border-b md:border-b-0 md:border-r border-slate-800/80 p-3 sm:p-4 flex flex-col justify-between flex-shrink-0">
-            <div className="space-y-1">
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-3 mb-2 font-['Outfit']">
+          <aside className="w-full md:w-64 bg-[#0e1218] border-b md:border-b-0 md:border-r border-slate-800/80 p-3 max-md:p-2 sm:p-4 flex flex-col justify-between flex-shrink-0">
+            <div className="space-y-1 max-md:space-y-0">
+              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-3 mb-2 font-['Outfit'] max-md:hidden">
                 Kategori Pengaturan
               </p>
 
-              <nav className="flex md:flex-col gap-1.5 overflow-x-auto md:overflow-visible pb-1 md:pb-0 scrollbar-none">
+              <nav className="flex md:flex-col gap-1.5 max-md:gap-1 overflow-x-auto md:overflow-visible pb-1 md:pb-0 max-md:pb-0 scrollbar-none">
                 {navItems.map((item) => {
                   const isActive = activeTab === item.key;
                   return (
@@ -347,15 +352,15 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                       key={item.key}
                       type="button"
                       onClick={() => setActiveTab(item.key)}
-                      className={`group relative flex items-center justify-between w-full px-2.5 py-2.5 rounded-xl text-left transition-all cursor-pointer ${
+                      className={`group relative flex items-center justify-between w-full max-md:w-auto max-md:flex-1 max-md:min-w-0 max-md:justify-center px-2.5 max-md:px-1.5 py-2.5 max-md:py-1.5 rounded-xl text-left max-md:text-center transition-all cursor-pointer ${
                         isActive
                           ? 'bg-slate-800/60 border border-slate-600/60 shadow-sm'
                           : 'border border-transparent hover:bg-slate-900/80'
                       }`}
                     >
-                      <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex items-center gap-3 max-md:gap-1 min-w-0 max-md:justify-center">
                         <span
-                          className={`flex h-8 w-8 items-center justify-center rounded-lg border flex-shrink-0 transition-colors ${
+                          className={`flex h-8 w-8 max-md:h-6 max-md:w-6 items-center justify-center rounded-lg border flex-shrink-0 transition-colors ${
                             isActive
                               ? item.activeChip
                               : `${item.idleChip} group-hover:text-slate-200`
@@ -365,9 +370,14 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                         </span>
                         <div className="min-w-0">
                           <span
-                            className={`block truncate text-xs sm:text-sm font-semibold leading-tight ${isActive ? item.activeText : 'text-slate-200'}`}
+                            className={`block truncate text-xs sm:text-sm font-semibold leading-tight max-md:hidden ${isActive ? item.activeText : 'text-slate-200'}`}
                           >
                             {item.label}
+                          </span>
+                          <span
+                            className={`hidden max-md:block truncate text-[11px] font-semibold leading-tight ${isActive ? item.activeText : 'text-slate-200'}`}
+                          >
+                            {item.short}
                           </span>
                           <span
                             className={`hidden md:block text-[11px] truncate mt-0.5 font-normal ${
@@ -385,7 +395,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
             </div>
 
             {/* Bottom Status Card in Sidebar */}
-            <div className="p-3 rounded-xl border border-slate-800/80 bg-[#131820] space-y-2.5 mt-4">
+            <div className="p-3 rounded-xl border border-slate-800/80 bg-[#131820] space-y-2.5 mt-4 max-md:hidden">
               {/* Setup progress */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-[11px]">
@@ -432,7 +442,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
           {/* ─── RIGHT MAIN SETTINGS CANVAS ─── */}
           <main className="flex-1 flex flex-col min-w-0 bg-[#0b0f14] overflow-hidden">
             {/* Scrollable Canvas Body */}
-            <div className="p-6 sm:p-8 space-y-6 overflow-y-auto flex-1 scrollbar-thin">
+            <div className="p-6 sm:p-8 max-md:p-4 space-y-6 max-md:space-y-5 overflow-y-auto flex-1 scrollbar-thin">
               {/* ──────── TAB 1: MODEL AI (LLM) ──────── */}
               {activeTab === 'ai' && (
                 <div className="space-y-6">
@@ -1253,7 +1263,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
             </div>
 
             {/* Bottom Footer Bar */}
-            <div className="px-6 py-4 border-t border-slate-800/80 bg-[#0f141b] flex items-center justify-between flex-shrink-0">
+            <div className="px-6 py-4 max-md:px-3 max-md:py-2.5 border-t border-slate-800/80 bg-[#0f141b] flex items-center justify-between max-md:flex-col max-md:items-stretch max-md:gap-2 flex-shrink-0">
               <p className="hidden sm:block text-[11px] text-slate-500 truncate pr-4">
                 {activeTab === 'ai' && 'Simpan konfigurasi untuk mengaktifkan engine analisis AI.'}
                 {activeTab === 'whisper' &&
@@ -1263,13 +1273,27 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                 {activeTab === 'tiktok' && 'Ikuti alur 4 langkah untuk posting klip ke TikTok.'}
               </p>
 
-              <div className="flex items-center gap-2 ml-auto">
+              <div className="flex items-center gap-2 ml-auto max-md:ml-0 max-md:w-full max-md:flex-wrap">
+                <button
+                  type="button"
+                  onClick={onShutdown}
+                  title="Shut Down Server"
+                  aria-label="Shut Down Server"
+                  className="md:hidden flex h-9 w-9 items-center justify-center rounded-lg border border-slate-800 bg-slate-900/80 text-slate-400 hover:text-rose-300 hover:border-rose-500/40 hover:bg-rose-950/50 transition-colors cursor-pointer flex-shrink-0"
+                >
+                  <Power className="h-4 w-4" />
+                </button>
                 <Button variant="outline" onClick={() => onOpenChange(false)}>
                   Tutup
                 </Button>
 
                 {activeTab === 'ai' || activeTab === 'whisper' ? (
-                  <Button variant="default" onClick={handleSaveAiConfig} disabled={aiSaving}>
+                  <Button
+                    variant="default"
+                    onClick={handleSaveAiConfig}
+                    disabled={aiSaving}
+                    className="max-md:flex-1 max-md:min-w-0"
+                  >
                     {aiSaving ? (
                       <>
                         <RefreshCw className="h-4 w-4 animate-spin" />
@@ -1278,7 +1302,8 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                     ) : (
                       <>
                         <Check className="h-4 w-4 stroke-[2.5]" />
-                        <span>Simpan & Sambungkan ke Engine</span>
+                        <span className="max-md:hidden">Simpan & Sambungkan ke Engine</span>
+                        <span className="hidden max-md:inline">Simpan</span>
                       </>
                     )}
                   </Button>
