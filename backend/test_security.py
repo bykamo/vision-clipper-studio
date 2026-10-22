@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -279,6 +280,87 @@ class LocalApiSecurityTest(unittest.TestCase):
         self.assertFalse(_worker_is_active())
         with _WORKER_LOCK:
             self.assertIsNone(main_mod._ACTIVE_JOB)
+
+
+class RemoteHostConfigTest(unittest.TestCase):
+    """VC_* env vars must be opt-in so local desktop behaviour never changes."""
+
+    def test_default_host_allowlist_unchanged(self):
+        """Without VC_ALLOWED_HOSTS, only loopback/private hosts are accepted."""
+        with patch.dict(os.environ, {"VC_ALLOWED_HOSTS": ""}, clear=False):
+            self.assertTrue(main_module._is_allowed_host("localhost:5050"))
+            self.assertTrue(main_module._is_allowed_host("127.0.0.1:5050"))
+            self.assertTrue(main_module._is_allowed_host("192.168.1.10:5050"))
+            self.assertFalse(main_module._is_allowed_host("clipper.example.com"))
+            self.assertFalse(main_module._is_allowed_host("attacker.example"))
+
+    def test_extra_allowed_hosts_from_env(self):
+        """VC_ALLOWED_HOSTS adds domains/IPs, with or without an explicit port."""
+        env = {"VC_ALLOWED_HOSTS": "clipper.example.com, 203.0.113.10 ,"}
+        with patch.dict(os.environ, env, clear=False):
+            self.assertTrue(main_module._is_allowed_host("clipper.example.com"))
+            self.assertTrue(main_module._is_allowed_host("clipper.example.com:443"))
+            self.assertTrue(main_module._is_allowed_host("203.0.113.10:5050"))
+            # Anything not listed is still rejected.
+            self.assertFalse(main_module._is_allowed_host("attacker.example"))
+
+    def test_extra_allowed_hosts_empty_by_default(self):
+        """A blank env var must yield an empty set, never a wildcard."""
+        with patch.dict(os.environ, {"VC_ALLOWED_HOSTS": ""}, clear=False):
+            self.assertEqual(main_module._extra_allowed_hosts(), set())
+
+    def test_session_cookie_is_not_secure_by_default(self):
+        """Secure cookies break plain-HTTP local installs, so it must be opt-in."""
+        with patch.dict(os.environ, {"VC_COOKIE_SECURE": ""}, clear=False):
+            with TestClient(app) as client:
+                client.cookies.clear()
+                response = client.get("/api/session")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertNotIn("secure", response.headers["set-cookie"].lower())
+
+    def test_session_cookie_secure_when_enabled(self):
+        """VC_COOKIE_SECURE=1 is for HTTPS deployments only."""
+        with patch.dict(os.environ, {"VC_COOKIE_SECURE": "1"}, clear=False):
+            with TestClient(app) as client:
+                client.cookies.clear()
+                response = client.get("/api/session")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertIn("secure", response.headers["set-cookie"].lower())
+
+    def test_headless_picker_returns_empty_without_display(self):
+        """On a headless VPS the pickers must not spawn zenity."""
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in ("DISPLAY", "WAYLAND_DISPLAY")
+        }
+        # Force the Linux branch so this is meaningful on macOS/Windows too.
+        with patch.dict(os.environ, env, clear=True):
+            with patch.object(main_module.sys, "platform", "linux"):
+                self.assertFalse(main_module._has_desktop_session())
+                with patch.object(main_module.subprocess, "run") as run_mock:
+                    self.assertEqual(main_module._run_native_picker(), "")
+                    self.assertEqual(main_module._run_native_folder_picker(""), "")
+        run_mock.assert_not_called()
+
+    def test_picker_still_runs_with_desktop_session(self):
+        """A desktop session must keep the original zenity behaviour."""
+        env = dict(os.environ)
+        env["DISPLAY"] = ":0"
+        completed = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="/tmp/picked.mp4\n"
+        )
+        with patch.dict(os.environ, env, clear=True):
+            with patch.object(main_module.sys, "platform", "linux"):
+                with patch.object(
+                    main_module.subprocess, "run", return_value=completed
+                ) as run_mock:
+                    self.assertEqual(
+                        main_module._run_native_picker(), "/tmp/picked.mp4"
+                    )
+        self.assertTrue(run_mock.called)
 
 
 if __name__ == "__main__":

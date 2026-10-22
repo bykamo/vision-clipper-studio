@@ -1,0 +1,48 @@
+[Unit]
+Description=VisionClipper Studio (AI Viral Video Clipper)
+Documentation=https://github.com/bykamo/vision-clipper-studio
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=clipper
+Group=clipper
+WorkingDirectory=/opt/vision-clipper
+
+# Bind to loopback only. Reach the dashboard through an SSH tunnel:
+#   ssh -L 5050:127.0.0.1:5050 clipper@your-vps
+# Only set VC_HOST=0.0.0.0 if a reverse proxy (see deploy/nginx.conf.sample)
+# sits in front of it — otherwise /api/list-dir and /shutdown are exposed.
+Environment=VC_HOST=127.0.0.1
+
+# Enable ONLY when served over HTTPS. A Secure cookie is rejected over plain
+# HTTP, which would make every /api/* call return 403.
+# Environment=VC_COOKIE_SECURE=1
+
+# Extra Host/Origin allowlist for a domain or public IP. Comma separated.
+# Environment=VC_ALLOWED_HOSTS=clipper.example.com
+
+Environment=VC_MAX_DOWNLOAD_HEIGHT=1080
+Environment=PYTHONUNBUFFERED=1
+
+ExecStart=/opt/vision-clipper/.venv/bin/python -m backend.main
+Restart=on-failure
+RestartSec=5
+
+# Rendering is CPU-heavy; keep the process group killable as a unit.
+KillMode=mixed
+TimeoutStopSec=30
+
+# Hardening: the app only needs its own directory plus temp/clips/downloads.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/vision-clipper/temp /opt/vision-clipper/clips /opt/vision-clipper/downloads
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

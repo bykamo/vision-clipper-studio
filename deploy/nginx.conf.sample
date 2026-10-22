@@ -1,0 +1,63 @@
+# Optional reverse proxy for exposing VisionClipper Studio on a domain.
+#
+# NOT required for the recommended setup (SSH tunnel). Use this only when the
+# dashboard must be reachable over the internet.
+#
+# CRITICAL: proxy_buffering must be OFF. /api/analyze and /stream are
+# Server-Sent Events; with buffering on, render progress never streams and the
+# UI appears frozen until the job finishes.
+
+server {
+    listen 80;
+    server_name clipper.example.com;
+    # Redirect all HTTP to HTTPS once certs are installed.
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name clipper.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/clipper.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/clipper.example.com/privkey.pem;
+
+    # Video downloads/uploads are large.
+    client_max_body_size 0;
+
+    # The app has NO built-in login: /api/session hands a cookie to anyone who
+    # asks. Basic Auth (or equivalent) is mandatory before exposing this.
+    auth_basic "VisionClipper";
+    auth_basic_user_file /etc/nginx/.htpasswd;
+
+    location / {
+        proxy_pass http://127.0.0.1:5050;
+
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Origin https://$host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # SSE: stream log lines straight through, and keep long renders alive.
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+
+        # WebSocket upgrade (harmless if unused).
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+    }
+}
+
+# Requires this in the http{} block of nginx.conf:
+#   map $http_upgrade $connection_upgrade {
+#       default upgrade;
+#       ''      close;
+#   }
+#
+# When using this proxy, set in the systemd unit:
+#   Environment=VC_HOST=0.0.0.0
+#   Environment=VC_COOKIE_SECURE=1
+#   Environment=VC_ALLOWED_HOSTS=clipper.example.com
