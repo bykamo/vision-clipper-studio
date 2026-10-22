@@ -15,7 +15,7 @@ from backend.analyzer import (
     extract_json_block,
     PermanentLLMError,
 )
-from backend.content_rules import apply_content_rules, MAX_DURATION
+from backend.content_rules import apply_content_rules
 from backend.renderer import extract_and_format_clip
 from backend.utils import (
     log,

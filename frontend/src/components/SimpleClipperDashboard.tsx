@@ -3088,11 +3088,15 @@ export const SimpleClipperDashboard: React.FC = () => {
                   </li>
                   <li className="flex items-start gap-1.5">
                     <span className="text-emerald-400 flex-shrink-0">•</span>
-                    <span>Setelah posting: pin komentar di atas, lalu balas semua komen 1 jam pertama.</span>
+                    <span>
+                      Setelah posting: pin komentar di atas, lalu balas semua komen 1 jam pertama.
+                    </span>
                   </li>
                   <li className="flex items-start gap-1.5">
                     <span className="text-emerald-400 flex-shrink-0">•</span>
-                    <span>Pin 3 video terbaik di profil, termasuk yang paling tinggi views-nya.</span>
+                    <span>
+                      Pin 3 video terbaik di profil, termasuk yang paling tinggi views-nya.
+                    </span>
                   </li>
                 </ul>
               </div>
