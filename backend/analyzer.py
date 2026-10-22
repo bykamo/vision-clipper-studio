@@ -461,3 +461,293 @@ def extract_json_block(raw_text, job_id=None):
     except json.JSONDecodeError as e:
         log("Failed to parse LLM output as JSON:\n" + text, job_id=job_id)
         raise RuntimeError("LLM did not return valid JSON.") from e
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TWO-PASS VIRAL SELECTION
+# Pass 1 (LLM): discover a POOL of candidate moments with relative scores.
+# Pass 1.5 (code): greedily pick top-N with time + topic diversity guards.
+# Pass 2 (LLM): enrich only the SELECTED clips with caption/hashtags/titles.
+# This fixes the single-pass flaw where the model is forced to output exactly
+# N clips in one shot — producing filler clips and same-idea duplicates.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Filler openers that must never be the first spoken line of a clip.
+_FILLER_OPENERS = (
+    "jadi gini", "jadi begini", "nah", "um", "uh", "eh", "anu",
+    "so anyway", "well", "okay jadi",
+)
+
+# Hanging conjunctions a clip must never end on.
+_HANGING_ENDINGS = (
+    "karena", "tapi", "dan", "lalu", "kemudian", "sehingga", "artinya",
+    "jadi", "makanya", "yang", "di", "ke", "dengan", "untuk", "agar",
+    "supaya", "kalau", "jika", "when", "because", "so", "and", "then",
+)
+
+
+def _token_set(text):
+    """Lowercased alphanumeric tokens, for rough topic-similarity checks."""
+    return set(re.findall(r"[a-z0-9]+", (text or "").lower()))
+
+
+def _jaccard(a, b):
+    sa, sb = _token_set(a), _token_set(b)
+    if not sa or not sb:
+        return 0.0
+    return len(sa & sb) / len(sa | sb)
+
+
+def build_transcript_slice(segments, start, end, pad_sec=3.0):
+    """Transcript lines overlapping [start-pad, end+pad], for enrichment context."""
+    lines = []
+    lo, hi = float(start) - pad_sec, float(end) + pad_sec
+    for seg in segments or []:
+        try:
+            s, e = float(seg["start"]), float(seg["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if e >= lo and s <= hi:
+            mm_s, ss_s = divmod(int(s), 60)
+            hh_s, mm_s = divmod(mm_s, 60)
+            mm_e, ss_e = divmod(int(e), 60)
+            hh_e, mm_e = divmod(mm_e, 60)
+            lines.append(
+                f"[{hh_s:02d}:{mm_s:02d}:{ss_s:02d} --> {hh_e:02d}:{mm_e:02d}:{ss_e:02d}] "
+                f"{(seg.get('text') or '').strip()}"
+            )
+    return "\n".join(lines)
+
+
+def select_diverse_clips(candidates, num_clips=5, min_gap_sec=60.0, diversity_threshold=0.55):
+    """Greedy diversity-aware pick from scored candidates.
+
+    Walks candidates from highest viral_score down and keeps a candidate only
+    when it (a) does not overlap / sit too close to an already-picked clip and
+    (b) is not about the same topic as an already-picked clip (Jaccard over
+    title + topic_label tokens).
+
+    Returns the picked dicts in pick order with an added 1-based "index".
+    May return FEWER than num_clips — that is intentional: no filler clips.
+    """
+    scored = []
+    for c in candidates or []:
+        if not isinstance(c, dict):
+            continue
+        try:
+            s, e = float(c.get("start", 0)), float(c.get("end", 0))
+        except (TypeError, ValueError):
+            continue
+        if e <= s:
+            continue
+        try:
+            score = float(c.get("viral_score", 0) or 0)
+        except (TypeError, ValueError):
+            score = 0.0
+        scored.append((score, s, e, c))
+    scored.sort(key=lambda t: t[0], reverse=True)
+
+    try:
+        min_gap = float(min_gap_sec)
+    except (TypeError, ValueError):
+        min_gap = 60.0
+    try:
+        div_thr = float(diversity_threshold)
+    except (TypeError, ValueError):
+        div_thr = 0.55
+
+    selected = []
+    for score, s, e, c in scored:
+        if len(selected) >= num_clips:
+            break
+        # ── time guard: reject overlap AND near-duplicate placement ──
+        if any(not (e + min_gap <= ps or s >= pe + min_gap) for _, ps, pe, _ in selected):
+            continue
+        # ── topic guard: reject same-idea duplicates ──
+        text = f"{c.get('title', '')} {c.get('topic_label', '')}"
+        if any(
+            _jaccard(text, f"{o.get('title', '')} {o.get('topic_label', '')}") >= div_thr
+            for _, _, _, o in selected
+        ):
+            continue
+        selected.append((score, s, e, c))
+
+    out = []
+    for i, (score, s, e, c) in enumerate(selected, 1):
+        d = dict(c)
+        d["index"] = i
+        out.append(d)
+    return out
+
+def build_candidate_discovery_prompt(transcript_text, max_candidates=15, mode="hook"):
+    """Pass 1 of two-pass selection: discover a POOL of candidate moments.
+
+    The model acts as a SCOUT: find up to `max_candidates` moments with the
+    highest viral potential and score them RELATIVELY. A later deterministic
+    step picks the final clips with diversity guards. Quality over quota —
+    if the transcript only has 6 great moments, return 6.
+    """
+    if mode == "affiliate":
+        trigger_section = """### Sales Psychology Triggers (tag 1-3 per candidate):
+- pain_point — relatable problem/frustration
+- solution_reveal — "aha moment", product introduced as the fix
+- social_proof — testimonials, user count, reviews, endorsements
+- before_after — clear transformation contrast
+- urgency — limited time/stock pressure
+- price_anchor — vs expensive alternatives
+- cta — "link in bio", "use my code"
+- storytelling — personal anecdote building trust/desire
+### Virality Boosters (bonus):
+controversial product opinion, unexpected comparison, "I was today years old" moments"""
+        mission = "discover candidate segments with the highest AFFILIATE SALES + VIRAL potential"
+    else:
+        trigger_section = """### Tier 1 — Hook Power (most important):
+- curiosity_gap — opens a loop the viewer MUST see closed
+- pattern_interrupt — shocking statement / expectation reversal
+- controversial_claim — hot take forcing agree/disagree/share
+- direct_challenge — "nobody talks about this"
+### Tier 2 — Emotional Peak:
+- high_arousal — anger, surprise, awe (NOT boredom/sadness)
+- story_climax — peak of a story arc, not the buildup
+- truth_bomb — "this is SO true" tag-a-friend moments
+- breakthrough — goosebump motivational peaks
+### Tier 3 — Engagement Drivers:
+- debate_fuel — splits opinion 50/50 (comment goldmine)
+- info_dense — rapid-fire valuable facts (high saves)
+- humor — genuinely funny (high shares)
+- quotable — one-liners people screenshot/stitch"""
+        mission = "discover candidate segments with the highest VIRAL potential"
+
+    return f"""You are an elite viral content strategist for short-form video (TikTok, YouTube Shorts, Instagram Reels).
+
+## YOUR MISSION
+Analyze the transcript below and {mission}. You are a SCOUT, not the final editor: return UP TO {max_candidates} candidates ranked by viral_score. A later step picks the final clips and enforces topic diversity — so find MORE strong moments than needed, each centered on a DIFFERENT idea. Quality over quota: if only 6 moments are truly great, return 6.
+
+## TRANSCRIPT FORMAT
+Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
+
+## VIRAL DETECTION FRAMEWORK
+{trigger_section}
+
+## CANDIDATE RULES (MUST FOLLOW STRICTLY)
+1. SELF-CONTAINED ARC: every candidate MUST deliver a full thought: [Hook] -> [Core argument] -> [Conclusion/punchline]. NEVER cut mid-point. NEVER end on hanging conjunctions (karena..., tapi..., jadi..., artinya...).
+2. HOOK FIRST: the first 2-3 seconds MUST contain the hook. NEVER start on filler ("um", "jadi gini", "nah", "so anyway") or mid-sentence. If the hook starts slightly before the ideal segment, extend backward to capture it cleanly.
+3. DURATION: prefer 25-60 seconds. Go longer ONLY if every ~10 seconds has a payoff (no slow stretches). A tight 35s clip beats a rambling 90s one — completion rate is king.
+4. DISTINCT IDEAS: candidates may sit near each other in time, but each MUST center on a DIFFERENT idea. Do NOT return 3 candidates making the same point with different words.
+5. topic_label: 2-5 words naming the SPECIFIC idea (e.g. "tanggung jawab hidup", "gengsi vs kaya"). Used later for diversity filtering — make it precise, not generic.
+6. trigger_tags: 1-3 tags from the framework above that are actually present.
+7. SCORING (relative ranking within THIS transcript):
+   - viral_score 0-100. No two candidates may differ by < 3 points.
+   - 90+ ONLY for objectively exceptional (strong hook + high emotion + quotable).
+   - Average candidates: 60-75.
+8. EXACT TIMESTAMPS: start/end as seconds (float) matching the transcript line timestamps of the opening and concluding sentences.
+
+## RESPONSE FORMAT (ONLY valid JSON, no explanation, no markdown)
+{{
+  "video_summary": "2-3 sentences: what the video is about, who is speaking, main themes",
+  "candidates": [
+    {{
+      "start": 15.0,
+      "end": 52.5,
+      "title": "Short catchy title (max 60 chars)",
+      "topic_label": "tanggung jawab hidup",
+      "trigger_tags": ["controversial_claim", "debate_fuel"],
+      "reason": "Which triggers are present and why this can go viral",
+      "viral_score": 92
+    }}
+  ]
+}}
+
+## TRANSCRIPT
+{transcript_text}
+"""
+
+def build_clip_enrichment_prompt(clips_with_slices, video_summary="", mode="hook"):
+    """Pass 2 of two-pass selection: write titles/captions/hashtags.
+
+    `clips_with_slices`: list of dicts with keys:
+        index, start, end, title, transcript (slice text of the clip).
+    Returns a prompt asking for exactly one enrichment entry per clip,
+    in the same order. Only the SELECTED clips are enriched — never waste
+    tokens writing captions for rejected candidates.
+    """
+    if mode == "affiliate":
+        cta_rule = (
+            '- SHOP CTA: jika produk tersedia di TikTok Shop, akhiri caption dengan CTA belanja natural '
+            'seperti "ada di keranjang kuning" (maks 1 emoji 🛒). Maksimal 1 CTA per caption.\n'
+        )
+        hashtag_rule = (
+            "* Maksimal 1 tag broad (contoh: #fyp). JANGAN pakai #viral, #trending, #beranda, #foryou.\n"
+            "  * 2-3 tag NICHE spesifik yang mendeskripsikan TOPIK PERSIS klip ini (contoh: #reviewgadget, #headsetmurah).\n"
+            "  * 1-2 tag komunitas medium (pemirsa aktif, kompetisi rendah).\n"
+            "  * 1 tag nama produk/brand jika disebut.\n"
+            "  * Total 4-5 tag. Tag harus membantu algoritma MENGKATEGORIKAN video."
+        )
+        tone = "an authentic Indonesian TikTok affiliate creator"
+        good_examples = (
+            '  * "Review jujur headset Rp50 ribu ini, buat meeting online aman banget, ada di keranjang kuning"\n'
+            '  * "Nyesel baru tau barang ini sekarang, beneran ngebantu banget pas kerjaan numpuk"\n'
+            '  * "Solusi paling masuk akal buat yang pengen rapi tanpa harus keluar modal jutaan."'
+        )
+    else:
+        cta_rule = ""
+        hashtag_rule = (
+            "* Maksimal 1 tag broad (contoh: #fyp). JANGAN pakai #viral, #trending, #beranda, #foryou.\n"
+            "  * 2-3 tag NICHE spesifik yang mendeskripsikan TOPIK PERSIS klip ini (contoh: #mindsetbisnis, #psikologija, #keuanganpribadi).\n"
+            "  * 1-2 tag komunitas medium (pemirsa aktif, kompetisi rendah).\n"
+            "  * Total 4-5 tag. Tag harus membantu algoritma MENGKATEGORIKAN video."
+        )
+        tone = "an authentic Indonesian podcast/video clipper posting on TikTok"
+        good_examples = (
+            '  * "Realita pahit kenapa kerja keras doang gak bakal bikin lu kaya kalau polanya salah"\n'
+            '  * "Mindset kayak gini yang bikin banyak orang stuck bertahun-tahun tanpa sadar."\n'
+            '  * "Alasan kenapa orang yang beneran kompeten justru jarang banyak omong di publik."'
+        )
+
+    blocks = []
+    for c in clips_with_slices or []:
+        blocks.append(
+            f"### Clip {c.get('index')} [{c.get('start')}s --> {c.get('end')}s] "
+            f"(working title: {c.get('title', '')})\n{(c.get('transcript') or '').strip()}"
+        )
+    clips_block = "\n\n".join(blocks) if blocks else "(no clips)"
+
+    return f"""You are an elite short-form copywriter. Write like {tone}. Use natural, everyday colloquial Indonesian (lu-gue/gw/lo/aja/nih/banget/kan/parah/asli).
+
+## YOUR MISSION
+For EACH clip below, write 3 title_options (hook overlay text), 1 caption, and hashtags. These clips were already selected as the strongest moments — your job is packaging, not selection.
+
+## VIDEO SUMMARY (context)
+{video_summary or "(not provided)"}
+
+## CLIPS
+{clips_block}
+
+## TITLE OPTIONS (hook overlay, shown in the first 3 seconds of the video)
+- title_options[0]: curiosity angle — max 8 kata, ada angka atau spesifik (contoh: "3 kesalahan...", "90% orang...", "Rp50 ribu..."). Tidak boleh clickbait palsu: janjinya HARUS terbayar dalam klip.
+- title_options[1]: benefit angle.
+- title_options[2]: controversial/provocative angle.
+
+## CAPTION RULES (100% HUMAN CREATOR TONE, NO AI VIBES)
+- 1-2 kalimat punchy (max 100-120 chars). Maksimal 1 emoji.
+- TIKTOK SEO: sisipkan 1-2 keyword pencarian secara NATURAL dalam 40-50 karakter pertama (kalimat pembuka = yang terlihat sebelum "...selengkapnya").
+- NEVER END WITH A QUESTION: do NOT end with engagement bait ("Gimana menurut kalian?", "Setuju gak?", "Coba komen di bawah!"). End with a strong definitive statement, benefit takeaway, or hard-hitting observation.
+- FORBIDDEN AI WORDS: "Apakah kamu", "Ini dia", "Pernahkah Anda", "Yuk simak", "Tonton sampai habis", "Tahukah kamu", "Fakta menarik", "Jangan lewatkan", "Simak penjelasannya".
+{cta_rule}- GOOD EXAMPLES:
+{good_examples}
+
+## HASHTAG STRATEGY (for small/new accounts)
+{hashtag_rule}
+
+## RESPONSE FORMAT (ONLY valid JSON, no explanation, no markdown)
+{{
+  "clips": [
+    {{
+      "index": 1,
+      "title_options": ["Curiosity Title", "Benefit Title", "Controversial Title"],
+      "caption": "Realita pahit kenapa kerja keras doang gak bakal bikin lu kaya kalau polanya salah",
+      "hashtags": ["#fyp", "#mindsetbisnis", "#psikologija", "#keuanganpribadi"]
+    }}
+  ]
+}}
+Return EXACTLY one entry per input clip, in the same order, with matching "index" values.
+"""
