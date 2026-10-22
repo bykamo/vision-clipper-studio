@@ -25,6 +25,14 @@ from backend.config_wizard import (
     test_groq_connection,
     fetch_available_models,
 )
+from backend.yt_cookies import (
+    CookieFormatError,
+    delete_cookie_file,
+    get_cookie_status,
+    save_cookie_from_file,
+    save_cookie_text,
+    test_cookie_file,
+)
 from backend.utils import env_bool
 
 app = FastAPI()
@@ -1359,6 +1367,65 @@ async def api_test_groq_connection(request: Request):
         return JSONResponse(result)
     except Exception as e:
         return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+
+# ── YouTube Cookies Endpoints (dipakai yt-dlp saat mengunduh) ──
+@app.get("/api/youtube-cookies")
+async def api_get_youtube_cookies():
+    """Metadata file cookies aktif (isi file tidak pernah dikirim ke browser)."""
+    try:
+        return JSONResponse(get_cookie_status())
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.post("/api/youtube-cookies")
+async def api_save_youtube_cookies(request: Request):
+    """Simpan cookies dari teks yang ditempel atau dari path file di disk."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "Invalid JSON body"})
+
+    text = data.get("text")
+    source_path = data.get("path")
+
+    if not text and not source_path:
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Kirim 'text' (isi cookies) atau 'path' (lokasi file cookies)."},
+        )
+
+    try:
+        if text:
+            result = await asyncio.to_thread(save_cookie_text, text)
+        else:
+            result = await asyncio.to_thread(save_cookie_from_file, source_path)
+        return JSONResponse(result)
+    except CookieFormatError as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.post("/api/youtube-cookies/test")
+async def api_test_youtube_cookies(request: Request):
+    """Uji cookies: validasi format + probe ke YouTube (deteksi bot-check)."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+
+    try:
+        result = await asyncio.to_thread(test_cookie_file, probe=bool(data.get("probe", True)))
+        return JSONResponse(result)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"ok": False, "error": str(e)})
+
+@app.delete("/api/youtube-cookies")
+async def api_delete_youtube_cookies():
+    """Hapus file cookies dari disk."""
+    try:
+        return JSONResponse(delete_cookie_file())
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 # Serve static files from frontend directory (production dist or root)

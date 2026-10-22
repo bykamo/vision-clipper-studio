@@ -34,7 +34,12 @@ import { SubtitleStyleConfig, FramingMode } from '../types';
 import { SUBTITLE_PRESETS } from '../data/subtitlePresets';
 import { errorMessage, isAbortError } from '../lib/errors';
 import { PhonePreview, type PreviewWord } from './PhonePreview';
-import { StudioSettingsModal } from './StudioSettingsModal';
+import {
+  StudioSettingsModal,
+  type CookieStatus,
+  type CookieTestResult,
+  type SettingsTab,
+} from './StudioSettingsModal';
 import { AnalyzingSkeleton, RenderingSkeleton } from './SkeletonLoading';
 
 interface AiProviderPreset {
@@ -356,9 +361,7 @@ export const SimpleClipperDashboard: React.FC = () => {
 
   // Studio Settings Modal State (AI, YouTube, TikTok)
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [settingsActiveTab, setSettingsActiveTab] = useState<
-    'ai' | 'whisper' | 'youtube' | 'tiktok'
-  >('ai');
+  const [settingsActiveTab, setSettingsActiveTab] = useState<SettingsTab>('ai');
   const [aiConfig, setAiConfig] = useState<AiConfigResponse | null>(null);
   const [aiSaving, setAiSaving] = useState(false);
   const [aiTesting, setAiTesting] = useState(false);
@@ -388,6 +391,26 @@ export const SimpleClipperDashboard: React.FC = () => {
   const [aiModelsError, setAiModelsError] = useState<string | null>(null);
   const [aiModelsOpen, setAiModelsOpen] = useState(false);
 
+  // YouTube Cookies State (dipakai yt-dlp saat mengunduh)
+  const [cookieStatus, setCookieStatus] = useState<CookieStatus | null>(null);
+  const [cookieTextInput, setCookieTextInput] = useState<string>('');
+  const [cookieShowText, setCookieShowText] = useState(false);
+  const [cookiesSaving, setCookiesSaving] = useState(false);
+  const [cookiesTesting, setCookiesTesting] = useState(false);
+  const [cookiesDeleting, setCookiesDeleting] = useState(false);
+  const [cookieTestResult, setCookieTestResult] = useState<CookieTestResult | null>(null);
+
+  const fetchCookieStatus = async () => {
+    try {
+      const res = await fetch('/api/youtube-cookies');
+      if (res.ok) {
+        setCookieStatus(await res.json());
+      }
+    } catch {
+      // Backend may be starting
+    }
+  };
+
   const fetchAiConfig = async () => {
     try {
       const res = await fetch('/api/ai-config');
@@ -405,9 +428,10 @@ export const SimpleClipperDashboard: React.FC = () => {
 
   useEffect(() => {
     fetchAiConfig();
+    fetchCookieStatus();
   }, []);
 
-  const handleOpenSettings = (tab: 'ai' | 'whisper' | 'youtube' | 'tiktok' = 'ai') => {
+  const handleOpenSettings = (tab: SettingsTab = 'ai') => {
     setSettingsActiveTab(tab);
     if ((tab === 'ai' || tab === 'whisper') && aiConfig) {
       setAiSelectedProvider(aiConfig.provider || 'openrouter');
@@ -416,6 +440,11 @@ export const SimpleClipperDashboard: React.FC = () => {
       setAiApiKeyInput('');
       setAiGroqKeyInput('');
     }
+    if (tab === 'cookies') {
+      setCookieTextInput('');
+      setCookieTestResult(null);
+      fetchCookieStatus();
+    }
     setAiTestResult(null);
     setAiGroqTestResult(null);
     setSettingsModalOpen(true);
@@ -423,6 +452,15 @@ export const SimpleClipperDashboard: React.FC = () => {
 
   const handleOpenAiSettings = () => {
     handleOpenSettings('ai');
+  };
+
+  /** Switching to the Cookies tab refreshes status so the card is never stale. */
+  const handleSettingsTabChange = (tab: SettingsTab) => {
+    setSettingsActiveTab(tab);
+    if (tab === 'cookies') {
+      setCookieTestResult(null);
+      fetchCookieStatus();
+    }
   };
 
   const handleSelectProvider = (providerKey: string) => {
@@ -560,6 +598,108 @@ export const SimpleClipperDashboard: React.FC = () => {
     } finally {
       setAiSaving(false);
     }
+  };
+
+  const handleSaveCookies = async () => {
+    const text = cookieTextInput.trim();
+    if (!text) return;
+
+    setCookiesSaving(true);
+    setCookieTestResult(null);
+    try {
+      const res = await fetch('/api/youtube-cookies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal menyimpan cookies.');
+      }
+      setCookieStatus(data);
+      setCookieTextInput('');
+      showToast(
+        'Cookies YouTube Disimpan',
+        `${data.cookie_count || 0} cookie dari ${data.domain_count || 0} domain siap dipakai unduhan.`,
+        'success',
+      );
+      const ts = new Date().toTimeString().split(' ')[0];
+      setLogs((prev) => [
+        ...prev,
+        `[${ts}] [SYSTEM] 🍪 Cookies YouTube diperbarui (${data.cookie_count || 0} cookie).`,
+      ]);
+    } catch (e) {
+      showToast('Gagal Menyimpan Cookies', errorMessage(e, 'Format cookies tidak valid.'), 'error');
+    } finally {
+      setCookiesSaving(false);
+    }
+  };
+
+  const handleTestCookies = async () => {
+    setCookiesTesting(true);
+    setCookieTestResult(null);
+    try {
+      const res = await fetch('/api/youtube-cookies/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ probe: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      setCookieTestResult(data);
+      if (res.ok) {
+        showToast(
+          data.ok ? 'Cookies Valid' : 'Cookies Bermasalah',
+          data.ok
+            ? 'yt-dlp berhasil mengakses YouTube dengan cookies ini.'
+            : data.error || 'Cookies ditolak YouTube.',
+          data.ok ? 'success' : 'error',
+        );
+      }
+    } catch (e) {
+      setCookieTestResult({
+        ok: false,
+        error: errorMessage(e, 'Gagal menghubungi backend.'),
+      });
+    } finally {
+      setCookiesTesting(false);
+    }
+  };
+
+  const handleDeleteCookies = async () => {
+    setCookiesDeleting(true);
+    setCookieTestResult(null);
+    try {
+      const res = await fetch('/api/youtube-cookies', { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal menghapus cookies.');
+      }
+      setCookieStatus(data);
+      setCookieTextInput('');
+      showToast('Cookies Dihapus', 'File cookies.txt sudah dihapus dari disk.', 'info');
+    } catch (e) {
+      showToast('Gagal Menghapus', errorMessage(e, 'Terjadi kesalahan saat menghapus.'), 'error');
+    } finally {
+      setCookiesDeleting(false);
+    }
+  };
+
+  const handleCookieFilePick = (file: File | null) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCookieTextInput(typeof reader.result === 'string' ? reader.result : '');
+      setCookieTestResult(null);
+      showToast(
+        'File Cookies Dimuat',
+        `${file.name} siap disimpan. Klik "Simpan Cookies" untuk mengaktifkan.`,
+        'info',
+      );
+    };
+    reader.onerror = () => {
+      showToast('Gagal Membaca File', `Tidak bisa membaca ${file.name}.`, 'error');
+    };
+    reader.readAsText(file);
   };
 
   // Toast Popup Message State (Bottom-Right)
@@ -3467,7 +3607,7 @@ export const SimpleClipperDashboard: React.FC = () => {
         open={settingsModalOpen}
         onOpenChange={setSettingsModalOpen}
         activeTab={settingsActiveTab}
-        setActiveTab={setSettingsActiveTab}
+        setActiveTab={handleSettingsTabChange}
         aiConfig={aiConfig}
         aiSelectedProvider={aiSelectedProvider}
         handleSelectProvider={handleSelectProvider}
@@ -3507,6 +3647,20 @@ export const SimpleClipperDashboard: React.FC = () => {
         checkYouTubeStatus={checkYouTubeStatus}
         handleConnectYouTube={handleConnectYouTube}
         handleDisconnectYouTube={handleDisconnectYouTube}
+        cookieStatus={cookieStatus}
+        cookieTextInput={cookieTextInput}
+        setCookieTextInput={setCookieTextInput}
+        cookieShowText={cookieShowText}
+        setCookieShowText={setCookieShowText}
+        handleSaveCookies={handleSaveCookies}
+        cookiesSaving={cookiesSaving}
+        handleTestCookies={handleTestCookies}
+        cookiesTesting={cookiesTesting}
+        cookieTestResult={cookieTestResult}
+        setCookieTestResult={setCookieTestResult}
+        handleDeleteCookies={handleDeleteCookies}
+        cookiesDeleting={cookiesDeleting}
+        handleCookieFilePick={handleCookieFilePick}
         onShutdown={() => {
           setSettingsModalOpen(false);
           setServerModalOpen(true);
@@ -3519,7 +3673,13 @@ export const SimpleClipperDashboard: React.FC = () => {
       {toast && (
         <aside
           aria-live="polite"
-          className="fixed bottom-6 right-6 z-50 flex items-start gap-3 p-4 rounded-2xl bg-[#161d27]/95 border border-slate-700/80 shadow-[0_20px_50px_rgba(0,0,0,0.85)] backdrop-blur-xl max-w-sm w-full animate-in slide-in-from-bottom-5 fade-in duration-300 max-lg:bottom-4 max-lg:right-4 max-lg:left-4 max-lg:w-auto"
+          className={`fixed z-[60] flex items-start gap-3 p-4 rounded-2xl bg-[#161d27]/95 border border-slate-700/80 shadow-[0_20px_50px_rgba(0,0,0,0.85)] backdrop-blur-xl max-w-sm w-full animate-in fade-in duration-300 ${
+            settingsModalOpen
+              ? // Saat Pengaturan Studio terbuka, tampilkan di atas supaya tidak
+                // menutupi tombol Simpan di footer modal.
+                'top-4 right-4 max-lg:left-4 max-lg:w-auto max-lg:top-2'
+              : 'bottom-6 right-6 max-lg:bottom-4 max-lg:right-4 max-lg:left-4 max-lg:w-auto'
+          }`}
         >
           <div
             className={`flex h-9 w-9 items-center justify-center rounded-xl flex-shrink-0 ${

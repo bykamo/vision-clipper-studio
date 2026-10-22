@@ -5,6 +5,7 @@ import subprocess
 import yt_dlp
 
 from backend.utils import log
+from backend.yt_cookies import resolve_cookie_file
 
 
 # Resolusi lebih tinggi = crop 9:16 lebih tajam (crop dari 1080p hanya 608px lebar lalu di-upscale,
@@ -215,19 +216,16 @@ def download_video_profesional(url: str, job_id=None) -> str:
         def error(self, msg):
             log(f"[YT-DLP ERROR] {msg}", job_id=job_id)
 
-    # Cek apakah ada file cookies.txt di root project atau folder downloads
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    cookies_candidates = [
-        os.path.join(project_root, "cookies.txt"),
-        os.path.join(download_dir, "cookies.txt"),
-        os.path.join(os.getcwd(), "cookies.txt")
-    ]
-    cookie_file = None
-    for c_path in cookies_candidates:
-        if os.path.exists(c_path) and os.path.getsize(c_path) > 0:
-            cookie_file = c_path
-            log(f"[AUTH] Menggunakan file cookies: {c_path}", job_id=job_id)
-            break
+    # Cari file cookies.txt (disimpan lewat Pengaturan Studio -> tab Cookies).
+    cookie_file = resolve_cookie_file(download_dir)
+    if cookie_file:
+        log(f"[AUTH] Menggunakan file cookies: {cookie_file}", job_id=job_id)
+    else:
+        log(
+            "[AUTH] cookies.txt tidak ditemukan. Buka Pengaturan Studio > Cookies "
+            "untuk menempelkan cookies YouTube.",
+            job_id=job_id,
+        )
 
     # Ambil resolusi tertinggi yang tersedia (sampai VC_MAX_DOWNLOAD_HEIGHT, default 1080p).
     # Never silently accept a progressive 360p fallback.
@@ -354,7 +352,8 @@ def download_video_profesional(url: str, job_id=None) -> str:
 
     message = (
         f"Gagal mendapatkan stream video minimal {MIN_ACCEPTABLE_HEIGHT}p. Aplikasi tidak akan memakai fallback 360p. "
-        "Perbarui cookies.txt/yt-dlp atau pastikan video sumber memang menyediakan resolusi HD. "
+        "Perbarui cookies YouTube di Pengaturan Studio > Cookies, perbarui yt-dlp, "
+        "atau pastikan video sumber memang menyediakan resolusi HD. "
         f"Error terakhir: {last_error}"
     )
     log(message, job_id=job_id)

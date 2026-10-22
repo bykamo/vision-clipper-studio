@@ -270,7 +270,7 @@ Jika harus diakses tanpa tunnel:
 
 ### Hal yang perlu diperhatikan di VPS
 1. **Tombol File Video / Folder Render tidak berfungsi** — butuh dialog OS. Tempel path absolut (mis. `/opt/vision-clipper/downloads/video.mp4`) atau URL YouTube langsung di kolom sumber video.
-2. **`cookies.txt`** — unduhan YouTube dari IP datacenter sering kena `Sign in to confirm you're not a bot`. Export cookies format Netscape ke root project.
+2. **`cookies.txt`** — unduhan YouTube dari IP datacenter sering kena `Sign in to confirm you're not a bot`. Buka **Pengaturan Studio → tab Cookies**, tempel isi cookies format Netscape (atau pilih file `.txt` hasil ekspor ekstensi browser), lalu klik **Simpan Cookies**. Tombol **Uji Cookies ke YouTube** memastikan cookies lolos bot-check sebelum dipakai mengunduh. File tersimpan otomatis di root project dan sudah masuk `.gitignore`.
 3. **Font subtitle** — style memakai `Plus Jakarta Sans`, `Montserrat`, `Impact`. Tanpa font tersebut libass fallback ke DejaVu dan tampilan subtitle berubah. Install ke `~/.local/share/fonts` lalu `fc-cache -f`.
 4. **YouTube OAuth** — default redirect `http://localhost:5050/api/social/youtube/callback`. Lewat SSH tunnel ini langsung jalan.
 

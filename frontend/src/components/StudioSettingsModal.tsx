@@ -17,6 +17,11 @@ import {
   Zap,
   Crosshair,
   Gift,
+  Cookie,
+  Upload,
+  Trash2,
+  ShieldCheck,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -75,6 +80,29 @@ export interface YouTubeChannelInfo {
   videoCount?: string;
 }
 
+export type SettingsTab = 'ai' | 'whisper' | 'youtube' | 'tiktok' | 'cookies';
+
+/** Metadata file cookies YouTube (backend tidak pernah mengirim isi file). */
+export interface CookieStatus {
+  exists: boolean;
+  path: string | null;
+  canonical_path: string;
+  filename: string;
+  size_bytes: number;
+  updated_at: string | null;
+  cookie_count: number;
+  domain_count: number;
+  has_login_cookies: boolean;
+  valid: boolean;
+  error: string | null;
+}
+
+export interface CookieTestResult {
+  ok: boolean;
+  message?: string | null;
+  error?: string | null;
+}
+
 /** Shared section header for each settings tab canvas. */
 const TabHeader: React.FC<{
   chipClass: string;
@@ -98,8 +126,8 @@ const TabHeader: React.FC<{
 interface StudioSettingsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  activeTab: 'ai' | 'whisper' | 'youtube' | 'tiktok';
-  setActiveTab: (tab: 'ai' | 'whisper' | 'youtube' | 'tiktok') => void;
+  activeTab: SettingsTab;
+  setActiveTab: (tab: SettingsTab) => void;
   aiConfig: AiConfigResponse | null;
   aiSelectedProvider: string;
   handleSelectProvider: (pKey: string) => void;
@@ -139,6 +167,21 @@ interface StudioSettingsModalProps {
   checkYouTubeStatus: (refresh?: boolean) => void;
   handleConnectYouTube: () => void;
   handleDisconnectYouTube: () => void;
+  // YouTube cookies (dipakai yt-dlp saat mengunduh video)
+  cookieStatus: CookieStatus | null;
+  cookieTextInput: string;
+  setCookieTextInput: (val: string) => void;
+  cookieShowText: boolean;
+  setCookieShowText: (val: boolean) => void;
+  handleSaveCookies: () => void;
+  cookiesSaving: boolean;
+  handleTestCookies: () => void;
+  cookiesTesting: boolean;
+  cookieTestResult: CookieTestResult | null;
+  setCookieTestResult: (val: CookieTestResult | null) => void;
+  handleDeleteCookies: () => void;
+  cookiesDeleting: boolean;
+  handleCookieFilePick: (file: File | null) => void;
   onShutdown: () => void;
 }
 
@@ -186,6 +229,20 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
   checkYouTubeStatus,
   handleConnectYouTube,
   handleDisconnectYouTube,
+  cookieStatus,
+  cookieTextInput,
+  setCookieTextInput,
+  cookieShowText,
+  setCookieShowText,
+  handleSaveCookies,
+  cookiesSaving,
+  handleTestCookies,
+  cookiesTesting,
+  cookieTestResult,
+  setCookieTestResult,
+  handleDeleteCookies,
+  cookiesDeleting,
+  handleCookieFilePick,
   onShutdown,
 }) => {
   if (!open) return null;
@@ -211,7 +268,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
 
   /** Sidebar navigation model — single source of truth for the rail. */
   const navItems: Array<{
-    key: 'ai' | 'whisper' | 'youtube' | 'tiktok';
+    key: SettingsTab;
     label: string;
     short: string;
     desc: string;
@@ -265,12 +322,39 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
       activeText: 'text-cyan-200',
       activeDesc: 'text-cyan-400/80',
     },
+    {
+      key: 'cookies',
+      label: 'Cookies YouTube',
+      short: 'Cookies',
+      desc: 'Bypass bot-check',
+      icon: <Cookie className="h-4 w-4" />,
+      activeChip: 'bg-amber-500/15 border-amber-500/40 text-amber-300',
+      idleChip: 'bg-slate-900/90 border-slate-800 text-slate-400',
+      activeText: 'text-amber-200',
+      activeDesc: 'text-amber-400/80',
+    },
   ];
 
-  const setupDone = [aiConfig?.ready, aiConfig?.groq_key_set, ytConnected && !!ytChannel].filter(
-    Boolean,
-  ).length;
-  const setupPct = Math.round((setupDone / 3) * 100);
+  const cookieReady = !!cookieStatus?.exists && !!cookieStatus?.valid;
+  const formatBytes = (bytes: number) => {
+    if (!bytes) return '0 B';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+  const formatCookieDate = (iso: string | null) => {
+    if (!iso) return '—';
+    const date = new Date(iso);
+    return Number.isNaN(date.getTime()) ? iso : date.toLocaleString('id-ID');
+  };
+
+  const setupDone = [
+    aiConfig?.ready,
+    aiConfig?.groq_key_set,
+    ytConnected && !!ytChannel,
+    cookieReady,
+  ].filter(Boolean).length;
+  const setupPct = Math.round((setupDone / 4) * 100);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-3 sm:p-5 md:p-8 animate-in fade-in-0 duration-200">
@@ -321,6 +405,19 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                 className={`h-1.5 w-1.5 rounded-full ${ytConnected && ytChannel ? 'bg-emerald-400' : 'bg-slate-500'}`}
               />
               YouTube
+            </span>
+            <span
+              className={`hidden md:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                cookieReady
+                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+                  : 'border-slate-700 bg-slate-900 text-slate-400'
+              }`}
+              title={cookieStatus?.path || 'cookies.txt belum disimpan'}
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${cookieReady ? 'bg-amber-400' : 'bg-slate-500'}`}
+              />
+              Cookies
             </span>
 
             <Button
@@ -409,7 +506,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                   />
                 </div>
                 <p className="text-[10px] text-slate-500">
-                  {setupDone} dari 3 modul siap — LLM, Whisper, YouTube.
+                  {setupDone} dari 4 modul siap — LLM, Whisper, YouTube, Cookies.
                 </p>
               </div>
 
@@ -1260,6 +1357,253 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                   </Card>
                 </div>
               )}
+
+              {/* ──────── TAB 5: COOKIES YOUTUBE ──────── */}
+              {activeTab === 'cookies' && (
+                <div className="space-y-6">
+                  <TabHeader
+                    chipClass="bg-amber-500/10 border-amber-500/40 text-amber-300"
+                    icon={<Cookie className="h-5 w-5" />}
+                    title="Cookies YouTube"
+                    desc="Tempel cookies format Netscape agar yt-dlp bisa mengunduh video HD tanpa terblokir “Sign in to confirm you're not a bot”."
+                  />
+
+                  <Separator />
+
+                  {/* Status Card */}
+                  <Card
+                    className={`p-5 space-y-4 ${
+                      cookieReady
+                        ? 'border-emerald-500/30 bg-gradient-to-r from-emerald-950/25 to-[#131820]'
+                        : 'border-slate-800/80 bg-[#131820]'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span
+                          className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border ${
+                            cookieReady
+                              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                              : 'border-slate-700 bg-slate-900 text-slate-400'
+                          }`}
+                        >
+                          {cookieReady ? (
+                            <ShieldCheck className="h-5 w-5" />
+                          ) : (
+                            <AlertTriangle className="h-5 w-5" />
+                          )}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-bold text-white font-['Outfit']">
+                              {cookieStatus?.exists
+                                ? 'File Cookies Tersimpan'
+                                : 'Belum Ada Cookies'}
+                            </span>
+                            <Badge variant={cookieReady ? 'success' : 'secondary'}>
+                              {cookieReady ? 'Aktif' : 'Nonaktif'}
+                            </Badge>
+                            {cookieStatus?.has_login_cookies && (
+                              <Badge variant="success" className="text-[10px]">
+                                Login terdeteksi
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-400 mt-1 leading-relaxed break-all">
+                            {cookieStatus?.path
+                              ? cookieStatus.path
+                              : `Akan disimpan ke ${cookieStatus?.canonical_path || 'cookies.txt'}`}
+                          </p>
+                        </div>
+                      </div>
+
+                      {cookieStatus?.exists && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={handleDeleteCookies}
+                          disabled={cookiesDeleting}
+                          className="flex-shrink-0"
+                        >
+                          {cookiesDeleting ? (
+                            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" />
+                          )}
+                          <span>Hapus Cookies</span>
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                      {[
+                        {
+                          label: 'Ukuran',
+                          value: cookieStatus?.exists ? formatBytes(cookieStatus.size_bytes) : '—',
+                        },
+                        {
+                          label: 'Cookie',
+                          value: cookieStatus?.exists ? String(cookieStatus.cookie_count) : '—',
+                        },
+                        {
+                          label: 'Domain',
+                          value: cookieStatus?.exists ? String(cookieStatus.domain_count) : '—',
+                        },
+                        {
+                          label: 'Diperbarui',
+                          value: cookieStatus?.exists
+                            ? formatCookieDate(cookieStatus.updated_at)
+                            : '—',
+                        },
+                      ].map((stat) => (
+                        <div
+                          key={stat.label}
+                          className="p-3 rounded-lg bg-[#0b0f14] border border-slate-800"
+                        >
+                          <span className="text-[10px] uppercase tracking-wider text-slate-500 block font-semibold">
+                            {stat.label}
+                          </span>
+                          <span className="text-slate-100 font-semibold mt-0.5 block truncate">
+                            {stat.value}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {cookieStatus?.exists && !cookieStatus.valid && cookieStatus.error && (
+                      <div className="flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-950/30 p-3 text-xs text-amber-200">
+                        <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                        <span className="font-mono leading-relaxed">{cookieStatus.error}</span>
+                      </div>
+                    )}
+                  </Card>
+
+                  {/* Paste / Upload */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <Label className="text-xs uppercase tracking-wider text-slate-400 font-bold">
+                        Tempel Isi cookies.txt (Format Netscape)
+                      </Label>
+                      <div className="flex items-center gap-2">
+                        <label className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-[11px] font-semibold text-slate-200 hover:border-emerald-500/40 hover:text-emerald-300 transition-colors cursor-pointer">
+                          <Upload className="h-3.5 w-3.5" />
+                          <span>Pilih File .txt</span>
+                          <input
+                            type="file"
+                            accept=".txt,text/plain"
+                            className="hidden"
+                            onChange={(event) => {
+                              handleCookieFilePick(event.target.files?.[0] ?? null);
+                              event.target.value = '';
+                            }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setCookieShowText(!cookieShowText)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-[11px] font-semibold text-slate-300 hover:text-white transition-colors cursor-pointer"
+                        >
+                          {cookieShowText ? (
+                            <EyeOff className="h-3.5 w-3.5" />
+                          ) : (
+                            <Eye className="h-3.5 w-3.5" />
+                          )}
+                          <span>{cookieShowText ? 'Sembunyikan' : 'Tampilkan'}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <textarea
+                      value={cookieTextInput}
+                      onChange={(event) => setCookieTextInput(event.target.value)}
+                      spellCheck={false}
+                      placeholder={
+                        '# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t1802593611\t__Secure-3PSID\t...'
+                      }
+                      className="w-full h-40 resize-y rounded-xl border border-slate-800 bg-[#0b0f14] p-3 font-mono text-[11px] leading-relaxed text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500/60 focus:border-emerald-500/40 scrollbar-thin"
+                      style={
+                        cookieShowText
+                          ? undefined
+                          : ({ WebkitTextSecurity: 'disc' } as React.CSSProperties)
+                      }
+                    />
+
+                    <div className="flex items-center justify-between gap-2 flex-wrap text-[11px] text-slate-500">
+                      <span>
+                        {cookieTextInput.trim()
+                          ? `${cookieTextInput.split('\n').filter((line) => line.trim()).length} baris siap disimpan.`
+                          : 'Kosong — tempel isi file atau pilih file .txt di atas.'}
+                      </span>
+                      <span>Isi cookies tidak pernah dikirim balik ke browser.</span>
+                    </div>
+                  </div>
+
+                  {/* Test Result */}
+                  {cookieTestResult && (
+                    <div
+                      className={`p-4 rounded-xl border flex items-start gap-3 text-xs ${
+                        cookieTestResult.ok
+                          ? 'border-emerald-500/40 bg-emerald-950/40 text-emerald-200'
+                          : 'border-rose-500/40 bg-rose-950/40 text-rose-200'
+                      }`}
+                    >
+                      {cookieTestResult.ok ? (
+                        <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                      ) : (
+                        <XCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold">
+                          {cookieTestResult.ok ? 'Cookies Valid!' : 'Uji Cookies Gagal'}
+                        </p>
+                        <p className="font-mono text-[11px] opacity-90 mt-0.5 break-words">
+                          {cookieTestResult.ok ? cookieTestResult.message : cookieTestResult.error}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setCookieTestResult(null)}
+                        className="h-6 w-6 text-slate-400 hover:text-white -mr-1 -mt-1"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTestCookies}
+                    disabled={cookiesTesting || !cookieStatus?.exists}
+                    className="w-full sm:w-auto"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${cookiesTesting ? 'animate-spin' : ''}`} />
+                    <span>{cookiesTesting ? 'Menguji cookies...' : 'Uji Cookies ke YouTube'}</span>
+                  </Button>
+
+                  {/* Step Guide Callout */}
+                  <div className="p-4 rounded-xl border border-slate-800/80 bg-[#131820] text-xs text-slate-300 space-y-1.5">
+                    <span className="font-bold text-white block">Cara Mendapatkan Cookies:</span>
+                    <p>
+                      1. Pasang ekstensi browser <strong>“Get cookies.txt LOCALLY”</strong> (Chrome
+                      / Firefox / Edge).
+                    </p>
+                    <p>
+                      2. Buka <strong>youtube.com</strong> dalam keadaan sudah login, lalu ekspor
+                      cookies dengan ekstensi tersebut.
+                    </p>
+                    <p>
+                      3. Tempel isi file di kolom atas (atau klik <strong>Pilih File .txt</strong>),
+                      lalu klik <strong>Simpan Cookies</strong> pada footer.
+                    </p>
+                    <p className="text-slate-400 pt-1">
+                      Cookies dipakai hanya untuk mengunduh video sumber. File tersimpan lokal di
+                      root project dan sudah masuk <code className="font-mono">.gitignore</code>.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Bottom Footer Bar */}
@@ -1271,6 +1615,8 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                 {activeTab === 'youtube' &&
                   'Sambungkan channel untuk mengaktifkan upload Shorts otomatis.'}
                 {activeTab === 'tiktok' && 'Ikuti alur 4 langkah untuk posting klip ke TikTok.'}
+                {activeTab === 'cookies' &&
+                  'Simpan cookies agar unduhan YouTube HD tidak kena bot-check.'}
               </p>
 
               <div className="flex items-center gap-2 ml-auto max-md:ml-0 max-md:w-full max-md:flex-wrap">
@@ -1329,7 +1675,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                       <span>Hubungkan YouTube</span>
                     </Button>
                   )
-                ) : (
+                ) : activeTab === 'tiktok' ? (
                   <a
                     href="https://www.tiktok.com/creator-center/upload"
                     target="_blank"
@@ -1339,6 +1685,25 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                     <span>Buka TikTok Studio</span>
                     <ArrowUpRight className="h-4 w-4" />
                   </a>
+                ) : (
+                  <Button
+                    variant="default"
+                    onClick={handleSaveCookies}
+                    disabled={cookiesSaving || !cookieTextInput.trim()}
+                    className="max-md:flex-1 max-md:min-w-0"
+                  >
+                    {cookiesSaving ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        <span>Menyimpan...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="h-4 w-4 stroke-[2.5]" />
+                        <span>Simpan Cookies</span>
+                      </>
+                    )}
+                  </Button>
                 )}
               </div>
             </div>
