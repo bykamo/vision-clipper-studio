@@ -37,7 +37,14 @@ sys.stderr = log_file
 
 import uvicorn
 try:
-    uvicorn.run("backend.main:app", host='127.0.0.1', port=5050, reload=False)
+    # VC_HOST lets a VPS bind to 0.0.0.0; port stays 5050 because the CLI, the
+    # installers and the YouTube OAuth redirect URI all hardcode it.
+    uvicorn.run(
+        "backend.main:app",
+        host=os.environ.get("VC_HOST", "127.0.0.1"),
+        port=5050,
+        reload=False,
+    )
 except Exception:
     import traceback
     traceback.print_exc()

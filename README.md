@@ -56,13 +56,17 @@ vision-clipper-studio/
 │   ├── public/               # Logo & mockup assets
 │   └── dist/                 # Hasil build (dibuat oleh `npm run build`)
 ├── scripts/                  # Helper Scripts
-│   ├── install_mac.sh        # macOS/Linux Installer
+│   ├── install_mac.sh        # macOS Installer
+│   ├── install_linux.sh      # Linux / VPS Installer (apt + torch CPU)
 │   ├── uninstall_mac.sh      # macOS/Linux Clean Uninstaller
 │   ├── configure_ai.sh       # macOS/Linux AI Wizard
 │   ├── install.bat           # Windows Installer
 │   ├── uninstall_windows.bat # Windows Clean Uninstaller
 │   ├── configure_ai.bat      # Windows AI Wizard
 │   └── vision-clipper.bat    # Windows CLI Launcher
+├── deploy/                   # Deployment artifacts
+│   ├── visionclipper.service # systemd unit (VPS)
+│   └── nginx.conf.sample     # Reverse proxy + Basic Auth (opsional)
 ├── .env.example              # Contoh Environment Config
 ├── setup.py                  # Package Setup
 └── MANIFEST.in               # Package Manifest
@@ -76,19 +80,27 @@ vision-clipper-studio/
 - **Python 3.10+** (Direkomendasikan)
 - **FFmpeg** (Wajib terinstal di sistem)
   - *macOS*: `brew install ffmpeg` (atau otomatis dipasang via installer)
+  - *Linux/VPS*: `sudo apt install ffmpeg libgl1 libglib2.0-0` (otomatis oleh `install_linux.sh`)
   - *Windows*: Download dari [ffmpeg.org](https://ffmpeg.org/download.html) atau via `winget install Gyan.FFmpeg`
 
 ---
 
 ### Cara Install
 
-#### 🍎 macOS / 🐧 Linux
+#### 🍎 macOS
 Buka terminal di folder project, lalu jalankan:
 ```bash
 chmod +x scripts/install_mac.sh
 ./scripts/install_mac.sh
 ```
 > Script ini otomatis membuat `.venv`, memasang semua dependency, menjalankan wizard konfigurasi AI, dan mendaftarkan perintah global `vision-clipper`.
+
+#### 🐧 Linux / VPS
+```bash
+chmod +x scripts/install_linux.sh
+./scripts/install_linux.sh
+```
+> Memakai `apt` (bukan Homebrew), memasang PyTorch **CPU-only** (hemat ~2 GB), dan tidak mencoba membuka browser. Tambahkan `--no-apt` jika paket sistem sudah terpasang.
 
 #### 🪟 Windows
 Buka CMD / PowerShell di folder project, lalu jalankan:
@@ -192,6 +204,75 @@ Klip yang sudah dirender sebelumnya dapat dibuka kembali langsung menggunakan di
 4. Anda dapat langsung mengklik tombol **YouTube** untuk posting langsung, **TikTok** untuk copy caption + buka TikTok Studio, atau **Preview** untuk memutar klip lain tanpa perlu render ulang.
 
 > **Catatan**: Tombol kamera video di sebelahnya digunakan untuk memilih file video baru untuk proses clipping normal. Jika Anda memilih file video `.mp4` yang berada di dalam subfolder `clips/`, sistem juga akan otomatis mendeteksi dan memuat seluruh klip proyek tersebut. Metadata judul, caption, dan hashtag dibaca otomatis dari file `.txt` pasangan video jika tersedia.
+
+---
+
+## 🌐 Deploy ke VPS (Remote)
+
+Aplikasi ini **tidak butuh GPU**. Transkripsi memakai Groq Cloud, analisa hook memakai LLM API, dan encoding memakai `libx264` (CPU). NVENC hanya dicoba lebih dulu lalu otomatis fallback ke x264.
+
+### Resource minimum
+| | vCPU | RAM | Disk |
+|---|---|---|---|
+| Minimum | 2 | 4 GB | 20 GB |
+| Nyaman | 4 | 8 GB | 40 GB |
+
+Job diproses **satu per satu** (`_reserve_worker_slot` → HTTP 409), jadi VPS kecil tidak akan kehabisan resource karena render paralel.
+
+### 1. Install
+```bash
+git clone <repo> /opt/vision-clipper && cd /opt/vision-clipper
+./scripts/install_linux.sh
+```
+
+### 2. Jalankan sebagai service
+```bash
+sudo useradd -r -s /bin/bash -d /opt/vision-clipper clipper
+sudo chown -R clipper:clipper /opt/vision-clipper
+sudo cp deploy/visionclipper.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now visionclipper
+sudo systemctl status visionclipper
+```
+
+### 3. Akses lewat SSH tunnel (disarankan)
+Service bind ke `127.0.0.1`, jadi port tidak terbuka ke internet:
+```bash
+ssh -L 5050:127.0.0.1:5050 clipper@IP-VPS
+```
+Lalu buka `http://localhost:5050` di browser lokal. Tidak perlu nginx, tidak perlu TLS, tidak perlu ubah `.env`.
+
+### 4. Opsional: domain publik + HTTPS
+Jika harus diakses tanpa tunnel:
+1. Copy `deploy/nginx.conf.sample` ke `/etc/nginx/sites-available/`, sesuaikan `server_name` dan path certificate.
+2. Buat Basic Auth: `sudo htpasswd -c /etc/nginx/.htpasswd user`
+3. Di systemd unit, set:
+   ```ini
+   Environment=VC_HOST=0.0.0.0
+   Environment=VC_COOKIE_SECURE=1
+   Environment=VC_ALLOWED_HOSTS=clipper.domainkamu.com
+   ```
+4. Daftarkan `https://clipper.domainkamu.com/api/social/youtube/callback` di Google Cloud Console, dan set `YOUTUBE_REDIRECT_URI` di `.env`.
+
+> ⚠️ **Wajib pakai autentikasi.** Aplikasi tidak punya login bawaan — `/api/session` memberi cookie ke siapa pun yang membuka halaman. Tanpa Basic Auth, `/api/list-dir` bisa membaca isi filesystem dan `/shutdown` bisa mematikan server.
+>
+> ⚠️ **`proxy_buffering off` wajib** di nginx. `/api/analyze` dan `/stream` memakai SSE; dengan buffering aktif, progress render tidak akan streaming.
+
+### Variabel environment VPS
+| Variabel | Default | Keterangan |
+|---|---|---|
+| `VC_HOST` | `127.0.0.1` | Interface bind. `0.0.0.0` hanya di belakang reverse proxy |
+| `VC_ALLOWED_HOSTS` | *(kosong)* | Allowlist Host/Origin tambahan, dipisah koma |
+| `VC_COOKIE_SECURE` | `0` | `1` hanya jika diakses via HTTPS |
+| `VC_MAX_DOWNLOAD_HEIGHT` | `1080` | Batas resolusi unduhan |
+
+> **Jangan taruh `VC_COOKIE_SECURE=1` di `.env`** jika file itu ikut tersalin ke laptop. Cookie `Secure` ditolak browser di `http://localhost` → semua `/api/*` jadi 403. Set lewat systemd unit saja.
+
+### Hal yang perlu diperhatikan di VPS
+1. **Tombol File Video / Folder Render tidak berfungsi** — butuh dialog OS. Tempel path absolut (mis. `/opt/vision-clipper/downloads/video.mp4`) atau URL YouTube langsung di kolom sumber video.
+2. **`cookies.txt`** — unduhan YouTube dari IP datacenter sering kena `Sign in to confirm you're not a bot`. Export cookies format Netscape ke root project.
+3. **Font subtitle** — style memakai `Plus Jakarta Sans`, `Montserrat`, `Impact`. Tanpa font tersebut libass fallback ke DejaVu dan tampilan subtitle berubah. Install ke `~/.local/share/fonts` lalu `fc-cache -f`.
+4. **YouTube OAuth** — default redirect `http://localhost:5050/api/social/youtube/callback`. Lewat SSH tunnel ini langsung jalan.
 
 ---
 

@@ -25,6 +25,7 @@ from backend.config_wizard import (
     test_groq_connection,
     fetch_available_models,
 )
+from backend.utils import env_bool
 
 app = FastAPI()
 
@@ -59,6 +60,16 @@ ALLOWED_HOSTS = {
     "testserver"
 }
 
+def _extra_allowed_hosts():
+    """Extra Host/Origin allowlist from VC_ALLOWED_HOSTS (comma separated).
+
+    Empty by default, so local desktop installs keep the original loopback-only
+    behaviour. Only needed when the dashboard is served through a domain or a
+    non-private IP (e.g. a VPS behind nginx).
+    """
+    raw = os.environ.get("VC_ALLOWED_HOSTS", "")
+    return {item.strip().lower() for item in raw.split(",") if item.strip()}
+
 def _is_allowed_host(host: str) -> bool:
     if not host:
         return True
@@ -67,6 +78,9 @@ def _is_allowed_host(host: str) -> bool:
         return True
     hostname = host_clean.split(":")[0]
     if hostname in {"localhost", "127.0.0.1", "0.0.0.0", "::1", "testserver"}:
+        return True
+    extra_hosts = _extra_allowed_hosts()
+    if extra_hosts and (host_clean in extra_hosts or hostname in extra_hosts):
         return True
     if hostname.startswith("192.168.") or hostname.startswith("10.") or hostname.startswith("127."):
         return True
@@ -495,6 +509,10 @@ def _set_session_cookie(response: Response):
         value=SESSION_TOKEN,
         httponly=True,
         samesite="strict",
+        # Default False: a Secure cookie is rejected over plain HTTP, which would
+        # break every /api/* call on local desktop installs (http://localhost).
+        # Enable it only when the dashboard is served over HTTPS (VPS + TLS).
+        secure=env_bool("VC_COOKIE_SECURE", False),
     )
     return response
 
@@ -675,6 +693,16 @@ async def open_folder(request: Request):
     return JSONResponse(status_code=404, content={"error": f"Folder tidak ditemukan: {path}"})
 
 
+def _has_desktop_session() -> bool:
+    """True when a GUI session exists so a native dialog can actually be shown.
+
+    Headless Linux (VPS, docker, systemd without a seat) has no DISPLAY and no
+    WAYLAND_DISPLAY, and usually no zenity either. Spawning it there only wastes
+    time and returns nothing, so the pickers short-circuit and the frontend falls
+    back to the manual path/URL input.
+    """
+    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
 def _run_native_picker() -> str:
     """Synchronous file picker logic called inside asyncio.to_thread."""
     selected_path = ""
@@ -698,10 +726,11 @@ def _run_native_picker() -> str:
             if res.returncode == 0:
                 selected_path = res.stdout.strip()
         else:
-            # Linux zenity fallback
-            res = subprocess.run(['zenity', '--file-selection', '--title=Pilih File Video', '--file-filter=Video Files | *.mp4 *.mkv *.mov *.webm *.avi'], capture_output=True, text=True)
-            if res.returncode == 0:
-                selected_path = res.stdout.strip()
+            # Linux zenity fallback (only when a desktop session exists)
+            if _has_desktop_session():
+                res = subprocess.run(['zenity', '--file-selection', '--title=Pilih File Video', '--file-filter=Video Files | *.mp4 *.mkv *.mov *.webm *.avi'], capture_output=True, text=True)
+                if res.returncode == 0:
+                    selected_path = res.stdout.strip()
     except Exception:
         pass
     return selected_path
@@ -750,13 +779,14 @@ def _run_native_folder_picker(initial_dir: str = "") -> str:
             if res.returncode == 0:
                 selected_path = res.stdout.strip()
         else:
-            # Linux zenity fallback
-            cmd = ['zenity', '--file-selection', '--directory', '--title=Pilih Folder Hasil Render (Clips)']
-            if target_dir and os.path.exists(target_dir):
-                cmd.append(f'--filename={os.path.realpath(target_dir)}/')
-            res = subprocess.run(cmd, capture_output=True, text=True)
-            if res.returncode == 0:
-                selected_path = res.stdout.strip()
+            # Linux zenity fallback (only when a desktop session exists)
+            if _has_desktop_session():
+                cmd = ['zenity', '--file-selection', '--directory', '--title=Pilih Folder Hasil Render (Clips)']
+                if target_dir and os.path.exists(target_dir):
+                    cmd.append(f'--filename={os.path.realpath(target_dir)}/')
+                res = subprocess.run(cmd, capture_output=True, text=True)
+                if res.returncode == 0:
+                    selected_path = res.stdout.strip()
     except Exception:
         pass
     return selected_path
@@ -1336,4 +1366,12 @@ app.mount("/", StaticFiles(directory=SERVE_DIR, html=True), name="static")
 
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run("backend.main:app", host="127.0.0.1", port=5050, reload=False)
+    # VC_HOST lets a VPS bind to 0.0.0.0 (or a specific interface). The port stays
+    # fixed at 5050 because it is referenced by the CLI, the installers and the
+    # YouTube OAuth redirect URI.
+    uvicorn.run(
+        "backend.main:app",
+        host=os.environ.get("VC_HOST", "127.0.0.1"),
+        port=5050,
+        reload=False,
+    )
