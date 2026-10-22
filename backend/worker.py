@@ -5,7 +5,16 @@ import sys
 import time
 from backend.downloader import get_video_file, get_video_source_name
 from backend.transcriber import transcribe_video, build_transcript_text, build_compact_transcript_text, get_media_duration
-from backend.analyzer import build_viral_prompt, call_llm_api, extract_json_block, PermanentLLMError
+from backend.analyzer import (
+    build_viral_prompt,
+    build_candidate_discovery_prompt,
+    build_clip_enrichment_prompt,
+    build_transcript_slice,
+    select_diverse_clips,
+    call_llm_api,
+    extract_json_block,
+    PermanentLLMError,
+)
 from backend.content_rules import apply_content_rules, build_posting_plan, MAX_DURATION
 from backend.renderer import extract_and_format_clip
 from backend.utils import (
@@ -45,11 +54,46 @@ def _parse_render_indices(raw_indices, clip_count):
     return indices
 
 
+def _llm_json_with_retries(prompt, compact_prompt, llm_endpoint, llm_key, llm_model, job_id=None, label="analisis"):
+    """Call the LLM with retries + compact-transcript fallback; return parsed JSON dict.
+
+    PermanentLLMError (bad key / blocked model) is re-raised immediately —
+    retrying cannot help.
+    """
+    last_error = None
+    for attempt in range(3):
+        try:
+            log(f"Memanggil AI ({label}, percobaan {attempt + 1}/3)...", job_id=job_id)
+            llm_response = call_llm_api(
+                prompt, llm_model, llm_endpoint, llm_key,
+                job_id=job_id, compact_prompt=compact_prompt,
+            )
+            data = extract_json_block(llm_response, job_id=job_id)
+            if isinstance(data, dict) and data:
+                return data
+            last_error = "LLM mengembalikan JSON kosong."
+            log(f"Percobaan {attempt + 1}: LLM merespons tapi JSON kosong.", job_id=job_id)
+        except PermanentLLMError:
+            raise
+        except Exception as e:
+            last_error = str(e)
+            log(f"LLM gagal ({label}) percobaan {attempt + 1}: {e}", job_id=job_id)
+        if attempt < 2:
+            time.sleep(2 ** attempt)
+    raise RuntimeError(
+        f"Gagal mendapatkan JSON valid dari LLM ({label}) setelah 3 percobaan: {last_error}"
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Vision Clipper Worker")
     parser.add_argument("--file", type=str, required=True, help="Path to video file")
     parser.add_argument("--num-clips", type=int, default=5, help="Number of clips")
     parser.add_argument("--mode", type=str, default="hook", choices=["hook", "affiliate"], help="Analysis mode")
+    parser.add_argument("--max-candidates", type=int, default=15, help="Pass-1 candidate pool size (two-pass mode)")
+    parser.add_argument("--min-clip-gap", type=float, default=60.0, help="Min seconds between selected clips (two-pass mode)")
+    parser.add_argument("--diversity-threshold", type=float, default=0.55, help="Topic similarity 0-1 above which a candidate is rejected as duplicate (two-pass mode)")
+    parser.add_argument("--single-pass", action="store_true", help="Use legacy single-pass analysis instead of two-pass")
     parser.add_argument("--job-id", type=int, default=None, help="Job ID for DB logging")
     parser.add_argument("--model", type=str, default="groq", choices=["groq"], help="Transcription provider (Groq Whisper Cloud)")
     parser.add_argument("--out-dir", type=str, default=DEFAULT_OUT_DIR, help="Output directory")
@@ -150,62 +194,127 @@ def main():
         )
         transcript_text = build_transcript_text(segments)
 
-        prompt = build_viral_prompt(transcript_text, args.num_clips, mode=args.mode)
-        # Compact fallback prompt (merged timestamp blocks) used when a model
-        # rejects the full transcript for exceeding its token budget.
+        llm_endpoint = os.environ.get("ROUTER_API_ENDPOINT") or DEFAULT_ENDPOINT
+        llm_key = os.environ.get("ROUTER_API_KEY") or DEFAULT_API_KEY
+        llm_model = os.environ.get("ROUTER_LLM_MODEL") or DEFAULT_LLM_MODEL
+        total_video_dur = get_media_duration(video_path)
+        # Compact fallback transcript (merged timestamp blocks) used when a
+        # model rejects the full transcript for exceeding its token budget.
         compact_transcript = build_compact_transcript_text(segments)
-        compact_prompt = (
-            build_viral_prompt(compact_transcript, args.num_clips, mode=args.mode)
-            if compact_transcript and compact_transcript != transcript_text
-            else None
-        )
+        has_compact = bool(compact_transcript and compact_transcript != transcript_text)
 
-        max_retries = 3
         clips = []
-        last_error = None
-        permanent_error = False
-        for attempt in range(max_retries):
-            try:
-                log(f"Mencari bagian video paling viral menggunakan AI (Percobaan ke-{attempt + 1}). Estimasi waktu: ~10-25 detik...", job_id=job_id)
-                llm_endpoint = os.environ.get("ROUTER_API_ENDPOINT") or DEFAULT_ENDPOINT
-                llm_key = os.environ.get("ROUTER_API_KEY") or DEFAULT_API_KEY
-                llm_model = os.environ.get("ROUTER_LLM_MODEL") or DEFAULT_LLM_MODEL
-                llm_response = call_llm_api(prompt, llm_model, llm_endpoint, llm_key, job_id=job_id, compact_prompt=compact_prompt)
-                data = extract_json_block(llm_response, job_id=job_id)
-                clips = data.get("clips", [])
-                if clips:
-                    break
-                else:
-                    last_error = "LLM returned empty 'clips' list in JSON."
-                    log(f"Percobaan ke-{attempt + 1}: LLM merespons tapi 'clips' kosong.", job_id=job_id)
-            except PermanentLLMError as e:
-                # Non-recoverable (bad API key, location-blocked models, empty
-                # config). Retrying with the same setup cannot help.
-                last_error = str(e)
-                permanent_error = True
-                log(f"Analisis AI dihentikan: {e}", job_id=job_id)
-                log("Periksa konfigurasi model AI di Pengaturan Studio (endpoint, API key, dan nama model harus cocok dengan gateway yang sama).", job_id=job_id)
-                break
-            except Exception as e:
-                last_error = str(e)
-                log(f"LLM API or JSON parsing failed on attempt {attempt + 1}: {e}", job_id=job_id)
+        if args.single_pass:
+            # ── LEGACY single-pass: one LLM call returns exactly N clips ──
+            prompt = build_viral_prompt(transcript_text, args.num_clips, mode=args.mode)
+            compact_prompt = (
+                build_viral_prompt(compact_transcript, args.num_clips, mode=args.mode)
+                if has_compact else None
+            )
+            log("Mencari bagian video paling viral menggunakan AI (single-pass). Estimasi waktu: ~10-25 detik...", job_id=job_id)
+            data = _llm_json_with_retries(
+                prompt, compact_prompt, llm_endpoint, llm_key, llm_model,
+                job_id, label="single-pass",
+            )
+            clips = data.get("clips", []) if isinstance(data, dict) else []
+            if not clips:
+                raise RuntimeError("Single-pass: LLM tidak mengembalikan klip.")
+        else:
+            # ── TWO-PASS ──
+            # Pass 1: LLM scouts a POOL of candidates (more than needed).
+            discovery_prompt = build_candidate_discovery_prompt(
+                transcript_text, args.max_candidates, mode=args.mode
+            )
+            compact_discovery = (
+                build_candidate_discovery_prompt(
+                    compact_transcript, args.max_candidates, mode=args.mode
+                )
+                if has_compact else None
+            )
+            log(f"Tahap 1/2: AI memindai hingga {args.max_candidates} kandidat momen viral...", job_id=job_id)
+            data = _llm_json_with_retries(
+                discovery_prompt, compact_discovery, llm_endpoint, llm_key, llm_model,
+                job_id, label="tahap-1 discovery",
+            )
+            candidates = data.get("candidates", []) if isinstance(data, dict) else []
+            video_summary = ((data.get("video_summary") or "") if isinstance(data, dict) else "").strip()
+            if not candidates:
+                raise RuntimeError("Tahap 1: LLM tidak mengembalikan kandidat momen.")
+            log(f"Tahap 1 selesai: {len(candidates)} kandidat ditemukan.", job_id=job_id)
 
-            if attempt < max_retries - 1:
-                backoff_time = 2 ** attempt
-                log(f"Menunggu {backoff_time} detik sebelum mencoba ulang...", job_id=job_id)
-                time.sleep(backoff_time)
+            # Validate candidate boundaries before selection.
+            valid_candidates = []
+            for raw in candidates:
+                try:
+                    s = parse_timestamp_to_seconds(raw.get("start", 0.0))
+                    e = parse_timestamp_to_seconds(raw.get("end", 0.0))
+                    if total_video_dur > 0:
+                        e = min(total_video_dur, e)
+                        s = min(total_video_dur, s)
+                    if e <= s or (e - s) < 5.0:
+                        continue
+                    raw["start"] = round(s, 2)
+                    raw["end"] = round(e, 2)
+                    valid_candidates.append(raw)
+                except (TypeError, ValueError):
+                    continue
+            if not valid_candidates:
+                raise RuntimeError("Tahap 1: semua kandidat punya timestamp tidak valid.")
 
-        if not clips:
-            if permanent_error:
-                # Configuration problem: the message already explains the fix,
-                # so don't wrap it in a misleading "after 3 attempts" text.
-                raise RuntimeError(f"Analisis AI gagal: {last_error}")
-            err_msg = f"Failed to get valid clips from LLM after {max_retries} attempts: {last_error}"
-            log(err_msg, job_id=job_id)
-            raise RuntimeError(err_msg)
+            # Pass 1.5: deterministic diversity-aware pick (no LLM call).
+            clips = select_diverse_clips(
+                valid_candidates,
+                num_clips=args.num_clips,
+                min_gap_sec=args.min_clip_gap,
+                diversity_threshold=args.diversity_threshold,
+            )
+            if not clips:
+                raise RuntimeError("Seleksi: tidak ada kandidat yang lolos filter keberagaman.")
+            if len(clips) < args.num_clips:
+                log(
+                    f"Seleksi keberagaman: {len(clips)}/{args.num_clips} klip lolos "
+                    f"(sisanya terlalu mirip topiknya atau terlalu dempetan) — lanjut dengan yang terbaik.",
+                    job_id=job_id,
+                )
+            for c in clips:
+                log(
+                    f"  → Klip #{c['index']}: {c.get('title', '?')} "
+                    f"(skor {c.get('viral_score', '?')}, {c['start']}s–{c['end']}s)",
+                    job_id=job_id,
+                )
+
+            # Pass 2: enrich ONLY the selected clips (caption/hashtag/titles).
+            enrich_items = [
+                {
+                    "index": c["index"],
+                    "start": c["start"],
+                    "end": c["end"],
+                    "title": c.get("title", ""),
+                    "transcript": build_transcript_slice(segments, c["start"], c["end"]),
+                }
+                for c in clips
+            ]
+            enrich_prompt = build_clip_enrichment_prompt(enrich_items, video_summary, mode=args.mode)
+            log("Tahap 2/2: AI menulis caption & hashtag untuk klip terpilih...", job_id=job_id)
+            enriched = _llm_json_with_retries(
+                enrich_prompt, None, llm_endpoint, llm_key, llm_model,
+                job_id, label="tahap-2 enrichment",
+            )
+            by_index = {
+                item.get("index"): item
+                for item in (enriched.get("clips", []) if isinstance(enriched, dict) else [])
+                if isinstance(item, dict)
+            }
+            for c in clips:
+                extra = by_index.get(c["index"], {})
+                for key in ("title_options", "caption", "hashtags"):
+                    if extra.get(key):
+                        c[key] = extra[key]
+                if not c.get("title_options"):
+                    c["title_options"] = [c.get("title", "Untitled")]
 
         # ── VALIDASI & BOUNDARY CLAMPING KANDIDAT KLIP ──
-        total_video_dur = get_media_duration(video_path)
+        # (total_video_dur sudah dihitung sebelum tahap analisis di atas)
         valid_clips = []
         for raw_clip in clips:
             try:

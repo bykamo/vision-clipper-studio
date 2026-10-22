@@ -35,23 +35,42 @@ class AnalyzerTest(unittest.TestCase):
     def test_build_viral_prompt_modes(self):
         transcript = "[00:00:00 --> 00:00:10] Halo dunia"
         prompt_hook = build_viral_prompt(transcript, num_clips=3, mode="hook")
-        self.assertIn("VIRAL DETECTION FRAMEWORK", prompt_hook)
+        self.assertIn("WHAT ACTUALLY TRAVELS", prompt_hook)
+        self.assertIn("Tier 0", prompt_hook)
+        self.assertIn("HARD DURATION BUDGET", prompt_hook)
         self.assertIn(transcript, prompt_hook)
         self.assertIn("HASHTAG STRATEGY", prompt_hook)
         self.assertIn("TIKTOK SEO", prompt_hook)
         self.assertIn("RETENTION ENGINEERING", prompt_hook)
         self.assertIn("SCORING CALIBRATION", prompt_hook)
-        self.assertIn("TITLE OPTIONS (HOOK OVERLAY)", prompt_hook)
+        self.assertIn("HOOK LINE (OVERLAY 3 DETIK PERTAMA)", prompt_hook)
+        self.assertNotIn("keranjang kuning", prompt_hook)
 
         prompt_affiliate = build_viral_prompt(transcript, num_clips=2, mode="affiliate")
         self.assertIn("AFFILIATE SALES", prompt_affiliate)
+        self.assertIn("SEGMENT SELECTION CRITERIA", prompt_affiliate)
         self.assertIn("HASHTAG STRATEGY", prompt_affiliate)
         self.assertIn("TIKTOK SEO", prompt_affiliate)
         self.assertIn("RETENTION ENGINEERING", prompt_affiliate)
         self.assertIn("SCORING CALIBRATION", prompt_affiliate)
         self.assertIn("TITLE OPTIONS (HOOK OVERLAY)", prompt_affiliate)
         self.assertIn("keranjang kuning", prompt_affiliate)
-        self.assertNotIn("keranjang kuning", prompt_hook)
+
+    def test_viral_prompt_uses_shared_duration_budget(self):
+        """Prompt text must be driven by content_rules constants, not hardcoded."""
+        from backend.content_rules import MAX_DURATION, MIN_DURATION, TARGET_DURATION
+
+        prompt_hook = build_viral_prompt("[00:00:00 --> 00:00:10] Halo", 3, mode="hook")
+        self.assertIn(
+            f"between {int(MIN_DURATION['hook'])} and {int(TARGET_DURATION['hook'][1])} seconds",
+            prompt_hook,
+        )
+        self.assertIn(f"hard ceiling: {int(MAX_DURATION['hook'])} seconds", prompt_hook)
+
+        prompt_affiliate = build_viral_prompt("[00:00:00 --> 00:00:10] Halo", 3, mode="affiliate")
+        lo, hi = TARGET_DURATION["affiliate"]
+        self.assertIn(f"{int(lo)}-{int(hi)} seconds per clip", prompt_affiliate)
+        self.assertIn(f"hard ceiling {int(MAX_DURATION['affiliate'])}s", prompt_affiliate)
 
     def test_env_float_temperature(self):
         from backend.analyzer import env_float

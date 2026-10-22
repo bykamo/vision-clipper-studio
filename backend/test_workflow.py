@@ -295,8 +295,11 @@ class WorkflowSelfCheck(unittest.TestCase):
 
     def test_worker_retry_backoff_sleep_called(self):
         import backend.worker as worker_module
-        with patch.object(sys, "argv", ["worker.py", "--file", "dummy.mp4", "--analyze-only"]), \
+        # This test exercises the legacy single-pass retry path, so it must opt
+        # out of the two-pass default explicitly.
+        with patch.object(sys, "argv", ["worker.py", "--file", "dummy.mp4", "--analyze-only", "--single-pass"]), \
              patch("backend.worker.get_video_file", return_value="dummy.mp4"), \
+             patch("backend.worker.get_media_duration", return_value=120.0), \
              patch("backend.worker.transcribe_video", return_value=[{"start": 0, "end": 10, "text": "test"}]), \
              patch("backend.worker.build_transcript_text", return_value="test transcript"), \
              patch("backend.worker.build_viral_prompt", return_value="prompt"), \
