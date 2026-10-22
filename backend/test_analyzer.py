@@ -259,6 +259,112 @@ class AnalyzerTest(unittest.TestCase):
     def test_default_fallback_pool_has_no_empty_entries(self):
         self.assertTrue(all(m.strip() for m in DEFAULT_FALLBACK_MODELS))
 
+    def test_timeout_and_transient_error_classification(self):
+        from backend.analyzer import _is_timeout_error, _is_transient_llm_error, _needs_compact_retry
+
+        self.assertTrue(_is_timeout_error(504, ""))
+        self.assertTrue(_is_timeout_error(504, "request deadline exceeded"))
+        self.assertFalse(_is_timeout_error(429, "cooling down"))
+        self.assertTrue(_is_transient_llm_error(429, "accounts_rate_limited"))
+        self.assertTrue(_is_transient_llm_error(503, "capacity_exhausted"))
+        self.assertFalse(_is_transient_llm_error(401, "invalid api key"))
+        # A timeout must trigger the compact-transcript retry, not just oversize.
+        self.assertTrue(_needs_compact_retry(504, "deadline_exceeded"))
+        self.assertTrue(_needs_compact_retry(413, "Request too large"))
+        self.assertFalse(_needs_compact_retry(429, "cooling down"))
+
+    @patch("requests.post")
+    def test_call_llm_api_uses_streaming_by_default(self, mock_post):
+        """Buffered requests die at the gateway's ~76s deadline, so stream by default."""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.iter_lines.return_value = [
+            'data: {"choices": [{"delta": {"content": "Halo "}}]}',
+            'data: {"choices": [{"delta": {"content": "dunia"}}]}',
+            "data: [DONE]",
+        ]
+        mock_resp.text = ""
+        mock_post.return_value = mock_resp
+
+        result = call_llm_api("prompt", "model-primary", "https://api.example.com", "fake-key")
+        self.assertEqual(result, "Halo dunia")
+        self.assertTrue(mock_post.call_args.kwargs["stream"])
+        self.assertTrue(mock_post.call_args.kwargs["json"]["stream"])
+
+    @patch("requests.post")
+    def test_streaming_ignores_reasoning_content(self, mock_post):
+        """Reasoning tokens are not the answer; only delta.content is collected."""
+        from backend.analyzer import _extract_response_content
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.iter_lines.return_value = [
+            'data: {"choices": [{"delta": {"reasoning_content": "mikir panjang..."}}]}',
+            'data: {"choices": [{"delta": {"content": "{\\"clips\\": []}"}}]}',
+            "data: [DONE]",
+        ]
+        self.assertEqual(
+            _extract_response_content(mock_resp, use_stream=True, model="m"),
+            '{"clips": []}',
+        )
+
+    @patch("requests.post")
+    def test_streaming_inline_error_fails_over(self, mock_post):
+        """An SSE body carrying an error object must not be treated as success."""
+        import requests
+
+        bad = MagicMock()
+        bad.status_code = 200
+        bad.iter_lines.return_value = [
+            'data: {"error": {"code": "deadline_exceeded", "message": "request deadline exceeded"}}'
+        ]
+        bad.text = ""
+
+        ok = MagicMock()
+        ok.status_code = 200
+        ok.iter_lines.return_value = [
+            'data: {"choices": [{"delta": {"content": "Fallback success"}}]}',
+            "data: [DONE]",
+        ]
+        ok.text = ""
+        mock_post.side_effect = [bad, ok]
+
+        result = call_llm_api("prompt", "model-primary", "https://api.example.com", "fake-key")
+        self.assertEqual(result, "Fallback success")
+        self.assertEqual(mock_post.call_count, 2)
+
+    @patch("requests.post")
+    def test_gateway_timeout_retries_same_model_with_compact_prompt(self, mock_post):
+        """504 deadline_exceeded must shrink the transcript, not resend it unchanged."""
+        import requests
+
+        timeout = MagicMock()
+        timeout.status_code = 504
+        timeout.json.return_value = {
+            "error": {"code": "deadline_exceeded", "message": "request deadline exceeded"}
+        }
+        timeout.text = '{"error": {"code": "deadline_exceeded"}}'
+        timeout.raise_for_status.side_effect = requests.HTTPError("504")
+
+        ok = MagicMock()
+        ok.status_code = 200
+        ok.iter_lines.return_value = [
+            'data: {"choices": [{"delta": {"content": "{\\"candidates\\": []}"}}]}',
+            "data: [DONE]",
+        ]
+        ok.text = ""
+        mock_post.side_effect = [timeout, ok]
+
+        result = call_llm_api(
+            "FULL prompt", "model-primary", "https://api.example.com", "fake-key",
+            compact_prompt="COMPACT prompt",
+        )
+        self.assertEqual(result, '{"candidates": []}')
+        self.assertEqual(mock_post.call_count, 2)
+        second_payload = mock_post.call_args_list[1].kwargs["json"]
+        self.assertEqual(second_payload["model"], "model-primary")
+        self.assertEqual(second_payload["messages"][0]["content"], "COMPACT prompt")
+
 
 class UtilsEnhancementTest(unittest.TestCase):
     def test_parse_timestamp_to_seconds_handles_comma_decimals(self):

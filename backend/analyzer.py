@@ -1,8 +1,9 @@
 import json
 import os
 import re
+import time
 import requests
-from backend.utils import log
+from backend.utils import log, env_bool
 from backend.content_rules import (
     MAX_DURATION,
     MIN_DURATION,
@@ -268,9 +269,15 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 # verified available on the tiprouter.my.id gateway (see GET /v1/models for
 # the authoritative list for the current API key). Override with the
 # ROUTER_FALLBACK_MODELS env var (comma-separated).
+# Order matters: the first entries must be models that are actually healthy on
+# the gateway RIGHT NOW. gemini-3.8-flash is frequently in upstream cooldown
+# (429 accounts_rate_limited) and mimo-v2.6.flash is often 503 capacity-bound,
+# so both are demoted to the end of the chain.
 DEFAULT_FALLBACK_MODELS = [
-    "gemini-3.8-flash",
+    "qwen-3.8-27b",
     "deepseek-v4.1-flash",
+    "glm-5-3-flash",
+    "gemini-3.8-flash",
     "mimo-v2.6.flash",
 ]
 
@@ -310,6 +317,30 @@ _OVERSIZE_MARKERS = (
     "reduce your message size",
 )
 
+# Gateway timeouts: the upstream took too long to produce the completion.
+# Shrinking the transcript (compact prompt) usually makes it finish in time.
+_TIMEOUT_MARKERS = (
+    "deadline_exceeded",
+    "request deadline exceeded",
+    "took too long",
+    "timed out",
+    "timeout",
+)
+
+# Transient gateway/upstream states: another model may answer right away.
+_TRANSIENT_MARKERS = (
+    "capacity_exhausted",
+    "accounts_rate_limited",
+    "cooling down",
+    "platform_unavailable",
+    "concurrency limit",
+    "quota_exceeded",
+    "rate limit",
+    "too many requests",
+    "retryafterms",
+)
+_TRANSIENT_STATUS = {408, 425, 429, 500, 502, 503, 504, 529}
+
 
 def _is_permanent_llm_error(status_code, err_text=""):
     """True when retrying this model with the same payload cannot succeed."""
@@ -326,6 +357,20 @@ def _is_oversize_error(status_code, err_text=""):
         return True
     return any(marker in text for marker in _OVERSIZE_MARKERS)
 
+
+def _is_timeout_error(status_code, err_text=""):
+    """True when the failure was an upstream/gateway timeout."""
+    text = (err_text or "").lower()
+    if status_code in (408, 504):
+        return True
+    return any(marker in text for marker in _TIMEOUT_MARKERS)
+
+def _is_transient_llm_error(status_code, err_text=""):
+    """True when the gateway/upstream is busy and a retry later may succeed."""
+    text = (err_text or "").lower()
+    if any(marker in text for marker in _TRANSIENT_MARKERS):
+        return True
+    return status_code in _TRANSIENT_STATUS
 
 def _is_auth_error(status_code, err_text=""):
     """True when the gateway rejected the API key itself (not the model).
@@ -346,6 +391,125 @@ def get_fallback_models(primary=None):
     pool = [m.strip() for m in raw.split(",") if m.strip()] if raw else list(DEFAULT_FALLBACK_MODELS)
     return [m for m in pool if m and m != primary]
 
+
+def _iter_sse_chunks(response, deadline=None, model=None):
+    """Yield parsed SSE chunks from a streaming gateway response.
+
+    An inline `error` object is raised as an exception so the caller can fail
+    over to the next model instead of silently returning empty content.
+    """
+    for line in response.iter_lines(decode_unicode=True):
+        if deadline is not None and time.time() > deadline:
+            raise TimeoutError(f"timeout: stream '{model}' melewati batas waktu total")
+        if not line:
+            continue
+        line = line.strip()
+        if not line.startswith("data:"):
+            continue
+        raw = line[5:].strip()
+        if not raw or raw == "[DONE]":
+            continue
+        try:
+            chunk = json.loads(raw)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(chunk, dict) and chunk.get("error"):
+            raise RuntimeError(f"stream error: {json.dumps(chunk.get('error'))[:300]}")
+        yield chunk
+
+def _collect_sse_content(response, deadline=None, model=None):
+    """Concatenate `delta.content` from a streaming response.
+
+    `delta.reasoning_content` is deliberately ignored: reasoning models on this
+    gateway emit tens of thousands of reasoning tokens and only the final
+    `content` is the answer we want.
+    """
+    parts = []
+    for chunk in _iter_sse_chunks(response, deadline=deadline, model=model):
+        choices = chunk.get("choices") or [{}]
+        delta = choices[0].get("delta") or {}
+        piece = delta.get("content")
+        if piece:
+            parts.append(piece)
+    return "".join(parts)
+
+def _extract_response_content(response, use_stream=False, model=None):
+    """Pull the assistant text out of a gateway response.
+
+    Handles streaming SSE, a buffered SSE body, and a plain JSON completion.
+    Returns "" when the response carries no usable content.
+    """
+    if use_stream:
+        # Hard ceiling for the whole stream so a stalled connection cannot hang
+        # the worker forever (the per-read timeout alone does not cover this).
+        deadline = time.time() + env_int("ROUTER_LLM_STREAM_MAX_SECONDS", 300)
+        try:
+            text = _collect_sse_content(response, deadline=deadline, model=model)
+            if text.strip():
+                return text
+        except (TimeoutError, RuntimeError) as e:
+            # Stream aborted or carried an inline error: surface it so the
+            # caller can retry this model with a smaller payload / fail over.
+            if "stream error" in str(e) or isinstance(e, TimeoutError):
+                raise
+        except Exception:
+            # Some gateways/transport layers do not deliver true SSE. Fall back
+            # to reading the body, which may still hold the full completion.
+            pass
+
+    try:
+        resp_text = (response.text or "").strip()
+    except Exception:
+        return ""
+    if resp_text.startswith("data:"):
+        parts = []
+        for line in resp_text.splitlines():
+            line = line.strip()
+            if not line.startswith("data:") or line.endswith("[DONE]"):
+                continue
+            try:
+                chunk = json.loads(line[5:].strip())
+            except (ValueError, TypeError):
+                continue
+            delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
+            piece = delta.get("content")
+            if piece:
+                parts.append(piece)
+        if parts:
+            return "".join(parts)
+
+    try:
+        data = response.json()
+    except Exception:
+        return ""
+    choices = data.get("choices") or [{}]
+    return ((choices[0].get("message") or {}).get("content") or "")
+
+def _needs_compact_retry(status_code, err_text=""):
+    """True when resending the SAME model with a smaller transcript may work.
+
+    Covers both hard token limits (413) and gateway/upstream deadlines: a
+    178k-char transcript can blow the ~76s non-streaming deadline (504
+    deadline_exceeded) while the 95k-char compact version finishes in ~30s.
+    """
+    return _is_oversize_error(status_code, err_text) or _is_timeout_error(status_code, err_text)
+
+def _read_error_message(response):
+    """Extract a human-readable error message from a gateway response."""
+    try:
+        body = response.text or ""
+    except Exception:
+        return ""
+    try:
+        err_json = json.loads(body)
+        err = err_json.get("error")
+        if isinstance(err, dict):
+            return err.get("message") or err.get("code") or json.dumps(err)[:500]
+        if err:
+            return str(err)
+        return body[:500]
+    except (ValueError, TypeError):
+        return body[:500]
 
 def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None, compact_prompt=None):
     if not (endpoint or "").strip():
@@ -372,6 +536,11 @@ def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None, compact_pro
 
     last_error = None
     permanent_only = True
+    # Streaming is ON by default: the gateway hard-caps buffered (non-stream)
+    # requests at roughly 76 seconds and answers 504 deadline_exceeded, which is
+    # exactly what reasoning models (deepseek-v4.1-flash) hit every single time.
+    # With SSE the connection stays open while the model thinks.
+    use_stream = env_bool("ROUTER_LLM_STREAM", True)
     for m in candidate_models:
         active_prompt = prompt
         tried_compact = False
@@ -379,7 +548,7 @@ def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None, compact_pro
             payload = {
                 "model": m,
                 "messages": [{"role": "user", "content": active_prompt}],
-                "stream": False,
+                "stream": use_stream,
                 "temperature": env_float("ROUTER_LLM_TEMPERATURE", 0.4),
             }
 
@@ -388,16 +557,14 @@ def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None, compact_pro
             try:
                 # Per-request timeout (seconds). A hung/slow model must fail over
                 # to the fallback chain quickly instead of blocking for minutes.
-                req_timeout = env_int("ROUTER_LLM_TIMEOUT", 180)
-                response = requests.post(endpoint, json=payload, headers=headers, timeout=req_timeout)
+                req_timeout = env_int("ROUTER_LLM_TIMEOUT", 240)
+                response = requests.post(
+                    endpoint, json=payload, headers=headers,
+                    timeout=req_timeout, stream=use_stream,
+                )
                 status_code = response.status_code
                 if response.status_code != 200:
-                    err_msg = ""
-                    try:
-                        err_json = response.json()
-                        err_msg = err_json.get("error", {}).get("message", "") or json.dumps(err_json)
-                    except Exception:
-                        err_msg = response.text[:500]
+                    err_msg = _read_error_message(response)
                     log(f"LLM API Error with '{m}' [{response.status_code}]: {err_msg}", job_id=job_id)
                     # The API key is rejected: every model on this gateway will
                     # fail the same way, so stop the chain immediately.
@@ -408,41 +575,24 @@ def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None, compact_pro
                         )
                     if not _is_permanent_llm_error(response.status_code, err_msg):
                         permanent_only = False
-                    # Payload too big: retry the SAME model once with a compact transcript.
+                    # Payload too big OR upstream timed out: retry the SAME model
+                    # once with the compact transcript before giving up on it.
                     if (
                         compact_prompt
                         and not tried_compact
-                        and _is_oversize_error(response.status_code, err_msg)
+                        and _needs_compact_retry(response.status_code, err_msg)
                     ):
                         tried_compact = True
                         active_prompt = compact_prompt
-                        log(f"Model '{m}': payload terlalu besar, mencoba ulang dengan transkrip terkompresi...", job_id=job_id)
+                        log(f"Model '{m}': transkrip penuh terlalu berat ({response.status_code}), mencoba ulang dengan transkrip terkompresi...", job_id=job_id)
                         continue
                     response.raise_for_status()
 
-                # Handle standard JSON or SSE chunked formats
-                resp_text = response.text.strip()
-                if resp_text.startswith("data:"):
-                    collected = []
-                    for line in resp_text.splitlines():
-                        line = line.strip()
-                        if line.startswith("data:") and not line.endswith("[DONE]"):
-                            raw = line[5:].strip()
-                            try:
-                                chunk = json.loads(raw)
-                                delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                                if delta:
-                                    collected.append(delta)
-                            except Exception:
-                                pass
-                    if collected:
-                        return "".join(collected)
-
-                data = response.json()
-                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                content = _extract_response_content(response, use_stream=use_stream, model=m)
                 if content and content.strip():
                     return content
-                log(f"Unexpected response shape from LLM endpoint with '{m}': {json.dumps(data)[:500]}", job_id=job_id)
+                last_error = f"Model '{m}' tidak mengembalikan konten (hanya token reasoning)."
+                log(f"Respons LLM dari '{m}' tidak berisi konten (kemungkinan hanya token reasoning).", job_id=job_id)
                 permanent_only = False
                 break
             except PermanentLLMError:
@@ -463,11 +613,16 @@ def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None, compact_pro
                     ) from e
                 if not _is_permanent_llm_error(code, err_text):
                     permanent_only = False
+                if _is_transient_llm_error(code, err_text) and not _is_timeout_error(code, err_text):
+                    log(
+                        f"Model '{m}' sedang sibuk/kena limit di gateway ({code}) — bukan salah konfigurasi, lanjut ke model berikutnya.",
+                        job_id=job_id,
+                    )
                 # Retry same model with compact transcript if we haven't yet.
-                if compact_prompt and not tried_compact and _is_oversize_error(code, err_text):
+                if compact_prompt and not tried_compact and _needs_compact_retry(code, err_text):
                     tried_compact = True
                     active_prompt = compact_prompt
-                    log(f"Model '{m}': payload terlalu besar, mencoba ulang dengan transkrip terkompresi...", job_id=job_id)
+                    log(f"Model '{m}': transkrip penuh terlalu berat, mencoba ulang dengan transkrip terkompresi...", job_id=job_id)
                     continue
                 if m != candidate_models[-1]:
                     log(f"Model '{m}' gagal ({e}), otomatis beralih ke model fallback berikutnya...", job_id=job_id)

@@ -28,7 +28,6 @@ import {
   PhotoIcon,
   SwatchIcon,
   CloudArrowDownIcon,
-  CalendarDaysIcon,
 } from '@heroicons/react/24/outline';
 import { StopIcon as StopIconSolid } from '@heroicons/react/24/solid';
 import { SubtitleStyleConfig, FramingMode } from '../types';
@@ -85,16 +84,6 @@ interface ClipQuality {
   generic_risk: boolean;
   has_hook: boolean;
   has_first_comment: boolean;
-}
-
-/** One scheduled upload slot from the backend posting plan. */
-interface PostingSlot {
-  index: number;
-  slot: string;
-  date_label: string;
-  time_label: string;
-  title: string;
-  hook_line: string;
 }
 
 interface ClipCandidate {
@@ -271,7 +260,6 @@ export const SimpleClipperDashboard: React.FC = () => {
   // Workflow Phase State
   const [phase, setPhase] = useState<WorkflowPhase>('config');
   const [clipCandidates, setClipCandidates] = useState<ClipCandidate[]>([]);
-  const [postingPlan, setPostingPlan] = useState<PostingSlot[]>([]);
   const [analysisId, setAnalysisId] = useState<string>('');
   const [resolvedVideoPath, setResolvedVideoPath] = useState<string>('');
   const [previewClipRange, setPreviewClipRange] = useState<{ start: number; end: number } | null>(
@@ -299,8 +287,13 @@ export const SimpleClipperDashboard: React.FC = () => {
   const [advancedStepsUnlocked, setAdvancedStepsUnlocked] = useState<boolean>(false);
   // Groq Whisper Cloud adalah satu-satunya model transkripsi (pilihan utama/default).
   const transcriptionModel = 'groq';
-  // Default = tanpa subtitle. Gaya caption dipilih lewat check/uncheck pada kartu.
-  const [selectedPresetId, setSelectedPresetId] = useState<string>('no_subtitle');
+  // Default = TikTok Viral, BUKAN 'no_subtitle'.
+  // 'no_subtitle' membuat overlay subtitle di PhonePreview tidak dirender sama
+  // sekali (gate `selectedPresetId !== 'no_subtitle'`), sehingga transkrip asli
+  // tidak terlihat di pre-render. Preset ini juga yang dikirim ke backend saat
+  // render (`sub_style`), jadi default 'no_subtitle' = video hasil render tanpa
+  // subtitle sama sekali. Klik preset yang sama untuk melepas (tanpa subtitle).
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('tiktok_viral');
   const [framingMode, setFramingMode] = useState<FramingMode>('smart_crop');
   const [subPosition, setSubPosition] = useState<number>(68);
 
@@ -625,7 +618,6 @@ export const SimpleClipperDashboard: React.FC = () => {
     setProgress(0);
     setIsProcessing(false);
     setClipCandidates([]);
-    setPostingPlan([]);
     setAnalysisId('');
     setResolvedVideoPath('');
     setPreviewClipRange(null);
@@ -1064,14 +1056,17 @@ export const SimpleClipperDashboard: React.FC = () => {
   };
 
   // Ambil kata transkrip untuk klip yang sedang dipreview (dipakai subtitle preview).
-  const loadClipWords = async (index: number) => {
-    if (!analysisId) {
+  // `analysisIdOverride` dipakai tepat setelah analisis selesai, karena state
+  // `analysisId` belum ter-flush saat handler SSE berjalan.
+  const loadClipWords = async (index: number, analysisIdOverride?: string) => {
+    const id = analysisIdOverride ?? analysisId;
+    if (!id) {
       setPreviewClipWords([]);
       return;
     }
     try {
       const res = await fetch(
-        `/api/analysis-clip-words?analysis_id=${encodeURIComponent(analysisId)}&index=${index}`,
+        `/api/analysis-clip-words?analysis_id=${encodeURIComponent(id)}&index=${index}`,
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as { words?: PreviewWord[] };
@@ -1082,7 +1077,7 @@ export const SimpleClipperDashboard: React.FC = () => {
     }
   };
 
-  const previewCandidate = (clip: ClipCandidate) => {
+  const previewCandidate = (clip: ClipCandidate, analysisIdOverride?: string) => {
     setPreviewOutputClip(null);
     setPreviewClipRange({ start: clip.start, end: clip.end });
     setActiveClipMeta({
@@ -1090,7 +1085,7 @@ export const SimpleClipperDashboard: React.FC = () => {
       caption: clip.caption,
       hashtags: clip.hashtags,
     });
-    void loadClipWords(clip.index);
+    void loadClipWords(clip.index, analysisIdOverride);
     setClipCandidates((prev) =>
       prev.map((candidate) =>
         candidate.index === clip.index ? { ...candidate, previewed: true } : candidate,
@@ -1170,7 +1165,6 @@ export const SimpleClipperDashboard: React.FC = () => {
     setGeneratedClips([]);
     setOutputDir('');
     setClipCandidates([]);
-    setPostingPlan([]);
     setAnalysisId('');
     setResolvedVideoPath('');
     setPreviewClipRange(null);
@@ -1264,7 +1258,6 @@ export const SimpleClipperDashboard: React.FC = () => {
             }),
           );
           setClipCandidates(candidates);
-          setPostingPlan(Array.isArray(result.posting_plan) ? result.posting_plan : []);
           setAnalysisId(result.analysis_id || '');
           setResolvedVideoPath(result.video_path || source);
           setOutputDir(result.output_dir || '');
@@ -1273,6 +1266,25 @@ export const SimpleClipperDashboard: React.FC = () => {
           }
           analysisReceivedRef.current = true;
           setPhase('preview');
+          // Langsung tampilkan klip pertama di preview supaya subtitle transkrip
+          // asli langsung terlihat tanpa harus klik "Preview" dulu.
+          const firstClip = candidates[0];
+          if (firstClip) {
+            const newAnalysisId = result.analysis_id || '';
+            setPreviewOutputClip(null);
+            setPreviewClipRange({ start: firstClip.start, end: firstClip.end });
+            setActiveClipMeta({
+              title: firstClip.title_options?.[0],
+              caption: firstClip.caption,
+              hashtags: firstClip.hashtags,
+            });
+            void loadClipWords(firstClip.index, newAnalysisId);
+            setClipCandidates((prev) =>
+              prev.map((candidate) =>
+                candidate.index === firstClip.index ? { ...candidate, previewed: true } : candidate,
+              ),
+            );
+          }
           const ts = new Date().toTimeString().split(' ')[0];
           setLogs((prev) => [
             ...prev,
@@ -2221,37 +2233,6 @@ export const SimpleClipperDashboard: React.FC = () => {
                       {confirmedClipCount}/{clipCandidates.length} Dikonfirmasi
                     </span>
                   </div>
-
-                  {/* Posting plan: 1 klip/hari jam 19.30 WIB, bukan borongan */}
-                  {postingPlan.length > 0 && (
-                    <div className="mb-2.5 flex-shrink-0 rounded-xl border border-slate-800/80 bg-slate-950/60 px-2.5 py-2">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="flex items-center gap-1.5 text-[9.5px] font-bold uppercase tracking-wider text-slate-400">
-                          <CalendarDaysIcon className="h-3 w-3 text-cyan-400 stroke-[2]" />
-                          Jadwal Posting
-                        </span>
-                        <span className="text-[9px] text-slate-500">
-                          1 klip/hari • 19.30 WIB
-                        </span>
-                      </div>
-                      <div className="flex gap-1.5 overflow-x-auto scrollbar-thin pb-0.5">
-                        {postingPlan.map((slot) => (
-                          <div
-                            key={`${slot.index}-${slot.slot}`}
-                            className="flex-shrink-0 rounded-lg border border-slate-800 bg-slate-900/80 px-2 py-1 text-left"
-                            title={`${slot.title || `Klip ${slot.index}`} — ${slot.date_label} ${slot.time_label}`}
-                          >
-                            <div className="font-mono text-[9px] font-bold text-cyan-400">
-                              #{String(slot.index).padStart(2, '0')}
-                            </div>
-                            <div className="text-[9px] text-slate-300 whitespace-nowrap">
-                              {slot.date_label}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
 
                   {/* Clip Cards List (Scrollable) */}
                   <div className="space-y-2.5 overflow-y-auto flex-1 scrollbar-thin pr-1">

@@ -1,12 +1,10 @@
 import unittest
-from datetime import datetime, timedelta, timezone
 
 from backend.content_rules import (
     MAX_DURATION,
     MIN_HASHTAGS,
     apply_clip_rules,
     apply_content_rules,
-    build_posting_plan,
     clean_caption,
     dedupe_overlapping,
     ensure_closing_question,
@@ -147,22 +145,6 @@ class ApplyRulesTest(unittest.TestCase):
         ]
         result = apply_content_rules(clips, _segments((0, 200, "teks.")), mode="hook")
         self.assertEqual([c["start"] for c in result], [0.0, 100.0])
-
-
-class PostingPlanTest(unittest.TestCase):
-    def test_one_clip_per_day_at_1930_wib(self):
-        start = datetime(2026, 3, 1, 19, 30, tzinfo=timezone(timedelta(hours=7)))
-        clips = [{"index": 1, "title_options": ["A"]}, {"index": 2, "title_options": ["B"]}]
-        plan = build_posting_plan(clips, start=start)
-        self.assertEqual(plan[0]["time_label"], "19.30 WIB")
-        self.assertEqual(plan[0]["date_label"], "01 Mar 2026")
-        self.assertEqual(plan[1]["date_label"], "02 Mar 2026")
-
-    def test_default_start_is_in_the_future(self):
-        plan = build_posting_plan([{"index": 1}])
-        slot = datetime.fromisoformat(plan[0]["slot"])
-        self.assertGreater(slot, datetime.now(timezone.utc))
-
 
 if __name__ == "__main__":
     unittest.main()

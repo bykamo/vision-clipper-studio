@@ -15,7 +15,7 @@ from backend.analyzer import (
     extract_json_block,
     PermanentLLMError,
 )
-from backend.content_rules import apply_content_rules, build_posting_plan, MAX_DURATION
+from backend.content_rules import apply_content_rules, MAX_DURATION
 from backend.renderer import extract_and_format_clip
 from backend.utils import (
     log,
@@ -59,13 +59,20 @@ def _llm_json_with_retries(prompt, compact_prompt, llm_endpoint, llm_key, llm_mo
 
     PermanentLLMError (bad key / blocked model) is re-raised immediately —
     retrying cannot help.
+
+    Retry strategy: attempt 1 uses the full transcript. If it fails for ANY
+    reason (timeout, truncated JSON, gateway 5xx), the next attempt switches to
+    the compact transcript instead of resending the same oversized payload that
+    just failed. This turns a ~3x repeated 2-minute timeout into one fast retry.
     """
     last_error = None
+    use_compact = False
     for attempt in range(3):
+        active_prompt = compact_prompt if (use_compact and compact_prompt) else prompt
         try:
             log(f"Memanggil AI ({label}, percobaan {attempt + 1}/3)...", job_id=job_id)
             llm_response = call_llm_api(
-                prompt, llm_model, llm_endpoint, llm_key,
+                active_prompt, llm_model, llm_endpoint, llm_key,
                 job_id=job_id, compact_prompt=compact_prompt,
             )
             data = extract_json_block(llm_response, job_id=job_id)
@@ -78,6 +85,9 @@ def _llm_json_with_retries(prompt, compact_prompt, llm_endpoint, llm_key, llm_mo
         except Exception as e:
             last_error = str(e)
             log(f"LLM gagal ({label}) percobaan {attempt + 1}: {e}", job_id=job_id)
+        # Next attempt: shrink the payload if we have a compact version.
+        if compact_prompt:
+            use_compact = True
         if attempt < 2:
             time.sleep(2 ** attempt)
     raise RuntimeError(
@@ -374,7 +384,6 @@ def main():
                 "source_lang": args.source_lang,
                 "mode": args.mode,
                 "clips": clips,
-                "posting_plan": build_posting_plan(clips),
                 "segments": _serialize_segments(segments),
                 "output_dir": actual_out_dir
             }
