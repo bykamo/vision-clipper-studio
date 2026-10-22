@@ -572,7 +572,7 @@ def select_diverse_clips(candidates, num_clips=5, min_gap_sec=60.0, diversity_th
         selected.append((score, s, e, c))
 
     out = []
-    for i, (score, s, e, c) in enumerate(selected, 1):
+    for i, (_, _, _, c) in enumerate(selected, 1):
         d = dict(c)
         d["index"] = i
         out.append(d)
