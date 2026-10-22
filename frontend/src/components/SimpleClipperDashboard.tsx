@@ -28,6 +28,7 @@ import {
   PhotoIcon,
   SwatchIcon,
   CloudArrowDownIcon,
+  CalendarDaysIcon,
 } from '@heroicons/react/24/outline';
 import { StopIcon as StopIconSolid } from '@heroicons/react/24/solid';
 import { SubtitleStyleConfig, FramingMode } from '../types';
@@ -65,9 +66,36 @@ interface GeneratedClipItem {
   out_file?: string;
   caption?: string;
   hashtags?: string[];
+  hook_line?: string;
+  first_comment?: string;
+  series?: string;
 }
 
 type WorkflowPhase = 'config' | 'analyzing' | 'preview' | 'rendering' | 'complete';
+
+/** Quality flags computed server-side by `backend/content_rules.py`. */
+interface ClipQuality {
+  duration: number;
+  duration_ok: boolean;
+  in_target?: boolean;
+  duration_hint: string;
+  has_question: boolean;
+  hashtag_count: number;
+  hashtags_ok: boolean;
+  generic_risk: boolean;
+  has_hook: boolean;
+  has_first_comment: boolean;
+}
+
+/** One scheduled upload slot from the backend posting plan. */
+interface PostingSlot {
+  index: number;
+  slot: string;
+  date_label: string;
+  time_label: string;
+  title: string;
+  hook_line: string;
+}
 
 interface ClipCandidate {
   index: number;
@@ -80,6 +108,10 @@ interface ClipCandidate {
   sales_score?: number;
   caption: string;
   hashtags: string[];
+  hook_line?: string;
+  first_comment?: string;
+  series?: string;
+  quality?: ClipQuality;
   decision: 'pending' | 'approved' | 'skipped';
   previewed: boolean;
 }
@@ -101,6 +133,10 @@ interface AnalysisClipPayload {
   sales_score?: number;
   caption?: string;
   hashtags?: string[];
+  hook_line?: string;
+  first_comment?: string;
+  series?: string;
+  quality?: ClipQuality;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -235,6 +271,7 @@ export const SimpleClipperDashboard: React.FC = () => {
   // Workflow Phase State
   const [phase, setPhase] = useState<WorkflowPhase>('config');
   const [clipCandidates, setClipCandidates] = useState<ClipCandidate[]>([]);
+  const [postingPlan, setPostingPlan] = useState<PostingSlot[]>([]);
   const [analysisId, setAnalysisId] = useState<string>('');
   const [resolvedVideoPath, setResolvedVideoPath] = useState<string>('');
   const [previewClipRange, setPreviewClipRange] = useState<{ start: number; end: number } | null>(
@@ -588,6 +625,7 @@ export const SimpleClipperDashboard: React.FC = () => {
     setProgress(0);
     setIsProcessing(false);
     setClipCandidates([]);
+    setPostingPlan([]);
     setAnalysisId('');
     setResolvedVideoPath('');
     setPreviewClipRange(null);
@@ -600,6 +638,8 @@ export const SimpleClipperDashboard: React.FC = () => {
     setSelectedClipForTt(null);
     setYtModalOpen(false);
     setTtModalOpen(false);
+    setTtFirstComment('');
+    setTtCommentCopied(false);
     setYtUploadProgress('idle');
     setYtUploadResult(null);
     setYtUploadErrorMessage(null);
@@ -782,7 +822,9 @@ export const SimpleClipperDashboard: React.FC = () => {
   const [ttModalOpen, setTtModalOpen] = useState(false);
   const [selectedClipForTt, setSelectedClipForTt] = useState<GeneratedClipItem | null>(null);
   const [ttFormTitle, setTtFormTitle] = useState('');
+  const [ttFirstComment, setTtFirstComment] = useState('');
   const [ttCopied, setTtCopied] = useState(false);
+  const [ttCommentCopied, setTtCommentCopied] = useState(false);
 
   useEffect(() => {
     const initializeYouTube = async () => {
@@ -850,7 +892,7 @@ export const SimpleClipperDashboard: React.FC = () => {
     const finalTitle =
       clip.title || (clipCandidate ? clipCandidate.title_options[0] : `Clip #${clip.id}`);
     const caption = clip.caption || clipCandidate?.caption || finalTitle;
-    const rawHashtags = clip.hashtags || clipCandidate?.hashtags || ['fyp', 'viral', 'trending'];
+    const rawHashtags = clip.hashtags || clipCandidate?.hashtags || ['mindset', 'selfimprovement'];
     const hashtags = rawHashtags
       .map((h) => (h.startsWith('#') ? h : `#${h}`))
       .slice(0, 5)
@@ -860,7 +902,9 @@ export const SimpleClipperDashboard: React.FC = () => {
 
     setSelectedClipForTt(clip);
     setTtFormTitle(fullCaption);
+    setTtFirstComment(clip.first_comment || clipCandidate?.first_comment || '');
     setTtCopied(false);
+    setTtCommentCopied(false);
     setTtModalOpen(true);
   };
 
@@ -906,7 +950,7 @@ export const SimpleClipperDashboard: React.FC = () => {
     const finalTitle =
       clip.title || (clipCandidate ? clipCandidate.title_options[0] : `Clip #${clip.id}`);
     const caption = clip.caption || clipCandidate?.caption || finalTitle;
-    const rawHashtags = clip.hashtags || clipCandidate?.hashtags || ['Shorts', 'Viral'];
+    const rawHashtags = clip.hashtags || clipCandidate?.hashtags || ['mindset', 'selfimprovement'];
     const hashtags = rawHashtags.map((h) => h.replace(/^#/, '').trim()).filter(Boolean);
     if (!hashtags.includes('Shorts')) hashtags.unshift('Shorts');
 
@@ -1126,6 +1170,7 @@ export const SimpleClipperDashboard: React.FC = () => {
     setGeneratedClips([]);
     setOutputDir('');
     setClipCandidates([]);
+    setPostingPlan([]);
     setAnalysisId('');
     setResolvedVideoPath('');
     setPreviewClipRange(null);
@@ -1210,11 +1255,16 @@ export const SimpleClipperDashboard: React.FC = () => {
               sales_score: c.sales_score,
               caption: c.caption || '',
               hashtags: c.hashtags || [],
+              hook_line: c.hook_line || '',
+              first_comment: c.first_comment || '',
+              series: c.series || '',
+              quality: c.quality,
               decision: 'pending',
               previewed: false,
             }),
           );
           setClipCandidates(candidates);
+          setPostingPlan(Array.isArray(result.posting_plan) ? result.posting_plan : []);
           setAnalysisId(result.analysis_id || '');
           setResolvedVideoPath(result.video_path || source);
           setOutputDir(result.output_dir || '');
@@ -2172,6 +2222,37 @@ export const SimpleClipperDashboard: React.FC = () => {
                     </span>
                   </div>
 
+                  {/* Posting plan: 1 klip/hari jam 19.30 WIB, bukan borongan */}
+                  {postingPlan.length > 0 && (
+                    <div className="mb-2.5 flex-shrink-0 rounded-xl border border-slate-800/80 bg-slate-950/60 px-2.5 py-2">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="flex items-center gap-1.5 text-[9.5px] font-bold uppercase tracking-wider text-slate-400">
+                          <CalendarDaysIcon className="h-3 w-3 text-cyan-400 stroke-[2]" />
+                          Jadwal Posting
+                        </span>
+                        <span className="text-[9px] text-slate-500">
+                          1 klip/hari • 19.30 WIB
+                        </span>
+                      </div>
+                      <div className="flex gap-1.5 overflow-x-auto scrollbar-thin pb-0.5">
+                        {postingPlan.map((slot) => (
+                          <div
+                            key={`${slot.index}-${slot.slot}`}
+                            className="flex-shrink-0 rounded-lg border border-slate-800 bg-slate-900/80 px-2 py-1 text-left"
+                            title={`${slot.title || `Klip ${slot.index}`} — ${slot.date_label} ${slot.time_label}`}
+                          >
+                            <div className="font-mono text-[9px] font-bold text-cyan-400">
+                              #{String(slot.index).padStart(2, '0')}
+                            </div>
+                            <div className="text-[9px] text-slate-300 whitespace-nowrap">
+                              {slot.date_label}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Clip Cards List (Scrollable) */}
                   <div className="space-y-2.5 overflow-y-auto flex-1 scrollbar-thin pr-1">
                     {clipCandidates.map((clip) => {
@@ -2243,10 +2324,72 @@ export const SimpleClipperDashboard: React.FC = () => {
                             {clip.reason}
                           </p>
 
+                          {/* Hook overlay (detik 0-3) + series */}
+                          {(clip.hook_line || clip.series) && (
+                            <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                              {clip.hook_line && (
+                                <span
+                                  className="text-[9px] font-bold text-amber-200 bg-amber-500/10 border border-amber-500/25 px-1.5 py-0.5 rounded-md truncate max-w-full"
+                                  title={`Overlay detik 0-3: ${clip.hook_line}`}
+                                >
+                                  ⚡ {clip.hook_line}
+                                </span>
+                              )}
+                              {clip.series && (
+                                <span
+                                  className="text-[9px] text-violet-300 bg-violet-500/10 border border-violet-500/25 px-1.5 py-0.5 rounded-md truncate"
+                                  title="Format serial"
+                                >
+                                  {clip.series}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Quality warnings — clip yang lemah ditandai sebelum dirender */}
+                          {clip.quality && (
+                            <div className="flex flex-wrap gap-1 mb-2">
+                              {!clip.quality.in_target && (
+                                <span
+                                  className="text-[8px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/25 px-1.5 py-0.5 rounded-full"
+                                  title={`Ideal ${clip.quality.duration_hint} agar completion rate tinggi`}
+                                >
+                                  ⏱ {Math.round(clip.quality.duration)}s
+                                </span>
+                              )}
+                              {clip.quality.generic_risk && (
+                                <span
+                                  className="text-[8px] font-bold text-rose-300 bg-rose-500/10 border border-rose-500/25 px-1.5 py-0.5 rounded-full"
+                                  title="Caption terasa quote generik — tambahkan opini tegas atau angka"
+                                >
+                                  ⚠ generik
+                                </span>
+                              )}
+                              {!clip.quality.has_question && (
+                                <span
+                                  className="text-[8px] font-bold text-sky-300 bg-sky-500/10 border border-sky-500/25 px-1.5 py-0.5 rounded-full"
+                                  title="Caption tanpa pertanyaan penutup"
+                                >
+                                  ? belum ada
+                                </span>
+                              )}
+                            </div>
+                          )}
+
                           {/* Caption Preview */}
                           <p className="text-[9px] text-slate-500 italic line-clamp-1 mb-2.5">
                             {clip.caption}
                           </p>
+
+                          {/* First comment (di-pin) */}
+                          {clip.first_comment && (
+                            <p
+                              className="text-[9px] text-emerald-300/80 line-clamp-1 mb-2.5"
+                              title={`Komentar pertama (pin): ${clip.first_comment}`}
+                            >
+                              📌 {clip.first_comment}
+                            </p>
+                          )}
 
                           {/* Hashtags */}
                           <div className="flex flex-wrap gap-1 mb-2.5">
@@ -2913,6 +3056,65 @@ export const SimpleClipperDashboard: React.FC = () => {
                 className="w-full rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs text-slate-200 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 resize-none font-medium leading-relaxed"
                 placeholder="Tulis caption dan hashtags TikTok..."
               />
+
+              {/* Pinned first comment — inti strategi "hidupkan komen 1 jam pertama" */}
+              <div className="rounded-xl border border-emerald-500/25 bg-emerald-950/20 p-3">
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">
+                    📌 Komentar Pertama (Pin & Balas Sendiri)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!ttFirstComment.trim()) return;
+                      navigator.clipboard.writeText(ttFirstComment);
+                      setTtCommentCopied(true);
+                      setTimeout(() => setTtCommentCopied(false), 2500);
+                    }}
+                    className="flex items-center gap-1 text-[10px] font-semibold text-emerald-400 hover:text-emerald-300 transition-colors"
+                  >
+                    {ttCommentCopied ? (
+                      <>
+                        <CheckIcon className="h-3 w-3 text-emerald-400" />
+                        <span>Tersalin!</span>
+                      </>
+                    ) : (
+                      <>
+                        <DocumentDuplicateIcon className="h-3 w-3" />
+                        <span>Salin</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <textarea
+                  rows={2}
+                  value={ttFirstComment}
+                  onChange={(e) => setTtFirstComment(e.target.value)}
+                  className="w-full rounded-lg border border-slate-800 bg-slate-950 p-2 text-[11px] text-emerald-100 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-none leading-relaxed"
+                  placeholder="Komentar yang di-pin setelah upload (biar kolom komen hidup di 1 jam pertama)..."
+                />
+              </div>
+
+              {/* Checklist perilaku upload — pengingat, bukan otomatis */}
+              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Sebelum posting
+                </div>
+                <ul className="space-y-1 text-[10.5px] text-slate-400">
+                  <li className="flex items-start gap-1.5">
+                    <span className="text-emerald-400 flex-shrink-0">•</span>
+                    <span>Upload 1 video per hari jam 19.00–21.00 WIB, jangan borongan.</span>
+                  </li>
+                  <li className="flex items-start gap-1.5">
+                    <span className="text-emerald-400 flex-shrink-0">•</span>
+                    <span>Setelah posting: pin komentar di atas, lalu balas semua komen 1 jam pertama.</span>
+                  </li>
+                  <li className="flex items-start gap-1.5">
+                    <span className="text-emerald-400 flex-shrink-0">•</span>
+                    <span>Pin 3 video terbaik di profil, termasuk yang paling tinggi views-nya.</span>
+                  </li>
+                </ul>
+              </div>
             </div>
 
             {/* Modal Footer Actions */}

@@ -6,6 +6,7 @@ import time
 from backend.downloader import get_video_file, get_video_source_name
 from backend.transcriber import transcribe_video, build_transcript_text, build_compact_transcript_text, get_media_duration
 from backend.analyzer import build_viral_prompt, call_llm_api, extract_json_block, PermanentLLMError
+from backend.content_rules import apply_content_rules, build_posting_plan, MAX_DURATION
 from backend.renderer import extract_and_format_clip
 from backend.utils import (
     log,
@@ -104,6 +105,8 @@ def main():
                 log(f"--- Rendering Clip {idx}/{len(clips)} ---", job_id=job_id)
                 titles = clip.get('title_options', [clip.get('title', 'Unknown Title')])
                 log(f"Title: {titles[0] if isinstance(titles, list) and titles else titles}", job_id=job_id)
+                if clip.get("hook_line"):
+                    log(f"Hook: {clip['hook_line']}", job_id=job_id)
                 try:
                     extract_and_format_clip(
                         video_path, clip, idx, segments, actual_out_dir,
@@ -226,6 +229,21 @@ def main():
             raise RuntimeError("Semua kandidat klip yang dihasilkan LLM memiliki durasi tidak valid.")
         clips = valid_clips
 
+        # ── DETERMINISTIC CONTENT RULES (durasi, caption, hashtag, duplikat) ──
+        # LLM bagus untuk menemukan momen, tapi tidak konsisten untuk hal mekanis
+        # yang paling menentukan performa (completion rate, hashtag hygiene,
+        # closing question). Aturan ini dijalankan di kode supaya hasilnya sama
+        # terlepas dari model mana yang menjawab.
+        before_rules = len(clips)
+        clips = apply_content_rules(clips, segments, mode=args.mode)
+        if not clips:
+            raise RuntimeError("Tidak ada kandidat klip yang lolos aturan kualitas konten.")
+        if len(clips) < before_rules:
+            log(
+                f"{before_rules - len(clips)} klip dibuang karena tumpang tindih dengan klip lain.",
+                job_id=job_id,
+            )
+
         video_basename = os.path.splitext(os.path.basename(video_path))[0]
         safe_folder_name = "".join([c if c.isalnum() or c in [' ', '-', '_'] else '_' for c in video_basename]).strip()
         actual_out_dir = os.path.join(args.out_dir, safe_folder_name)
@@ -245,7 +263,9 @@ def main():
                 "video_path": video_path,
                 "source_name": resolved_source_wm,
                 "source_lang": args.source_lang,
+                "mode": args.mode,
                 "clips": clips,
+                "posting_plan": build_posting_plan(clips),
                 "segments": _serialize_segments(segments),
                 "output_dir": actual_out_dir
             }
@@ -266,6 +286,8 @@ def main():
             log(f"Title: {titles[0] if isinstance(titles, list) and titles else titles}", job_id=job_id)
             log(f"Viral Reason: {clip.get('reason', clip.get('viral_reason'))}", job_id=job_id)
             log(f"Score: {clip.get('viral_score')}", job_id=job_id)
+            if clip.get("hook_line"):
+                log(f"Hook line: {clip['hook_line']}", job_id=job_id)
 
             try:
                 extract_and_format_clip(

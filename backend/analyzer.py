@@ -3,6 +3,12 @@ import os
 import re
 import requests
 from backend.utils import log
+from backend.content_rules import (
+    MAX_DURATION,
+    MIN_DURATION,
+    TARGET_DURATION,
+    NICHE_FALLBACK,
+)
 
 
 def env_int(key, default):
@@ -31,7 +37,7 @@ def build_viral_prompt(transcript_text, num_clips, mode="hook"):
         prompt = f"""You are an elite affiliate marketing content strategist specializing in short-form video platforms (TikTok, YouTube Shorts, Instagram Reels). You have deep expertise in SALES PSYCHOLOGY, CONVERSION OPTIMIZATION, and VIRAL CONTENT MECHANICS.
 
 ## YOUR MISSION
-Analyze the transcript below and extract exactly {num_clips} high-converting segments optimized for AFFILIATE SALES + VIRAL REACH.
+Analyze the transcript below and extract exactly {num_clips} high-converting segments optimized for AFFILIATE SALES + VIRAL REACH. Each must work as a standalone 9:16 short that a cold viewer finishes watching.
 
 ## TRANSCRIPT FORMAT
 Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
@@ -60,13 +66,15 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 - **FULL NARRATIVE ARC**: Every clip MUST be 100% self-contained and deliver a full thought from start to finish: `[Hook / Problem Opening] -> [Product Solution / Core Argument] -> [Full Conclusion / Takeaway / CTA]`.
 - **NO PREMATURE CUTOFF**: NEVER end a clip while the speaker is still explaining the solution, in the middle of a sentence, or before the final conclusion is delivered. The audience must get the full payoff.
 - **NO HANGING CONJUNCTIONS**: NEVER end on connector words or incomplete clauses (e.g. "karena...", "tapi...", "dan akhirnya...", "artinya...", "jadi...", "makanya...").
-- **DURATION IS FLEXIBLE FOR COMPLETENESS**: Target duration is typically 60 - 150 seconds (up to 180 seconds for deep explanations). **NEVER sacrifice the completeness of a point just to keep the duration under 90 seconds**. A clip that cuts off mid-point has ZERO conversion value. Extend `end` until the point finishes completely.
+- **DURATION BUDGET (NON-NEGOTIABLE)**: {int(TARGET_DURATION['affiliate'][0])}-{int(TARGET_DURATION['affiliate'][1])} seconds per clip. Absolute hard ceiling {int(MAX_DURATION['affiliate'])}s. Pick the densest slice that still contains pain point -> solution -> CTA. Do NOT submit a 90s+ clip: completion rate collapses and the clip never reaches the people who would buy.
+- **START ON THE PUNCHLINE, NOT THE INTRO**: open on the pain point or the claim, never on setup ("jadi gini", "sebelumnya gw cerita").
 - **EXACT TRANSCRIPT TIMESTAMPS**:
   * Set `start` (in seconds, e.g. 15.0) matching the start timestamp `[HH:MM:SS.mmm --> ...]` of the opening sentence.
-  * Set `end` (in seconds, e.g. 112.5) matching the end timestamp `[... --> HH:MM:SS.mmm]` of the concluding sentence.
+  * Set `end` (in seconds, e.g. 52.5) matching the end timestamp `[... --> HH:MM:SS.mmm]` of the concluding sentence.
 
-### 2. HOOK & FLOW:
-- The first 2-3 seconds MUST contain a strong hook (question, bold claim, or pattern interrupt). Never start on filler words ("um", "jadi gini") or mid-sentence.
+### 2. HOOK, STANCE & FLOW:
+- The first 3 seconds MUST contain a strong hook (question, bold claim, or pattern interrupt). Never start on filler words ("um", "jadi gini") or mid-sentence.
+- Every clip must have a `hook_line`: the exact on-screen text for second 0-3. Max 7 words, no clickbait the clip does not pay off.
 - Segments MUST NOT overlap.
 - If possible, include the CTA/product mention within the segment. If the CTA is nearby, extend the segment to include it.
 - `viral_score` ranges from 0-100. Score based on: hook strength (30%), sales potential (40%), emotional impact (15%), shareability (15%).
@@ -76,8 +84,8 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
   * 90+ HANYA untuk segmen yang secara objektif luar biasa (hook kuat + emosi tinggi + quotable). Klip rata-rata harus di 60-75.
 
 ### 2b. RETENTION ENGINEERING:
-- Prefer durasi 45-80 detik. Hanya gunakan 90-150s jika arc-nya benar-benar padat tanpa bagian lambat.
-- Buang filler, jeda diam, dan pengulangan dari segmen — mulai tepat sebelum hook, akhiri tepat setelah payoff.
+- {int(TARGET_DURATION['affiliate'][0])}-{int(TARGET_DURATION['affiliate'][1])} detik. Klip lebih panjang kalah di completion rate dan tidak sampai ke calon pembeli.
+- Buang filler, jeda diam, dan pengulangan — mulai tepat sebelum hook, akhiri tepat setelah payoff.
 - Utamakan segmen dengan "open loop" di tengah (cerita yang payoff-nya ditunda) agar penonton menonton sampai habis.
 - Ending ideal: punchline/takeaway yang terasa menyambung kembali ke pembukaan (rewatch/loop-friendly).
 
@@ -90,20 +98,22 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 - Write like an authentic Indonesian TikTok / Reels affiliate creator. Use natural, conversational colloquial Indonesian (lu-gue/gw/lo/aja/nih/banget/kan/worth it).
 - Length: 1-2 punchy, concise sentences (max 100-120 chars). Maximum 1 emoji (e.g. 😭, 🤯, 🔥).
 - TIKTOK SEO: Sisipkan 1-2 keyword pencarian yang orang Indonesia ketik di search (contoh: "cara", "tips", "review", "alasan kenapa", nama produk) secara NATURAL dalam 40-50 karakter pertama caption. Kalimat pembuka caption = kalimat yang terlihat sebelum "...selengkapnya" di feed.
-- SHOP CTA: Jika produk tersedia di TikTok Shop, akhiri caption dengan CTA belanja natural seperti "ada di keranjang kuning 🛒" atau "cek keranjang kuning sebelum kehabisan". Maksimal 1 CTA per caption, jangan menagih.
+- SHOP CTA: Jika produk tersedia di TikTok Shop, sebut CTA belanja natural di TENGAH caption (contoh: "ada di keranjang kuning 🛒"), lalu tetap tutup dengan pertanyaan spesifik. Maksimal 1 CTA per caption, jangan menagih.
 - ANGKA = HOOK KUAT: Jika ada promo/diskon/harga yang disebut di segmen, masukkan angkanya di caption (contoh: "cuma Rp50 ribu").
-- ABSOLUTE PROHIBITION - NEVER END WITH A QUESTION: Do NOT end with questions or engagement bait like "Gimana menurut kalian?", "Setuju gak?", "Pernah ngalamin?", "Coba komen di bawah!", "Ada yang relate?". The caption MUST end with a strong, definitive statement, benefit takeaway, or relatable insight.
-- FORBIDDEN BANNED AI WORDS: "Apakah kamu", "Ini dia", "Pernahkah Anda", "Yuk simak", "Tonton sampai habis", "Tahukah kamu", "Fakta menarik", "Jangan lewatkan", "Simak penjelasannya".
+- ABSOLUTE PROHIBITION - NEVER END WITH A VAGUE BAIT QUESTION: Do NOT end with "Gimana menurut kalian?", "Ada yang relate?", "Coba komen di bawah!".
+- MANDATORY CLOSING QUESTION: The caption MUST end with ONE short, SPECIFIC question tied to the product or the claim (e.g. "Masih ragu atau langsung checkout?"). Specific either/or questions get replies; generic opinion-bait does not.
+- FORBIDDEN BANNED AI WORDS: "Apakah kamu", "Ini dia", "Pernahkah Anda", "Yuk simak", "Tonton sampai habis", "Tahukah kamu", "Fakta menarik", "Jangan lewatkan", "Simak penjelasannya", "Jangan lupa like/follow".
 - GOOD EXAMPLES:
-  * "Review jujur headset Rp50 ribu ini, buat meeting online aman banget, ada di keranjang kuning 🛒"
-  * "Nyesel baru tau barang ini sekarang, beneran ngebantu banget pas kerjaan numpuk 😭"
-  * "Solusi paling masuk akal buat yang pengen rapi tanpa harus keluar modal jutaan."
-- HASHTAG STRATEGY (untuk distribusi akun kecil/baru):
-  * Maksimal 1 tag broad (contoh: #fyp). JANGAN pakai #viral, #trending, #beranda, #foryou.
-  * 2-3 tag NICHE spesifik yang mendeskripsikan TOPIK PERSIS klip ini (contoh: #reviewgadget, #headsetmurah, #tipsshop).
-  * 1-2 tag komunitas medium (pemirsa aktif, kompetisi rendah).
+  * "Review jujur headset Rp50 ribu ini, buat meeting online aman banget. Masih mikir atau langsung ambil?"
+  * "Nyesel baru tau barang ini sekarang, beneran ngebantu pas kerjaan numpuk. Lu butuh yang kayak gini juga?"
+  * "Solusi paling masuk akal buat yang pengen rapi tanpa modal jutaan. Budget lu di bawah 100 ribu atau lebih?"
+- HASHTAG STRATEGY (akun kecil — 3 sampai 5 tag, TANPA tag broad):
+  * DILARANG TOTAL: #fyp, #foryou, #viral, #trending, #beranda, #shorts, #reels.
+  * 3-5 tag NICHE spesifik yang mendeskripsikan TOPIK PERSIS klip ini (contoh: #reviewgadget, #headsetmurah, #tipskerja).
   * 1 tag nama produk/brand jika disebut di transkrip (contoh: #namaproduk).
-  * Total 4-5 tag. Tag harus membantu algoritma MENGKATEGORIKAN video, bukan sekadar ngejar traffic.
+  * Tag harus membantu algoritma MENGKATEGORIKAN video, bukan sekadar ngejar traffic.
+- FIRST COMMENT (PINNED): Tulis `first_comment` = 1 kalimat pendek berisi detail tambahan/harga/alasannya, maksimal 12 kata. Ini yang di-pin supaya kolom komentar hidup.
+- SERIES: Isi `series` kalau klip ini bagian dari format berulang (contoh: "Review 50 Ribu"). Kosongkan kalau tidak ada.
 
 ## RESPONSE FORMAT (ONLY valid JSON, no explanation, no markdown)
 
@@ -111,15 +121,18 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
   "clips": [
     {{
       "start": 15.0,
-      "end": 82.5,
+      "end": 52.5,
+      "hook_line": "Headset Rp50 ribu buat meeting",
       "type": "affiliate|viral|hybrid",
       "title": "Short catchy title (max 60 chars)",
       "title_options": ["Title 1", "Title 2", "Title 3"],
       "reason": "Why this converts — which sales psychology triggers are present",
-      "viral_score": 95,
-      "sales_score": 88,
-      "caption": "Review jujur headset Rp50 ribu ini, buat meeting online aman banget, ada di keranjang kuning 🛒",
-      "hashtags": ["#fyp", "#reviewgadget", "#headsetmurah", "#tipsonline", "#namaproduk"]
+      "viral_score": 88,
+      "sales_score": 85,
+      "caption": "Review jujur headset Rp50 ribu ini, buat meeting online aman banget. Masih mikir atau langsung ambil?",
+      "hashtags": ["#reviewgadget", "#headsetmurah", "#tipskerja"],
+      "first_comment": "Yang gw pake 6 bulan, mic-nya masih jernih.",
+      "series": "Review 50 Ribu"
     }}
   ]
 }}
@@ -128,15 +141,28 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 {transcript_text}
 """
     else:
-        prompt = f"""You are an elite viral content strategist with deep expertise in SHORT-FORM VIDEO VIRALITY MECHANICS for TikTok, YouTube Shorts, and Instagram Reels. You understand algorithmic reach, audience psychology, and content hooks at a professional level.
+        prompt = f"""You are an elite short-form content strategist who has grown small Indonesian accounts from zero. You know exactly which clips get 500 views and which get 50.000, and the difference is almost never the topic — it is STANCE, LENGTH, and the first 3 seconds.
 
 ## YOUR MISSION
-Analyze the transcript below and extract exactly {num_clips} segments with the ABSOLUTE HIGHEST VIRAL POTENTIAL. These clips must be engineered to maximize watch time, engagement, and shares.
+Analyze the transcript below and extract exactly {num_clips} segments that can each stand alone as a 9:16 short. Optimize for COMPLETION RATE first (the strongest distribution signal), then comments, then follows.
+
+## HARD DURATION BUDGET (NON-NEGOTIABLE)
+- Every clip MUST be between {int(MIN_DURATION['hook'])} and {int(TARGET_DURATION['hook'][1])} seconds. Absolute hard ceiling: {int(MAX_DURATION['hook'])} seconds.
+- A {int(MAX_DURATION['hook'])}s ceiling forces you to pick the DENSEST moment, not a whole conversation.
+- Do NOT pick a 90-second segment and call it complete. Pick the 30-second slice that already contains setup + argument + payoff.
+- If a great point is spread over 2 minutes, extract only the core 30 seconds where the speaker lands the argument.
 
 ## TRANSCRIPT FORMAT
 Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 
-## VIRAL DETECTION FRAMEWORK (Score each segment against these):
+## WHAT ACTUALLY TRAVELS (rank candidates in this order)
+
+### Tier 0 — STANCE (highest weight — this is what separates 500 views from 50.000):
+- A **firm, slightly spicy opinion** the speaker defends without hedging. Example shape: "kerja keras tanpa pola itu cuma bikin lu capek, bukan kaya".
+- A **contrarian claim** that goes against common advice ("jangan kejar passion", "spesialisasi lebih aman dari generalis").
+- A **specific, falsifiable statement** with a number, timeframe, or concrete example.
+- PENALIZE HARD: generic motivation quotes with no stance ("konsisten itu penting", "percaya sama proses"). These get a few hundred views. They are the #1 reason a clip dies.
+- Test: could this clip be reposted by 100 accounts unchanged? If yes, it has no stance — reject it.
 
 ### Tier 1 — Immediate Hook Power (Most Important):
 1. **Curiosity Gap** — Opens a loop the viewer MUST see closed ("You won't believe what happened next")
@@ -158,52 +184,60 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 
 ## CRITICAL RULES (MUST FOLLOW STRICTLY)
 
-### 1. COMPLETE POINT & FULL CLOSURE (ABSOLUTE HIGHEST PRIORITY - NEVER CUT OFF MID-POINT):
-- **FULL NARRATIVE ARC & THOUGHT COMPLETION**: Every clip MUST be 100% self-contained and deliver a full thought from start to finish: `[Hook / Intriguing Setup] -> [Core Argument / Story / Insight] -> [Full Conclusion / Punchline / Takeaway]`.
-- **NO PREMATURE CUTOFF**: NEVER cut off while the speaker is still in the middle of making a point, explaining a concept, building up an argument, or before delivering the conclusion/takeaway. The audience must get the full payoff and context.
-- **NO HANGING CONJUNCTIONS**: NEVER end on connector words or incomplete thoughts (e.g. "karena...", "tapi...", "dan setelah itu...", "artinya...", "jadi kesimpulannya...", "sehingga...").
-- **DURATION IS FLEXIBLE FOR COMPLETENESS**: Target duration is typically 60 - 150 seconds (up to 180 seconds for deep analysis, case studies, or storytelling). **NEVER sacrifice the completeness of a point just to keep duration under 90 seconds**. It is 100x better to have a 110s or 140s clip where the point is 100% complete and understandable, than an 80s clip that cuts off abruptly.
+### 1. COMPLETE POINT INSIDE A SHORT WINDOW (HIGHEST PRIORITY):
+- **FULL ARC, MINIMAL FAT**: Every clip must be self-contained: `[Punchline hook] -> [Core argument] -> [Payoff / takeaway]`. Trim every sentence that does not serve the argument.
+- **START ON THE PUNCHLINE, NOT THE INTRO**: The clip must open on the sharpest sentence available, not on setup ("jadi gini...", "sebelumnya gw cerita..."). Cut the runway. Start exactly where the claim lands.
+- **NO HANGING CONJUNCTIONS**: Never end on "karena...", "tapi...", "artinya...", "jadi...", "makanya...".
+- **CUT ON A SENTENCE BOUNDARY**: `end` must land on the end of a complete sentence, never mid-clause.
+- **DURATION OVER COMPLETENESS IS NOT A TRADE-OFF HERE**: If the only complete version is 70s, it is the WRONG moment — find a different moment that lands in {int(TARGET_DURATION['hook'][0])}-{int(TARGET_DURATION['hook'][1])}s. Do not submit a 70s clip.
 - **EXACT TRANSCRIPT TIMESTAMPS**:
   * Set `start` (in seconds as float, e.g. 15.0) matching the start timestamp `[HH:MM:SS.mmm --> ...]` of the opening line.
-  * Set `end` (in seconds as float, e.g. 125.4) matching the end timestamp `[... --> HH:MM:SS.mmm]` of the concluding sentence.
+  * Set `end` (in seconds as float, e.g. 45.4) matching the end timestamp `[... --> HH:MM:SS.mmm]` of the concluding sentence.
 
-### 2. HOOK & FLOW:
-- The first 2-3 seconds of each segment MUST contain a strong hook. NEVER start on dead air, filler words ("um", "so anyway", "jadi begini"), or mid-sentence. If the hook starts slightly before your ideal segment, extend backward to capture it cleanly.
-- Segments MUST NOT overlap.
+### 2. HOOK, STANCE & FLOW:
+- The first 3 seconds MUST contain the punchline or the controversial claim. NEVER start on dead air, filler words ("um", "jadi begini"), or mid-sentence.
+- Every clip must have a `hook_line`: the exact on-screen text for second 0-3. Max 7 words, uses the viewer's own words ("lu", "gw"), no clickbait the clip does not pay off.
+- Segments MUST NOT overlap and must not re-tell the same moment from the same talk.
 - `title_options` should provide 3 distinct angles: (1) curiosity-driven, (2) benefit-driven, (3) controversial/provocative.
-- `viral_score` ranges from 0-100. Weight: hook strength (35%), emotional intensity (25%), shareability (20%), comment potential (20%).
+- `viral_score` ranges from 0-100. Weight: STANCE strength (35%), hook strength (25%), comment potential (25%), shareability (15%).
 - SCORING CALIBRATION:
   * Skor adalah RELATIVE RANKING antar kandidat di transkrip ini, bukan skor absolut.
   * Tidak boleh ada dua klip dengan selisih < 3 poin.
-  * 90+ HANYA untuk segmen yang secara objektif luar biasa (hook kuat + emosi tinggi + quotable). Klip rata-rata harus di 60-75.
+  * 90+ HANYA untuk segmen dengan opini tegas + hook kuat + quotable. Klip rata-rata harus di 60-75.
+  * Klip yang isinya quote generik tanpa opini WAJIB di bawah 55.
 
 ### 2b. RETENTION ENGINEERING:
-- Prefer durasi 45-80 detik. Hanya gunakan 90-150s jika arc-nya benar-benar padat tanpa bagian lambat.
-- Buang filler, jeda diam, dan pengulangan dari segmen — mulai tepat sebelum hook, akhiri tepat setelah payoff.
-- Utamakan segmen dengan "open loop" di tengah (cerita yang payoff-nya ditunda) agar penonton menonton sampai habis.
-- Ending ideal: punchline/takeaway yang terasa menyambung kembali ke pembukaan (rewatch/loop-friendly).
+- {int(TARGET_DURATION['hook'][0])}-{int(TARGET_DURATION['hook'][1])} detik. Titik. Klip lebih panjang dari itu kalah di completion rate.
+- Buang filler, jeda diam, dan pengulangan — mulai tepat di punchline, akhiri tepat setelah payoff.
+- Utamakan segmen dengan "open loop" di tengah (payoff ditunda) agar penonton bertahan sampai akhir.
+- Ending ideal: kalimat yang terasa menyambung kembali ke pembukaan (rewatch/loop-friendly).
+- **REUSE MOMENTUM**: kalau ada momen yang bisa jadi PART 2 dari argumen sebelumnya, beri `series` yang sama.
 
-### 2c. TITLE OPTIONS (HOOK OVERLAY):
-- title_options[0] (angle paling curiosity) akan dipakai sebagai teks overlay di 3 detik pertama video:
-  * Maksimal 8 kata, ada angka atau spesifik (contoh: "3 kesalahan...", "90% orang...", "Alasan kenapa...").
-  * Tidak boleh clickbait palsu — janjinya harus terbayar dalam klip.
+### 2c. HOOK LINE (OVERLAY 3 DETIK PERTAMA):
+- `hook_line` = teks overlay detik 0-3, maksimal 7 kata, opini tegas atau angka spesifik (contoh: "Kerja keras gak bikin kaya", "90% orang salah pilih").
+- Tidak boleh clickbait palsu — janjinya harus terbayar dalam klip.
+- title_options[0] dipakai sebagai judul file dan judul upload; tetap buat 3 opsi.
 
 ### 3. CAPTION GUIDELINES (100% HUMAN CREATOR TONE, NO AI VIBES):
 - Write like an authentic Indonesian podcast/video clipper posting on TikTok, Shorts, or Instagram Reels. Use natural, everyday colloquial Indonesian (lu-gue/gw/lo/aja/nih/banget/kan/parah/asli).
 - Length: 1-2 punchy, concise sentences (max 100-120 chars). Maximum 1 subtle emoji (e.g. 🗿, 💀, 🤯, 🔥) or no emoji.
 - TIKTOK SEO: Sisipkan 1-2 keyword pencarian yang orang Indonesia ketik di search (contoh: "alasan kenapa", "cara", "mindset", "psikologi", topik spesifik klip) secara NATURAL dalam 40-50 karakter pertama caption. Kalimat pembuka caption = kalimat yang terlihat sebelum "...selengkapnya" di feed.
-- ABSOLUTE PROHIBITION - NEVER END WITH A QUESTION: Do NOT end with questions or engagement bait like "Gimana menurut kalian?", "Setuju gak?", "Pernah ngalamin hal serupa?", "Kalian tim mana nih?", "Coba komen di bawah!", "Ada yang ngerasa gini juga?". The caption MUST end with a strong, definitive statement, hard-hitting observation, or brutal truth takeaway.
-- FORBIDDEN BANNED AI WORDS: "Apakah kamu", "Ini dia", "Pernahkah Anda", "Yuk simak", "Tonton sampai habis", "Tahukah kamu", "Fakta menariknya", "Simak baik-baik", "Mari kita bahas", "Jangan lewatkan".
+- MANDATORY CLOSING QUESTION: The caption MUST end with ONE short, SPECIFIC question answerable in two words — an either/or or a self-identification question. This is the single biggest comment driver for a small account.
+  * GOOD: "Lu tim kerja keras atau tim kerja cerdas?", "Umur berapa lu baru sadar ini?", "Setuju atau ini kelewat keras?"
+  * BAD (vague bait, forbidden): "Gimana menurut kalian?", "Ada yang relate?", "Coba komen di bawah!", "Setuju gak?"
+  * The question must be about the SPECIFIC claim in the clip, not a generic ask for opinions.
+- FORBIDDEN BANNED AI WORDS: "Apakah kamu", "Ini dia", "Pernahkah Anda", "Yuk simak", "Tonton sampai habis", "Tahukah kamu", "Fakta menariknya", "Simak baik-baik", "Mari kita bahas", "Jangan lewatkan", "Jangan lupa like/follow", "Cek link di bio".
 - GOOD EXAMPLES:
-  * "Realita pahit kenapa kerja keras doang gak bakal bikin lu kaya kalau polanya salah 🗿"
-  * "Mindset kayak gini yang bikin banyak orang stuck bertahun-tahun tanpa sadar."
-  * "Alasan kenapa orang yang beneran kompeten justru jarang banyak omong di publik."
-  * "Ternyata ini penyebab utama kenapa generasi sekarang gampang banget burnout."
-- HASHTAG STRATEGY (untuk distribusi akun kecil/baru):
-  * Maksimal 1 tag broad (contoh: #fyp). JANGAN pakai #viral, #trending, #beranda, #foryou.
-  * 2-3 tag NICHE spesifik yang mendeskripsikan TOPIK PERSIS klip ini (contoh: #mindsetbisnis, #psikologija, #keuanganpribadi, #caradagang).
-  * 1-2 tag komunitas medium (pemirsa aktif, kompetisi rendah).
-  * Total 4-5 tag. Tag harus membantu algoritma MENGKATEGORIKAN video, bukan sekadar ngejar traffic.
+  * "Kerja keras tanpa pola cuma bikin lu capek, bukan kaya. Lu tim lembur atau tim strategi?"
+  * "Spesialisasi kalah cepat dari generalis di 2 tahun pertama, tapi menang total di tahun ke-5. Lu pilih yang mana?"
+  * "Orang yang beneran kompeten justru jarang banyak omong di publik. Ini kenapa lu harus curiga sama yang paling vokal."
+- HASHTAG STRATEGY (akun kecil — 3 sampai 5 tag, TANPA tag broad):
+  * DILARANG TOTAL: #fyp, #foryou, #viral, #trending, #beranda, #shorts, #reels. Tag ini tidak mengkategorikan apa pun dan hanya menandai video sebagai spam.
+  * 3-5 tag NICHE yang mendeskripsikan TOPIK PERSIS klip ini (contoh: #mindsetbisnis, #psikologikerja, #keuanganpribadi, #produktivitas).
+  * Kalau topiknya terlalu umum, pakai basis ini: {' '.join(NICHE_FALLBACK)}.
+  * Tag harus membantu algoritma MENGKATEGORIKAN video ke audiens yang tepat, bukan mengejar traffic.
+- FIRST COMMENT (PINNED): Tulis `first_comment` = 1 kalimat pendek yang memperkuat opini klip ATAU menantang penonton, maksimal 12 kata. Ini yang di-pin dan dibalas sendiri supaya kolom komentar hidup di 1 jam pertama.
+- SERIES: Isi `series` dengan nama format serial yang konsisten (contoh: "Mindset 30 Detik") kalau klip ini bagian dari tema berulang. Kosongkan kalau tidak ada.
 
 ## RESPONSE FORMAT (ONLY valid JSON, no explanation, no markdown)
 
@@ -211,12 +245,15 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
   "clips": [
     {{
       "start": 15.0,
-      "end": 82.5,
+      "end": 42.5,
+      "hook_line": "Kerja keras gak bikin kaya",
       "title_options": ["Curiosity Title", "Benefit Title", "Controversial Title"],
-      "reason": "Which viral triggers from the framework are present and why this will go viral",
-      "viral_score": 95,
-      "caption": "Realita pahit kenapa kerja keras doang gak bakal bikin lu kaya kalau polanya salah 🗿",
-      "hashtags": ["#fyp", "#mindsetbisnis", "#psikologija", "#keuanganpribadi"]
+      "reason": "Which stance/hook triggers are present and why this travels",
+      "viral_score": 88,
+      "caption": "Kerja keras tanpa pola cuma bikin lu capek, bukan kaya. Lu tim lembur atau tim strategi?",
+      "hashtags": ["#mindsetbisnis", "#psikologikerja", "#keuanganpribadi"],
+      "first_comment": "Lembur 12 jam bukan bukti lu serius, cuma bukti lu gak punya sistem.",
+      "series": "Mindset 30 Detik"
     }}
   ]
 }}

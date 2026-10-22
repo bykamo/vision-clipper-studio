@@ -1397,9 +1397,23 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
     hashtags = clip_info.get("hashtags", [])
     hashtags_text = " ".join(hashtags) if isinstance(hashtags, list) else hashtags
     titles_text = "\n".join([f"- {t}" for t in title_options]) if isinstance(title_options, list) else title_options
-    
+
+    # Sidecar fields the posting UI needs. `main._parse_rendered_clip_metadata`
+    # reads these back, so keep the headings in sync with that parser.
+    hook_line = str(clip_info.get("hook_line") or "").strip()
+    first_comment = str(clip_info.get("first_comment") or "").strip()
+    series = str(clip_info.get("series") or "").strip()
+
     with open(caption_file, "w", encoding="utf-8") as f:
-        f.write(f"Title Options:\n{titles_text}\n\nCaption:\n{caption_text}\n\nHashtags:\n{hashtags_text}")
+        f.write(f"Title Options:\n{titles_text}\n\n")
+        if hook_line:
+            f.write(f"Hook:\n{hook_line}\n\n")
+        f.write(f"Caption:\n{caption_text}\n\n")
+        f.write(f"Hashtags:\n{hashtags_text}\n")
+        if first_comment:
+            f.write(f"\n\nFirst Comment:\n{first_comment}\n")
+        if series:
+            f.write(f"\nSeries:\n{series}\n")
     
     ass_file = os.path.join(TEMP_DIR, f"temp_{index}.ass")
     if os.path.exists(ass_file):

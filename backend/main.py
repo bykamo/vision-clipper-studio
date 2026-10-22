@@ -297,7 +297,14 @@ def _fallback_rendered_title(video_path: str) -> str:
 
 def _parse_rendered_clip_metadata(metadata_path: str):
     """Parse renderer sidecar text without requiring metadata to load a clip."""
-    sections = {"title options": [], "caption": [], "hashtags": []}
+    sections = {
+        "title options": [],
+        "caption": [],
+        "hashtags": [],
+        "hook": [],
+        "first comment": [],
+        "series": [],
+    }
     current_section = None
     try:
         with open(metadata_path, "r", encoding="utf-8") as metadata_file:
@@ -309,14 +316,24 @@ def _parse_rendered_clip_metadata(metadata_path: str):
                 if current_section is not None:
                     sections[current_section].append(raw_line)
     except (OSError, UnicodeError):
-        return {"title": "", "caption": "", "hashtags": []}
+        return {
+            "title": "",
+            "caption": "",
+            "hashtags": [],
+            "hook_line": "",
+            "first_comment": "",
+            "series": "",
+        }
+
+    def _joined(key):
+        return "\n".join(sections[key]).strip()
 
     titles = [
         re.sub(r"^\s*[-*]\s*", "", line).strip()
         for line in sections["title options"]
         if line.strip()
     ]
-    caption = "\n".join(sections["caption"]).strip()
+    caption = _joined("caption")
     hashtags_text = " ".join(sections["hashtags"]).strip()
     hashtags = re.findall(r"#[^\s#]+", hashtags_text)
     if not hashtags and hashtags_text:
@@ -326,6 +343,9 @@ def _parse_rendered_clip_metadata(metadata_path: str):
         "title": titles[0] if titles else "",
         "caption": caption,
         "hashtags": hashtags,
+        "hook_line": _joined("hook").replace("\n", " "),
+        "first_comment": _joined("first comment").replace("\n", " "),
+        "series": _joined("series").replace("\n", " "),
     }
 
 
@@ -337,7 +357,14 @@ def _load_rendered_clips(target_path: str):
     clips = []
     for index, video_path in enumerate(video_paths, 1):
         metadata_path = os.path.splitext(video_path)[0] + ".txt"
-        metadata = {"title": "", "caption": "", "hashtags": []}
+        metadata = {
+            "title": "",
+            "caption": "",
+            "hashtags": [],
+            "hook_line": "",
+            "first_comment": "",
+            "series": "",
+        }
         if (
             os.path.isfile(metadata_path)
             and not os.path.islink(metadata_path)
@@ -353,6 +380,9 @@ def _load_rendered_clips(target_path: str):
             "out_file": video_path,
             "caption": metadata["caption"] or fallback_title,
             "hashtags": metadata["hashtags"],
+            "hook_line": metadata.get("hook_line", ""),
+            "first_comment": metadata.get("first_comment", ""),
+            "series": metadata.get("series", ""),
         })
 
     return {"output_dir": real_folder, "clips": clips}
