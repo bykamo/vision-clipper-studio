@@ -525,13 +525,18 @@ async def bootstrap_session():
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    index_path = os.path.join(SERVE_DIR, "index.html")
-    if not os.path.exists(index_path):
-        # Do not serve raw unbundled TSX/HTML
-        return _set_session_cookie(HTMLResponse(content=FALLBACK_HTML, status_code=200))
-    with open(index_path, "r", encoding="utf-8") as f:
-        html_content = f.read()
-    return _set_session_cookie(HTMLResponse(content=html_content))
+    dist_index = os.path.join(DIST_DIR, "index.html")
+    serve_index = os.path.join(SERVE_DIR, "index.html")
+    # Do not serve raw unbundled TSX/HTML from frontend root directory
+    if os.path.exists(dist_index):
+        with open(dist_index, "r", encoding="utf-8") as f:
+            html_content = f.read()
+        return _set_session_cookie(HTMLResponse(content=html_content))
+    elif SERVE_DIR != FRONTEND_DIR and os.path.exists(serve_index):
+        with open(serve_index, "r", encoding="utf-8") as f:
+            html_content = f.read()
+        return _set_session_cookie(HTMLResponse(content=html_content))
+    return _set_session_cookie(HTMLResponse(content=FALLBACK_HTML, status_code=200))
 
 @app.get("/api/list-dir")
 async def list_dir_api(path: str = ""):

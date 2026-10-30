@@ -892,7 +892,7 @@ def _measure_loudness(video_path, start, duration, pre_chain, target_lufs, job_i
     return _parse_loudnorm_json(res.stderr)
 
 
-def build_audio_filter(fade_out_start, pre_chain, target_lufs, measurement=None, fade_dur=0.35):
+def build_audio_filter(fade_out_start, pre_chain, target_lufs, measurement=None, fade_dur=0.5):
     """
     Return (filter_string, mode). mode:
       - "two_pass": loudnorm linear memakai hasil ukur (paling natural, tanpa pumping)
@@ -921,7 +921,7 @@ def build_audio_filter(fade_out_start, pre_chain, target_lufs, measurement=None,
     parts = [pre_chain]
     if loudnorm:
         parts.append(loudnorm)
-    parts.append(f"afade=t=out:st={max(0.0, float(fade_out_start)):.3f}:d={max(0.1, float(fade_dur)):.3f}")
+    parts.append(f"afade=t=out:st={max(0.0, float(fade_out_start)):.3f}:d={max(0.1, float(fade_dur)):g}")
     return ",".join(parts), mode
 
 _YOLO_MODEL_CACHE = {}
@@ -1533,12 +1533,6 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
             "-i", video_path,
             "-filter_complex", filter_graph,
             "-map", "[v]",
-            "-map", "0:a?",
-            "-af", af_filter,
-            "-ar", str(AUDIO_SAMPLE_RATE),  # Wajib: loudnorm internal 192kHz
-            "-avoid_negative_ts", "make_zero",
-            "-t", str(duration),
-        ] + codec_params + ["-f", "mp4", part_out_file]
             "-map", "0:a?",
             "-af", af_filter,
             "-ar", str(AUDIO_SAMPLE_RATE),  # Wajib: loudnorm internal 192kHz
