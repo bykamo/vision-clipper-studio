@@ -892,7 +892,7 @@ def _measure_loudness(video_path, start, duration, pre_chain, target_lufs, job_i
     return _parse_loudnorm_json(res.stderr)
 
 
-def build_audio_filter(fade_out_start, pre_chain, target_lufs, measurement=None):
+def build_audio_filter(fade_out_start, pre_chain, target_lufs, measurement=None, fade_dur=0.35):
     """
     Return (filter_string, mode). mode:
       - "two_pass": loudnorm linear memakai hasil ukur (paling natural, tanpa pumping)
@@ -921,7 +921,7 @@ def build_audio_filter(fade_out_start, pre_chain, target_lufs, measurement=None)
     parts = [pre_chain]
     if loudnorm:
         parts.append(loudnorm)
-    parts.append(f"afade=t=out:st={max(0.0, float(fade_out_start)):.3f}:d=0.5")
+    parts.append(f"afade=t=out:st={max(0.0, float(fade_out_start)):.3f}:d={max(0.1, float(fade_dur)):.3f}")
     return ",".join(parts), mode
 
 _YOLO_MODEL_CACHE = {}
@@ -1379,11 +1379,55 @@ def _validate_rendered_video(file_path: str, min_duration: float = 0.5) -> bool:
     except Exception:
         return False
 
+def _natural_padding(segments, clip_start, clip_end, lead_max=0.20, tail_max=0.50):
+    """Hitung padding awal dan akhir yang adaptif dengan jeda ucapan asli.
+
+    Mencegah memotong kata di awal dan mencegah kalimat baru bocor di akhir.
+    """
+    words = []
+    for s in segments or []:
+        w_list = s.get("words") or []
+        if w_list:
+            for w in w_list:
+                try:
+                    words.append((float(w.get("start", 0.0)), float(w.get("end", 0.0))))
+                except (TypeError, ValueError):
+                    pass
+        else:
+            try:
+                words.append((float(s.get("start", 0.0)), float(s.get("end", 0.0))))
+            except (TypeError, ValueError):
+                pass
+
+    if not words:
+        return 0.05, 0.25
+
+    words.sort(key=lambda x: x[0])
+
+    # Cari kata terakhir sebelum clip_start
+    prev_ends = [e for s_, e in words if e <= clip_start + 0.05]
+    prev_end = max(prev_ends) if prev_ends else (clip_start - lead_max)
+    gap_before = max(0.0, clip_start - prev_end)
+    lead = min(lead_max, max(0.0, gap_before * 0.5))
+
+    # Cari kata pertama setelah clip_end
+    next_starts = [s_ for s_, e in words if s_ >= clip_end - 0.05]
+    next_start = min(next_starts) if next_starts else (clip_end + tail_max)
+    gap_after = max(0.0, next_start - clip_end)
+    tail = min(tail_max, max(0.12, gap_after * 0.6))
+
+    return lead, tail
+
+
 def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job_id=None, sub_style="tiktok_viral", framing_mode="smart_crop", sub_position=68, watermark_enabled=True, source_watermark="", account_watermark=""):
-    start = max(0.0, float(clip_info.get("start", 0.0)) - 0.2)
-    end = float(clip_info.get("end", 0.0)) + 1.2
+    raw_start = max(0.0, float(clip_info.get("start", 0.0)))
+    raw_end = float(clip_info.get("end", 0.0))
+    lead, tail = _natural_padding(segments, raw_start, raw_end)
+    start = max(0.0, raw_start - lead)
+    end = raw_end + tail
     duration = end - start
-    fade_out_start = max(0.0, duration - 0.5)
+    fade_dur = max(0.12, min(0.35, tail * 0.75))
+    fade_out_start = max(0.0, duration - fade_dur)
     
     title_options = clip_info.get("title_options", [clip_info.get("title", f"clip_{index}")])
     title = title_options[0] if isinstance(title_options, list) and title_options else title_options
@@ -1436,12 +1480,12 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
     
     escaped_ass = _escape_filter_path(ass_file)
     
-    af_filter = f"asetpts=PTS-STARTPTS,highpass=f=100,acompressor=threshold=-20dB:ratio=4:attack=5:release=50:makeup=8dB,afade=t=out:st={fade_out_start}:d=0.5"
+    af_filter = f"asetpts=PTS-STARTPTS,highpass=f=100,acompressor=threshold=-20dB:ratio=4:attack=5:release=50:makeup=8dB,afade=t=out:st={fade_out_start:.3f}:d={fade_dur:.3f}"
     # Audio Enhancer: highpass + compressor halus + loudnorm 2-pass ke target LUFS platform (default -14)
     audio_settings = get_audio_settings()
     audio_pre_chain = build_audio_pre_chain(denoise=audio_settings["denoise"])
     loudness = _measure_loudness(video_path, start, duration, audio_pre_chain, audio_settings["target_lufs"], job_id=job_id)
-    af_filter, audio_mode = build_audio_filter(fade_out_start, audio_pre_chain, audio_settings["target_lufs"], loudness)
+    af_filter, audio_mode = build_audio_filter(fade_out_start, audio_pre_chain, audio_settings["target_lufs"], loudness, fade_dur=fade_dur)
     if audio_mode == "two_pass":
         log(f"Audio: loudnorm 2-pass {loudness['input_i']:.1f} LUFS -> {audio_settings['target_lufs']:g} LUFS "
             f"(true peak {LOUDNORM_TRUE_PEAK:g} dBTP){' + denoise' if audio_settings['denoise'] else ''}", job_id=job_id)
@@ -1472,7 +1516,7 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
     has_subtitles = os.path.exists(ass_file) and os.path.getsize(ass_file) > 0
     subtitle_filter = f",subtitles='{escaped_ass}'" if has_subtitles else ""
     subtitle_stage = f"{grade_chain}{subtitle_filter}"
-    fade_filter = f"fade=t=out:st={fade_out_start}:d=0.5"
+    fade_filter = f"fade=t=out:st={fade_out_start:.3f}:d={fade_dur:.3f}"
 
     def _assemble(prefix_graph):
         """Tempel fade di belakang graph layout/crop/subtitle."""
@@ -1483,11 +1527,18 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
     def build_cmd(filter_graph, codec_params):
         return [
             ffmpeg_bin, "-y",
+            "-accurate_seek",
             "-ss", str(start),
             "-t", str(duration),
             "-i", video_path,
             "-filter_complex", filter_graph,
             "-map", "[v]",
+            "-map", "0:a?",
+            "-af", af_filter,
+            "-ar", str(AUDIO_SAMPLE_RATE),  # Wajib: loudnorm internal 192kHz
+            "-avoid_negative_ts", "make_zero",
+            "-t", str(duration),
+        ] + codec_params + ["-f", "mp4", part_out_file]
             "-map", "0:a?",
             "-af", af_filter,
             "-ar", str(AUDIO_SAMPLE_RATE),  # Wajib: loudnorm internal 192kHz

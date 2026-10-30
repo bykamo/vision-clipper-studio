@@ -231,34 +231,172 @@ def _iter_words(segments):
                 yield text, float(seg.get("start", 0.0)), float(seg.get("end", 0.0))
 
 
-def snap_clip_end(clip, segments, mode="hook"):
-    """Clamp a clip to ``MAX_DURATION`` while cutting on a sentence boundary.
+SENTENCE_ENDINGS = (".", "?", "!", "…")
+HANGING_WORDS = {
+    "karena", "tapi", "tetapi", "jadi", "dan", "atau", "artinya", "makanya", "terus",
+    "nah", "yang", "kalau", "kalo", "soalnya", "sehingga", "supaya", "biar", "trus",
+    "namun", "bahkan", "sedangkan", "yaitu", "contohnya", "misalnya", "serta", "lalu",
+    "kemudian", "sebab", "maka", "dengan", "untuk", "pada", "di", "ke", "dari", "ini",
+    "itu", "bahwa", "adalah", "merupakan",
+}
+PAUSE_SEC = 0.40           # Jeda hening yang dianggap batas jeda alami ucapan
+END_GRACE_SEC = 6.0        # Toleransi tambahan di atas MAX_DURATION demi menyelesaikan kalimat/payoff
+START_BACKTRACK_SEC = 3.5  # Maksimal detik mundur untuk menangkap pembukaan kalimat utuh
 
-    Cutting mid-sentence destroys the payoff, so we look for the last sentence
-    terminator inside the allowed window and end there. If none exists we fall
-    back to the hard limit (still better than a 90s clip nobody finishes).
+
+def _build_speech_units(segments):
+    """Mengekstrak unit kata/ujaran berurutan beserta status akhir kalimat & jeda suara.
+
+    Groq Whisper API sering menghasilkan daftar kata (words) tanpa tanda baca,
+    sedangkan tanda baca (titik, tanda tanya, tanda seru) berada pada teks segmen.
+    Fungsi ini menyinkronkan tanda baca segmen ke kata terakhirnya dan menghitung
+    jeda hening (gap) ke kata berikutnya.
     """
-    start = float(clip.get("start", 0.0))
-    end = float(clip.get("end", 0.0))
+    units = []
+    for seg in segments or []:
+        seg_text = str(seg.get("text", "")).strip()
+        words = [w for w in (seg.get("words") or []) if str(w.get("word", "")).strip()]
+
+        if not words:
+            if seg_text:
+                units.append({
+                    "text": seg_text,
+                    "start": float(seg.get("start", 0.0)),
+                    "end": float(seg.get("end", 0.0)),
+                    "sent_end": seg_text.endswith(SENTENCE_ENDINGS),
+                })
+            continue
+
+        for i, w in enumerate(words):
+            raw_w = str(w.get("word", "")).strip()
+            is_last = (i == len(words) - 1)
+            has_sent_end = raw_w.endswith(SENTENCE_ENDINGS) or (is_last and seg_text.endswith(SENTENCE_ENDINGS))
+            units.append({
+                "text": raw_w,
+                "start": float(w.get("start", 0.0)),
+                "end": float(w.get("end", 0.0)),
+                "sent_end": has_sent_end,
+            })
+
+    units.sort(key=lambda u: u["start"])
+    for i in range(len(units) - 1):
+        units[i]["gap_after"] = max(0.0, units[i + 1]["start"] - units[i]["end"])
+    if units:
+        units[-1]["gap_after"] = 99.0
+    return units
+
+
+def _is_good_sentence_end(u, require_sentence=False):
+    cleaned = re.sub(r"[^\w]+", "", u["text"].lower())
+    if cleaned in HANGING_WORDS:
+        return False
+    if require_sentence:
+        return u["sent_end"]
+    return u["sent_end"] or (u.get("gap_after", 0.0) >= PAUSE_SEC)
+
+
+def _snap_start_boundary(units, start):
+    """Selaraskan start ke awal kata/kalimat terdekat, mundur jika di tengah kalimat."""
+    idx = next((i for i, u in enumerate(units) if u["end"] > start), None)
+    if idx is None:
+        return start
+
+    target_unit = units[idx]
+    # Jika unit terlalu panjang (segmen besar tanpa word timestamps) atau
+    # start berjarak jauh dari batas unit, jangan paksa snap jauh
+    if (target_unit["end"] - target_unit["start"]) > 6.0 and abs(start - target_unit["start"]) > 2.0:
+        return start
+
+    if abs(start - target_unit["start"]) > 2.5:
+        return start
+
+    j = idx
+    # Mundur ke awal kalimat jika start jatuh di tengah kalimat yang sedang berjalan
+    while (j > 0
+           and not units[j - 1]["sent_end"]
+           and units[j - 1].get("gap_after", 0.0) < PAUSE_SEC
+           and (start - units[j - 1]["start"]) <= START_BACKTRACK_SEC):
+        j -= 1
+        w_prev = re.sub(r"[^\w]+", "", units[j]["text"].lower())
+        if w_prev in {"dan", "atau", "tapi", "soalnya"} and j + 1 <= idx:
+            j += 1
+            break
+
+    return units[j]["start"]
+
+
+def _snap_end_boundary(units, start, end, min_dur, max_dur):
+    """Selaraskan end agar tidak memotong isi penting/payoff di tengah jalan."""
+    hard_max_with_grace = start + max_dur + END_GRACE_SEC
+
+    # 1. Prioritas utama: jika kalimat sedang berlangsung di dekat 'end',
+    # tuntaskan kalimat tersebut (sent_end) dengan grace period
+    for u in units:
+        if u["end"] < end - 0.4:
+            continue
+        if u["end"] > hard_max_with_grace:
+            break
+        # Jika selisih terlalu jauh (> 6.0s), jangan melompat
+        if (u["end"] - end) > 6.0:
+            break
+        if _is_good_sentence_end(u, require_sentence=True):
+            return u["end"]
+
+    # 2. Jika kalimat belum selesai tapi melewati batas grace, cari akhir kalimat
+    # atau jeda hening terbaik di dalam jendela legal [start + min_dur, start + max_dur]
+    lo = start + min_dur
+    hi = start + max_dur
+    window = [u for u in units if lo <= u["end"] <= hi]
+
+    for require_sent in (True, False):
+        good_candidates = [u for u in window if _is_good_sentence_end(u, require_sentence=require_sent)]
+        if good_candidates:
+            return good_candidates[-1]["end"]
+
+    # 3. Fallback: ambil unit dengan jeda hening terpanjang yang bukan hanging word
+    non_hanging = [u for u in window if re.sub(r"[^\w]+", "", u["text"].lower()) not in HANGING_WORDS]
+    if non_hanging:
+        best_pause = max(non_hanging, key=lambda u: u.get("gap_after", 0.0))
+        return best_pause["end"]
+
+    if window:
+        return window[-1]["end"]
+
+    return min(end, hi)
+
+
+def snap_clip_boundaries(clip, segments, mode="hook"):
+    """Clamp dan selaraskan start serta end klip ke batas kata & kalimat alami.
+
+    Mencegah klip terpotong di tengah kalimat/kata dan menghindari berhenti
+    pada kata sambung (hanging words). Menjamin isi penting & payoff tuntas.
+    """
+    try:
+        start = float(clip.get("start", 0.0))
+        end = float(clip.get("end", 0.0))
+    except (TypeError, ValueError):
+        return clip
+
+    units = _build_speech_units(segments)
+    if not units:
+        return clip
+
     max_dur = MAX_DURATION.get(mode, MAX_DURATION["hook"])
     min_dur = MIN_DURATION.get(mode, MIN_DURATION["hook"])
 
-    if end - start <= max_dur:
-        return clip
+    new_start = _snap_start_boundary(units, start)
+    new_end = _snap_end_boundary(units, new_start, end, min_dur, max_dur)
 
-    hard_limit = start + max_dur
-    soft_limit = start + max(max_dur - 6.0, min_dur)
-    best = None
-    for text, _w_start, w_end in _iter_words(segments):
-        if w_end <= soft_limit:
-            continue
-        if w_end > hard_limit:
-            break
-        if text and text[-1] in ".?!":
-            best = w_end
+    if new_end > new_start:
+        clip["start"] = round(new_start, 2)
+        clip["end"] = round(new_end, 2)
 
-    clip["end"] = round(min(hard_limit, best) if best else hard_limit, 2)
     return clip
+
+
+def snap_clip_end(clip, segments, mode="hook"):
+    """Backward-compatible alias untuk snap_clip_boundaries."""
+    return snap_clip_boundaries(clip, segments, mode=mode)
 
 
 def dedupe_overlapping(clips, threshold=0.6):

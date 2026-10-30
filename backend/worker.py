@@ -15,7 +15,7 @@ from backend.analyzer import (
     extract_json_block,
     PermanentLLMError,
 )
-from backend.content_rules import apply_content_rules
+from backend.content_rules import apply_content_rules, snap_clip_boundaries
 from backend.renderer import extract_and_format_clip
 from backend.utils import (
     log,
@@ -265,6 +265,8 @@ def main():
                         continue
                     raw["start"] = round(s, 2)
                     raw["end"] = round(e, 2)
+                    # Selaraskan batas kandidat ke batas kata & kalimat alami transkrip
+                    snap_clip_boundaries(raw, segments, mode=args.mode)
                     valid_candidates.append(raw)
                 except (TypeError, ValueError):
                     continue

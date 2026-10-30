@@ -809,6 +809,9 @@ controversial product opinion, unexpected comparison, "I was today years old" mo
 - quotable — one-liners people screenshot/stitch"""
         mission = "discover candidate segments with the highest VIRAL potential"
 
+    lo, hi = TARGET_DURATION.get(mode, TARGET_DURATION["hook"])
+    hard_max = MAX_DURATION.get(mode, MAX_DURATION["hook"])
+
     return f"""You are an elite viral content strategist for short-form video (TikTok, YouTube Shorts, Instagram Reels).
 
 ## YOUR MISSION
@@ -823,7 +826,7 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 ## CANDIDATE RULES (MUST FOLLOW STRICTLY)
 1. SELF-CONTAINED ARC: every candidate MUST deliver a full thought: [Hook] -> [Core argument] -> [Conclusion/punchline]. NEVER cut mid-point. NEVER end on hanging conjunctions (karena..., tapi..., jadi..., artinya...).
 2. HOOK FIRST: the first 2-3 seconds MUST contain the hook. NEVER start on filler ("um", "jadi gini", "nah", "so anyway") or mid-sentence. If the hook starts slightly before the ideal segment, extend backward to capture it cleanly.
-3. DURATION: prefer 25-60 seconds. Go longer ONLY if every ~10 seconds has a payoff (no slow stretches). A tight 35s clip beats a rambling 90s one — completion rate is king.
+3. DURATION BUDGET (NON-NEGOTIABLE): {int(lo)}-{int(hi)} seconds per candidate. Absolute hard ceiling: {int(hard_max)} seconds. If a point takes longer, extract only the core punchline or pick a DIFFERENT, denser moment. Completion rate collapses if clips exceed {int(hard_max)}s.
 4. DISTINCT IDEAS: candidates may sit near each other in time, but each MUST center on a DIFFERENT idea. Do NOT return 3 candidates making the same point with different words.
 5. topic_label: 2-5 words naming the SPECIFIC idea (e.g. "tanggung jawab hidup", "gengsi vs kaya"). Used later for diversity filtering — make it precise, not generic.
 6. trigger_tags: 1-3 tags from the framework above that are actually present.
@@ -831,7 +834,9 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
    - viral_score 0-100. No two candidates may differ by < 3 points.
    - 90+ ONLY for objectively exceptional (strong hook + high emotion + quotable).
    - Average candidates: 60-75.
-8. EXACT TIMESTAMPS: start/end as seconds (float) matching the transcript line timestamps of the opening and concluding sentences.
+8. EXACT TRANSCRIPT TIMESTAMPS:
+   - `start` (float seconds, e.g. 15.0) matching the start timestamp [HH:MM:SS.mmm --> ...] of the opening line.
+   - `end` (float seconds, e.g. 42.5) matching the end timestamp [... --> HH:MM:SS.mmm] of the line where the conclusion sentence finishes completely. NEVER cut off mid-sentence or before the payoff lands.
 
 ## RESPONSE FORMAT (ONLY valid JSON, no explanation, no markdown)
 {{

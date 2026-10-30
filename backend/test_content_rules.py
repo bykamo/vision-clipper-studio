@@ -146,5 +146,62 @@ class ApplyRulesTest(unittest.TestCase):
         result = apply_content_rules(clips, _segments((0, 200, "teks.")), mode="hook")
         self.assertEqual([c["start"] for c in result], [0.0, 100.0])
 
+    def test_whisper_groq_words_without_punctuation_snaps_to_sentence_end(self):
+        # Simulasi output Whisper Groq: kata-kata tidak punya titik, titik ada di segmen
+        segments = [
+            {
+                "start": 0.0,
+                "end": 20.0,
+                "text": "Ini kalimat pertama yang penting.",
+                "words": [
+                    {"word": "Ini", "start": 0.0, "end": 0.4},
+                    {"word": "kalimat", "start": 0.5, "end": 1.0},
+                    {"word": "pertama", "start": 1.1, "end": 1.7},
+                    {"word": "yang", "start": 1.8, "end": 2.1},
+                    {"word": "penting", "start": 2.2, "end": 2.8},
+                ]
+            },
+            {
+                "start": 20.0,
+                "end": 40.0,
+                "text": "Ini kesimpulan inti yang wajib selesai.",
+                "words": [
+                    {"word": "Ini", "start": 20.0, "end": 20.3},
+                    {"word": "kesimpulan", "start": 20.4, "end": 21.2},
+                    {"word": "inti", "start": 21.3, "end": 21.8},
+                    {"word": "yang", "start": 21.9, "end": 22.3},
+                    {"word": "wajib", "start": 22.4, "end": 22.8},
+                    {"word": "selesai", "start": 22.9, "end": 23.5},
+                ]
+            }
+        ]
+        # LLM memotong terlalu cepat di detik 22.5 (sebelum kata 'selesai' di 23.5)
+        clip = {"start": 0.0, "end": 22.5}
+        snap_clip_end(clip, segments, mode="hook")
+        # snap harus maju menuntaskan kalimat sampai detik 23.5
+        self.assertEqual(clip["end"], 23.5)
+
+    def test_avoid_ending_on_hanging_conjunction(self):
+        # Jika LLM memotong di kata sambung "karena"
+        segments = [
+            {
+                "start": 0.0,
+                "end": 25.0,
+                "text": "Pekerjaan ini selesai karena kita fokus.",
+                "words": [
+                    {"word": "Pekerjaan", "start": 0.0, "end": 0.8},
+                    {"word": "ini", "start": 0.9, "end": 1.2},
+                    {"word": "selesai", "start": 1.3, "end": 2.0},
+                    {"word": "karena", "start": 2.1, "end": 2.6},
+                    {"word": "kita", "start": 2.7, "end": 3.0},
+                    {"word": "fokus", "start": 3.1, "end": 3.8},
+                ]
+            }
+        ]
+        clip = {"start": 0.0, "end": 2.6}  # Tepat di kata 'karena'
+        snap_clip_end(clip, segments, mode="hook")
+        # Tidak boleh berhenti di 2.6 (kata 'karena'), melainkan menuntaskan kalimat sampai 'fokus' (3.8)
+        self.assertEqual(clip["end"], 3.8)
+
 if __name__ == "__main__":
     unittest.main()
