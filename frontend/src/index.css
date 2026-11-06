@@ -59,15 +59,8 @@
 }
 
 .step-connector {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    rgba(52, 211, 153, 0.75) 0 4px,
-    transparent 4px 12px
-  );
-  background-repeat: repeat-y;
-  animation:
-    step-dash-draw 240ms ease-out both,
-    step-dash-march 400ms linear 2;
+  background-color: rgba(52, 211, 153, 0.55);
+  animation: step-dash-draw 240ms ease-out both;
 }
 
 @media (prefers-reduced-motion: reduce) {

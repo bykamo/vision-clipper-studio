@@ -30,7 +30,7 @@ import {
   CloudArrowDownIcon,
 } from '@heroicons/react/24/outline';
 import { StopIcon as StopIconSolid } from '@heroicons/react/24/solid';
-import { SubtitleStyleConfig, FramingMode } from '../types';
+import { SubtitleStyleConfig, FramingMode, SmartCropTrajectory } from '../types';
 import { SUBTITLE_PRESETS } from '../data/subtitlePresets';
 import { errorMessage, isAbortError } from '../lib/errors';
 import { PhonePreview, type PreviewWord } from './PhonePreview';
@@ -166,7 +166,7 @@ const StepCard: React.FC<{
           className={`absolute left-[13px] top-8 -bottom-2 w-px ${
             animateConnector
               ? 'step-connector'
-              : 'bg-gradient-to-b from-emerald-500/40 to-slate-800/40'
+              : 'bg-gradient-to-b from-emerald-500/60 to-emerald-500/10'
           }`}
           style={animateConnector ? { animationDelay: `${connectorDelay}ms` } : undefined}
           aria-hidden
@@ -278,27 +278,32 @@ export const SimpleClipperDashboard: React.FC = () => {
   // Kata transkrip klip yang sedang dipreview, dipakai supaya subtitle di
   // phone preview menampilkan teks asli (sinkron dengan posisi video).
   const [previewClipWords, setPreviewClipWords] = useState<PreviewWord[]>([]);
+  // Trajektori smart crop klip yang sedang dipreview (sama dengan render).
+  const [smartCropTrajectory, setSmartCropTrajectory] = useState<SmartCropTrajectory | null>(
+    null,
+  );
 
   // Settings State
-  const [clipCount, setClipCount] = useState<number>(6);
+  const [clipCount, setClipCount] = useState<number>(0);
   // Alur sidebar bertahap: step 1–2 tampil dulu, step 3–5 dibuka setelah
   // pre-render (analisis dimulai / hasil render dimuat). Sekali terbuka,
   // tetap terbuka sampai workflow di-reset.
   const [advancedStepsUnlocked, setAdvancedStepsUnlocked] = useState<boolean>(false);
   // Groq Whisper Cloud adalah satu-satunya model transkripsi (pilihan utama/default).
   const transcriptionModel = 'groq';
-  // Default = TikTok Viral, BUKAN 'no_subtitle'.
-  // 'no_subtitle' membuat overlay subtitle di PhonePreview tidak dirender sama
-  // sekali (gate `selectedPresetId !== 'no_subtitle'`), sehingga transkrip asli
-  // tidak terlihat di pre-render. Preset ini juga yang dikirim ke backend saat
-  // render (`sub_style`), jadi default 'no_subtitle' = video hasil render tanpa
-  // subtitle sama sekali. Klik preset yang sama untuk melepas (tanpa subtitle).
-  const [selectedPresetId, setSelectedPresetId] = useState<string>('tiktok_viral');
+  // Default = 'no_subtitle' sehingga TIDAK ada preset caption yang terpilih
+  // otomatis; pengguna memilih sendiri gayanya. 'no_subtitle' membuat overlay
+  // subtitle di PhonePreview tidak dirender sama sekali (gate
+  // `selectedPresetId !== 'no_subtitle'`), sehingga transkrip asli tidak
+  // terlihat di pre-render. Preset ini juga yang dikirim ke backend saat render
+  // (`sub_style`), jadi 'no_subtitle' = video hasil render tanpa subtitle.
+  // Klik preset yang sama untuk melepas (kembali tanpa subtitle).
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('no_subtitle');
   const [framingMode, setFramingMode] = useState<FramingMode>('smart_crop');
   const [subPosition, setSubPosition] = useState<number>(68);
 
   // Watermark Settings State (Glass Effect)
-  const [watermarkEnabled, setWatermarkEnabled] = useState<boolean>(true);
+  const [watermarkEnabled, setWatermarkEnabled] = useState<boolean>(false);
   const [sourceWatermark, setSourceWatermark] = useState<string>('');
   const [accountWatermark, setAccountWatermark] = useState<string>('');
 
@@ -622,6 +627,7 @@ export const SimpleClipperDashboard: React.FC = () => {
     setResolvedVideoPath('');
     setPreviewClipRange(null);
     setPreviewOutputClip(null);
+    setSmartCropTrajectory(null);
     setGeneratedClips([]);
     setOutputDir('');
     setRenderErrorMessage(null);
@@ -1077,6 +1083,33 @@ export const SimpleClipperDashboard: React.FC = () => {
     }
   };
 
+  // Ambil trajektori smart crop untuk klip yang sedang dipreview. Hanya aktif
+  // untuk framing smart_crop; hasilnya identik dengan render karena memakai
+  // analysis_id + index (padding kata dihitung ulang di server).
+  const loadSmartCropTrajectory = async (
+    index: number,
+    analysisIdOverride?: string,
+    framingOverride?: FramingMode,
+  ) => {
+    const id = analysisIdOverride ?? analysisId;
+    const activeFraming = framingOverride ?? framingMode;
+    if (!id || activeFraming !== 'smart_crop') {
+      setSmartCropTrajectory(null);
+      return;
+    }
+    try {
+      const res = await fetch(
+        `/api/smart-crop-trajectory?analysis_id=${encodeURIComponent(id)}&index=${index}`,
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as SmartCropTrajectory;
+      setSmartCropTrajectory(Array.isArray(data.positions) ? data : null);
+    } catch {
+      // Fallback: preview tetap pakai object-cover (center) tanpa mengikuti wajah.
+      setSmartCropTrajectory(null);
+    }
+  };
+
   const previewCandidate = (clip: ClipCandidate, analysisIdOverride?: string) => {
     setPreviewOutputClip(null);
     setPreviewClipRange({ start: clip.start, end: clip.end });
@@ -1086,6 +1119,7 @@ export const SimpleClipperDashboard: React.FC = () => {
       hashtags: clip.hashtags,
     });
     void loadClipWords(clip.index, analysisIdOverride);
+    void loadSmartCropTrajectory(clip.index, analysisIdOverride);
     setClipCandidates((prev) =>
       prev.map((candidate) =>
         candidate.index === clip.index ? { ...candidate, previewed: true } : candidate,
@@ -1103,6 +1137,7 @@ export const SimpleClipperDashboard: React.FC = () => {
     }
     if (filePath) {
       setPreviewClipRange(null);
+      setSmartCropTrajectory(null);
       setPreviewOutputClip({
         path: filePath,
         title: clip.title || `Clip #${clip.id}`,
@@ -1129,6 +1164,11 @@ export const SimpleClipperDashboard: React.FC = () => {
     const source = videoPathInput.trim();
     if (!source) {
       alert('Silakan masukkan file path video atau URL YouTube terlebih dahulu!');
+      return;
+    }
+
+    if (clipCount < 1) {
+      alert('Silakan pilih jumlah klip terlebih dahulu!');
       return;
     }
 
@@ -1170,6 +1210,7 @@ export const SimpleClipperDashboard: React.FC = () => {
     setPreviewClipRange(null);
     setPreviewOutputClip(null);
     setPreviewClipWords([]);
+    setSmartCropTrajectory(null);
     analysisReceivedRef.current = false;
 
     const startTimestamp = new Date().toTimeString().split(' ')[0];
@@ -1358,6 +1399,7 @@ export const SimpleClipperDashboard: React.FC = () => {
     setPreviewClipRange(null);
     setPreviewOutputClip(null);
     setPreviewClipWords([]);
+    setSmartCropTrajectory(null);
 
     const startTimestamp = new Date().toTimeString().split(' ')[0];
     setLogs((prev) => [
@@ -1850,8 +1892,6 @@ export const SimpleClipperDashboard: React.FC = () => {
           {/* STEP 02 — JUMLAH KLIP */}
           <StepCard
             step={2}
-            isLast={!advancedStepsVisible}
-            connectorDelay={advancedStepsVisible ? 0 : undefined}
             icon={<Square3Stack3DIcon className="h-4 w-4 stroke-[2]" />}
             title="Output Klip"
             hint="Jumlah klip yang dihasilkan"
@@ -1871,9 +1911,6 @@ export const SimpleClipperDashboard: React.FC = () => {
           {/* STEP 03 — FRAMING / LAYOUT */}
           <StepCard
             step={3}
-            hidden={!advancedStepsVisible}
-            revealBase={260}
-            connectorDelay={520}
             icon={<PhotoIcon className="h-4 w-4 stroke-[2]" />}
             title="Framing 9:16"
             hint="Gaya framing video"
@@ -1913,7 +1950,20 @@ export const SimpleClipperDashboard: React.FC = () => {
                   <button
                     key={o.id}
                     type="button"
-                    onClick={() => setFramingMode(o.id)}
+                    onClick={() => {
+                      setFramingMode(o.id);
+                      if (previewClipRange && !previewOutputClip) {
+                        // Recompute trajectory when re-entering smart_crop preview.
+                        void loadSmartCropTrajectory(
+                          clipCandidates.find((c) => c.start === previewClipRange.start)?.index ??
+                            1,
+                          undefined,
+                          o.id,
+                        );
+                      } else {
+                        setSmartCropTrajectory(null);
+                      }
+                    }}
                     title={o.label}
                     className={`${isActive ? themeClasses.tileActive : themeClasses.tileIdle} relative flex flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 transition-all`}
                   >
@@ -1935,9 +1985,6 @@ export const SimpleClipperDashboard: React.FC = () => {
           {/* STEP 04 — CAPTION / SUBTITLE */}
           <StepCard
             step={4}
-            hidden={!advancedStepsVisible}
-            revealBase={780}
-            connectorDelay={1040}
             icon={<SwatchIcon className="h-4 w-4 stroke-[2]" />}
             title="Gaya Caption"
             hint="Klik untuk pakai, klik lagi untuk lepas"
@@ -2010,8 +2057,6 @@ export const SimpleClipperDashboard: React.FC = () => {
           {/* STEP 05 — BRANDING / WATERMARK */}
           <StepCard
             step={5}
-            hidden={!advancedStepsVisible}
-            revealBase={1300}
             icon={<ShieldCheckIcon className="h-4 w-4 stroke-[2]" />}
             title="Branding"
             hint="Label kaca sumber & akun"
@@ -2117,10 +2162,11 @@ export const SimpleClipperDashboard: React.FC = () => {
             clipCaption={activeClipMeta?.caption}
             clipHashtags={activeClipMeta?.hashtags}
             clipWords={previewClipWords}
+            smartCropTrajectory={previewOutputClip ? null : smartCropTrajectory}
             isRenderedClip={Boolean(previewOutputClip)}
             isProcessing={isProcessing}
             subPosition={subPosition}
-            watermarkEnabled={watermarkEnabled && advancedStepsVisible}
+            watermarkEnabled={watermarkEnabled}
             sourceWatermark={sourceWatermark}
             accountWatermark={accountWatermark}
           />
@@ -2213,6 +2259,7 @@ export const SimpleClipperDashboard: React.FC = () => {
                         onClick={() => {
                           setPhase('config');
                           setPreviewClipRange(null);
+                          setSmartCropTrajectory(null);
                         }}
                         disabled={isProcessing}
                         className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-white transition-colors"

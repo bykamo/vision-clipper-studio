@@ -4,6 +4,8 @@ import sys
 import math
 import time
 import json
+import hashlib
+import threading
 import subprocess
 import cv2
 import numpy as np
@@ -1032,6 +1034,54 @@ def _iter_ffmpeg_frames(video_path, start_time, duration, fps, out_w, out_h):
         proc.wait()
 
 
+_TRAJECTORY_CACHE_LOCK = threading.Lock()
+
+def _trajectory_cache_key(video_path, start_time, end_time):
+    """Cache key from the exact (realpath, start, end) used by the renderer."""
+    real = os.path.realpath(video_path)
+    h = hashlib.sha1(
+        f"{real}|{round(float(start_time), 3)}|{round(float(end_time), 3)}".encode("utf-8")
+    ).hexdigest()[:16]
+    return h, os.path.join(TEMP_DIR, f"trajectory_{h}.json")
+
+def get_or_compute_smart_crop_trajectory(video_path, start_time, end_time, job_id=None):
+    """
+    Kembalikan trajektori smart crop, memakai cache JSON berbasis file supaya
+    preview (server utama) dan render (worker subprocess) memakai nilai yang
+    PERSIS sama. Inferensi YOLOv8/YuNet bersifat non-deterministik, maka
+    trajektori wajib dihitung satu kali lalu dipakai bersama.
+    """
+    _, cache_path = _trajectory_cache_key(video_path, start_time, end_time)
+    with _TRAJECTORY_CACHE_LOCK:
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    cached = json.load(f)
+                if cached.get("positions") is not None:
+                    return cached
+            except Exception:
+                pass
+
+        trajectory = compute_smart_crop_trajectory(video_path, start_time, end_time, job_id=job_id)
+        # Konversi ke int EVEN, sama persis dengan _write_crop_commands, supaya
+        # posisi yang dipreview == posisi crop di render final.
+        positions = [(int(round(float(x))) // 2) * 2 for x in trajectory["positions"]]
+        payload = {
+            "fps": float(trajectory["fps"]),
+            "orig_w": int(trajectory["orig_w"]),
+            "orig_h": int(trajectory["orig_h"]),
+            "crop_w": int(trajectory["crop_w"]),
+            "crop_h": int(trajectory["crop_h"]),
+            "crop_y": int(trajectory["crop_y"]),
+            "positions": positions,
+            "cut_frames": [int(c) for c in trajectory.get("cut_frames", [])],
+        }
+        tmp_path = cache_path + f".{os.getpid()}.tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f)
+        os.replace(tmp_path, cache_path)
+        return payload
+
 def compute_smart_crop_trajectory(video_path, start_time, end_time, job_id=None):
     """
     Pass 1 Turbo Cinema Clipper: scan narasumber (YOLOv8 person / YuNet face) di frame resolusi kecil,
@@ -1303,7 +1353,7 @@ def apply_smart_crop(video_path, start_time, end_time, output_path, job_id=None)
     dalam SATU kali encode FFmpeg (tidak ada file intermediate mp4v lagi).
     """
     clip_dur = end_time - start_time
-    trajectory = compute_smart_crop_trajectory(video_path, start_time, end_time, job_id=job_id)
+    trajectory = get_or_compute_smart_crop_trajectory(video_path, start_time, end_time, job_id=job_id)
     cmd_path = os.path.join(TEMP_DIR, f"temp_cropcmd_{int(time.time()*1000)}.txt")
     try:
         chain = build_smart_crop_chain(trajectory, cmd_path)
@@ -1573,7 +1623,7 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
             )
         else:
             log(f"Applying AI Smart Face Tracking 9:16 for Clip {index}...", job_id=job_id)
-            trajectory = compute_smart_crop_trajectory(video_path, start, end, job_id=job_id)
+            trajectory = get_or_compute_smart_crop_trajectory(video_path, start, end, job_id=job_id)
             primary_graph = _assemble(
                 f"[0:v]{build_smart_crop_chain(trajectory, crop_cmd_file)},{subtitle_stage}[vsub]"
             )

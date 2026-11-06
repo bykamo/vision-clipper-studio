@@ -1079,6 +1079,85 @@ async def analysis_clip_words(analysis_id: str = "", index: str = "1"):
         "words": words,
     })
 
+@app.get("/api/smart-crop-trajectory")
+async def smart_crop_trajectory(analysis_id: str = "", index: str = "1"):
+    """Return the cached smart crop trajectory for one analysed clip.
+
+    The preview needs the exact crop positions the renderer will use. Because
+    the renderer adds spoken-word padding around the clip, the endpoint accepts
+    an ``analysis_id`` + ``index`` and recomputes the same padded start/end on
+    the server side (instead of trusting raw path/start/end from the client).
+    """
+    if not _valid_analysis_id(analysis_id):
+        return JSONResponse(status_code=400, content={"error": "Invalid analysis_id"})
+    try:
+        clip_index = int(index)
+    except (TypeError, ValueError):
+        return JSONResponse(status_code=400, content={"error": "index must be an integer"})
+
+    analysis_path = os.path.join(TEMP_ANALYSIS_DIR, f"{analysis_id}.json")
+    if not os.path.exists(analysis_path):
+        return JSONResponse(status_code=404, content={"error": "Analysis file not found"})
+
+    try:
+        with open(analysis_path, "r", encoding="utf-8") as f:
+            analysis = json.load(f)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Failed to read analysis: {e}"})
+
+    clips = analysis.get("clips") or []
+    segments = analysis.get("segments") or []
+    video_path = analysis.get("video_path") or ""
+    if not isinstance(clips, list) or not 1 <= clip_index <= len(clips):
+        return JSONResponse(status_code=400, content={"error": "clip index out of range"})
+    if not video_path:
+        return JSONResponse(status_code=500, content={"error": "Analysis data is missing video_path"})
+
+    clip = clips[clip_index - 1]
+    raw_start = max(0.0, float(clip.get("start", 0.0)))
+    raw_end = float(clip.get("end", 0.0))
+
+    # Padding identik dengan renderer (write side) agar preview == render.
+    from backend.renderer import _natural_padding, get_or_compute_smart_crop_trajectory
+    try:
+        lead, tail = _natural_padding(segments, raw_start, raw_end)
+    except Exception:
+        lead, tail = 0.05, 0.25
+    start = max(0.0, raw_start - lead)
+    end = raw_end + tail
+
+    # Validate the source file the same way /api/video-stream does.
+    raw_path = video_path
+    if not os.path.isabs(raw_path):
+        candidate = os.path.join(PROJECT_ROOT, raw_path)
+        raw_path = candidate if os.path.exists(candidate) else os.path.abspath(raw_path)
+    else:
+        raw_path = os.path.normpath(raw_path)
+    real_path = os.path.realpath(raw_path)
+    if not os.path.exists(real_path) or not os.path.isfile(real_path):
+        return JSONResponse(status_code=404, content={"error": f"Video file not found: {video_path}"})
+    if os.path.splitext(real_path)[1].lower() not in ALLOWED_VIDEO_EXTENSIONS:
+        return JSONResponse(status_code=403, content={"error": "File type not allowed for video streaming"})
+    if not _is_path_safe_and_allowed(real_path, must_exist=True):
+        return JSONResponse(status_code=403, content={"error": "Access to path is forbidden"})
+
+    # Compute off the event loop: face tracking can take seconds on long clips.
+    loop = asyncio.get_running_loop()
+    try:
+        trajectory = await loop.run_in_executor(
+            None, lambda: get_or_compute_smart_crop_trajectory(real_path, start, end)
+        )
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Smart crop tracking failed: {e}"})
+
+    return JSONResponse(content={
+        "analysis_id": analysis_id,
+        "index": clip_index,
+        "start": start,
+        "end": end,
+        **trajectory,
+    })
+
 @app.post("/api/render-selected")
 async def render_selected(request: Request):
     """Phase 2: Render only user-approved clips. Returns SSE stream."""

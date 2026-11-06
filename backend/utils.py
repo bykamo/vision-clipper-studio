@@ -78,7 +78,7 @@ DEFAULT_OUT_DIR = os.path.join(PROJECT_ROOT, "clips")
 
 def cleanup_temp_files():
     """Membersihkan sisa file temporary dari sesi sebelumnya."""
-    for _pattern in ["tmp*.wav", "temp_crop_*.mp4", "temp_cinema_*.mp4", "temp_cropcmd_*.txt", "temp_*.ass", "temp_sub*.vtt", "temp_*.mp3"]:
+    for _pattern in ["tmp*.wav", "temp_crop_*.mp4", "temp_cinema_*.mp4", "temp_cropcmd_*.txt", "temp_*.ass", "temp_sub*.vtt", "temp_*.mp3", "trajectory_*.json"]:
         for _f in glob.glob(os.path.join(TEMP_DIR, _pattern)):
             try:
                 os.remove(_f)

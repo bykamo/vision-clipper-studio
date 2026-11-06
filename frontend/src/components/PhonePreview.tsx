@@ -27,6 +27,7 @@ import {
   SpeakerXMarkIcon,
   ViewfinderCircleIcon,
 } from '@heroicons/react/24/solid';
+import type { SmartCropTrajectory } from '../types';
 
 export type SocialOverlayType = 'tiktok' | 'reels' | 'shorts' | 'none';
 
@@ -47,6 +48,8 @@ interface PhonePreviewProps {
   clipHashtags?: string[];
   /** Kata-kata transkrip di dalam klip yang sedang dipreview (sinkron dengan video). */
   clipWords?: PreviewWord[];
+  /** Trajektori smart crop (sama dengan render) bila framing smart_crop aktif. */
+  smartCropTrajectory?: SmartCropTrajectory | null;
   isRenderedClip?: boolean;
   isProcessing?: boolean;
   subPosition?: number;
@@ -65,6 +68,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   clipCaption,
   clipHashtags,
   clipWords,
+  smartCropTrajectory,
   isRenderedClip = false,
   isProcessing = false,
   subPosition = 68,
@@ -111,11 +115,14 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   // video sambil mengikuti waktu & status putar panel utama.
   const secondaryVideoRef = useRef<HTMLVideoElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
+  // Container layar konten (tempat video dirender) untuk menghitung skala crop.
+  const screenContentRef = useRef<HTMLDivElement | null>(null);
   // Tracks whether the current mute state was forced by the browser autoplay
   // policy (not an explicit user choice). When true, the first user gesture
   // should restore sound instead of toggling playback.
   const autoplayMutedRef = useRef(false);
   const [scale, setScale] = useState<number>(0.62);
+  const [screenContentWidth, setScreenContentWidth] = useState<number>(0);
 
   // Dynamically calculate scale factor to fit exactly within the available preview column stage
   useEffect(() => {
@@ -146,6 +153,23 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
       observer.disconnect();
       window.removeEventListener('resize', updateScale);
     };
+  }, []);
+
+  // Lebar layar konten (px CSS, BELUM kena transform scale) dipakai untuk
+  // menghitung ukuran video saat smart crop aktif. Screen-nya fixed 356px.
+  // PENTING: pakai offsetWidth (bukan getBoundingClientRect) karena lebar
+  // getBoundingClientRect sudah menyertakan transform scale dari wrapper
+  // iPhone (mis. 356 * 0.62 = 221px), sedangkan style video ditulis dalam
+  // koordinat lokal sebelum di-scale. Mencampur keduanya membuat video jadi
+  // lebih kecil / melenceng dari layar (preview terlihat "hancur").
+  useEffect(() => {
+    const el = screenContentRef.current;
+    if (!el) return;
+    const measure = () => setScreenContentWidth(el.offsetWidth || 0);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   // Check if source is a local playable video file path
@@ -273,6 +297,50 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
       setCurrentTime(videoRef.current.currentTime || 0);
     }
   };
+
+  // ── SMART CROP LIVE PREVIEW ──
+  // Aktif hanya saat framing smart_crop, ada klip range (belum rendered), dan
+  // trajektori sudah ter-fetch. Posisi frame dihitung dari waktu klip-relatif.
+  const smartCropActive =
+    framingMode === 'smart_crop' &&
+    !isRenderedClip &&
+    Boolean(previewClip) &&
+    Boolean(smartCropTrajectory) &&
+    (smartCropTrajectory?.positions?.length ?? 0) > 0;
+
+  const smartCropFrameIndex = (() => {
+    if (!smartCropActive || !previewClip || !smartCropTrajectory) return 0;
+    const tc = (currentTime || 0) - previewClip.start;
+    const fps = smartCropTrajectory.fps || 30;
+    const idx = Math.round(tc * fps);
+    const maxIndex = smartCropTrajectory.positions.length - 1;
+    return Math.max(0, Math.min(maxIndex, idx));
+  })();
+
+  // Style video eksplisit: skala video sumber ke crop 9:16 lalu geser kiri/atas
+  // mengikuti `positions[frame]`. Menggantikan `object-cover` center statis.
+  const smartCropVideoStyle = (() => {
+    if (!smartCropActive || !smartCropTrajectory) return null;
+    const { orig_w, orig_h, crop_w, crop_h, crop_y, positions } = smartCropTrajectory;
+    const containerW = screenContentWidth || 356;
+    // Layar konten iPhone: lebar 356, tinggi 772. Gunakan rasio fixed bila tinggi belum terukur.
+    const containerH = containerW * (772 / 356);
+    // Cover-scale: crop 9:16 diisi penuh ke layar (tinggi layar dominan lebih sempit).
+    const s = Math.max(containerW / crop_w, containerH / crop_h);
+    const x = (positions[smartCropFrameIndex] ?? 0) * s;
+    const y = crop_y * s;
+    return {
+      position: 'absolute' as const,
+      top: `${-y}px`,
+      left: `${-x}px`,
+      width: `${orig_w * s}px`,
+      height: `${orig_h * s}px`,
+      // Tailwind preflight menetapkan `video { max-width: 100% }`, yang akan
+      // membatasi width eksplisit kita ke lebar layar (356px) padahal height
+      // tetap skala penuh -> video jadi sempit & melenceng. Nonaktifkan.
+      maxWidth: 'none',
+    };
+  })();
 
   // Panel kedua (mode Dual Stack) mengikuti panel utama: waktu, play/pause,
   // dan selalu tanpa suara supaya tidak ada audio ganda.
@@ -722,51 +790,64 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
               {/* Front Screen Diagonal Glass Reflection Highlight */}
               <div className="pointer-events-none absolute inset-0 z-20 bg-gradient-to-tr from-transparent via-white/[0.015] to-white/[0.04] rounded-[46px]" />
 
-              {/* ── AUTHENTIC iOS STATUS BAR (Shows through transparent ears of PNG overlay) ── */}
-              <div className="absolute top-[8px] inset-x-0 h-[27px] px-6 z-25 flex items-center justify-between text-white pointer-events-none select-none">
-                {/* Left Flank: Authentic iOS Time (9:41 SF Pro Style) */}
-                <div className="pl-1 flex items-center">
-                  <span className="text-[15px] font-semibold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)] font-sans antialiased">
+              {/* ── AUTHENTIC iOS 26 STATUS BAR (Apple HIG) ──
+                  - Time kiri: SF Pro Text Semibold, tracking rapat
+                  - Kanan: Cellular (4 bar rounded, naik kiri→kanan) + Battery
+                  - Tanpa Wi-Fi, mengikuti tata letak nukilan iOS terbaru. */}
+              <div className="absolute top-[8px] inset-x-0 h-[27px] pl-[50px] pr-[22px] z-25 flex items-center justify-between text-white pointer-events-none select-none">
+                {/* Left Flank: Time (9:41, SF Pro Semibold, tight tracking) */}
+                <div className="flex items-center">
+                  <span
+                    className="text-[16px] font-semibold text-white antialiased"
+                    style={{
+                      fontFamily:
+                        "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Helvetica Neue', Helvetica, sans-serif",
+                      letterSpacing: '-0.4px',
+                      textShadow: '0 1px 2px rgba(0, 0, 0, 0.45)',
+                    }}
+                  >
                     9:41
                   </span>
                 </div>
 
-                {/* Right Flank: Authentic iOS Cellular (4 Stadium Pills) + Battery */}
-                <div className="flex items-center gap-1.5 pr-1">
-                  {/* 1. iOS Cellular 4-Pill Signal Indicator */}
+                {/* Right Flank: Cellular (4 rounded bars, ascending left→right) + Battery */}
+                <div className="flex items-center gap-[7px] pr-0.5">
+                  {/* Cellular Signal */}
                   <svg
-                    className="w-[17px] h-[11.5px] text-white shrink-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]"
-                    viewBox="0 0 17.5 12"
-                    fill="none"
+                    className="w-[18px] h-[12.5px] text-white shrink-0"
+                    viewBox="0 0 18 12.5"
+                    fill="currentColor"
+                    style={{ filter: 'drop-shadow(0 1px 1px rgba(0, 0, 0, 0.4))' }}
                   >
-                    <rect x="0.5" y="8" width="3" height="4" rx="1.5" fill="currentColor" />
-                    <rect x="5" y="5.5" width="3" height="6.5" rx="1.5" fill="currentColor" />
-                    <rect x="9.5" y="3" width="3" height="9" rx="1.5" fill="currentColor" />
-                    <rect x="14" y="0.5" width="3" height="11.5" rx="1.5" fill="currentColor" />
+                    <rect x="0" y="8.2" width="2.7" height="4.3" rx="0.9" />
+                    <rect x="5" y="5.3" width="2.7" height="7.2" rx="0.9" />
+                    <rect x="10" y="2.4" width="2.7" height="10.1" rx="0.9" />
+                    <rect x="15" y="0" width="2.7" height="12.5" rx="0.9" />
                   </svg>
 
-                  {/* 2. iOS Battery Capsule */}
+                  {/* Battery (rounded capsule + fill + right terminal nub) */}
                   <svg
-                    className="w-[24.5px] h-[11.5px] text-white shrink-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]"
-                    viewBox="0 0 24.5 11.5"
+                    className="w-[26px] h-[12px] text-white shrink-0"
+                    viewBox="0 0 26 12"
                     fill="none"
+                    style={{ filter: 'drop-shadow(0 1px 1px rgba(0, 0, 0, 0.4))' }}
                   >
                     <rect
-                      x="0.6"
-                      y="0.6"
+                      x="0.7"
+                      y="0.7"
                       width="20.4"
-                      height="10.3"
-                      rx="3.5"
+                      height="10.6"
+                      rx="3.4"
                       stroke="currentColor"
-                      strokeWidth="1.1"
-                      strokeOpacity="0.4"
+                      strokeWidth="1"
+                      strokeOpacity="0.45"
                     />
-                    <rect x="2.1" y="2.1" width="13.8" height="7.3" rx="1.8" fill="currentColor" />
+                    <rect x="2.1" y="2.1" width="14" height="7.8" rx="1.9" fill="currentColor" />
                     <path
-                      d="M22.5 4.1C23.3 4.1 23.7 4.5 23.7 5.2V6.3C23.7 7.0 23.3 7.4 22.5 7.4"
+                      d="M22.6 3.9C23.5 3.9 24 4.4 24 5.1V6.9C24 7.6 23.5 8.1 22.6 8.1"
                       stroke="currentColor"
-                      strokeWidth="1.1"
-                      strokeOpacity="0.4"
+                      strokeWidth="1"
+                      strokeOpacity="0.45"
                       strokeLinecap="round"
                       fill="none"
                     />
@@ -776,6 +857,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
               {/* OLED Screen Content Container */}
               <div
+                ref={screenContentRef}
                 className={`relative w-full h-full bg-slate-950 overflow-hidden flex items-center justify-center ${
                   videoStreamUrl ? 'cursor-pointer' : ''
                 }`}
@@ -851,8 +933,11 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         className={`relative z-10 transition-all duration-300 ${
                           !isRenderedClip && framingMode === 'fit_blur'
                             ? 'w-full h-auto max-h-full object-contain'
-                            : 'w-full h-full object-cover'
+                            : smartCropVideoStyle
+                              ? ''
+                              : 'w-full h-full object-cover'
                         }`}
+                        style={smartCropVideoStyle ?? undefined}
                         playsInline
                       />
                     )}
@@ -903,6 +988,18 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         </p>
                       </div>
                     )}
+
+                    {/* Smart crop masih menghitung trajektori (menunggu backend) */}
+                    {framingMode === 'smart_crop' && !isRenderedClip && Boolean(previewClip) && !smartCropTrajectory && !isProcessing && (
+                      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+                        <div className="flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-black/70 px-3 py-1.5 text-amber-300 shadow-lg backdrop-blur-md">
+                          <ViewfinderCircleIcon className="h-3.5 w-3.5 animate-pulse" />
+                          <span className="text-[10px] font-semibold tracking-wide">
+                            Menghitung smart follow…
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   // ── EMPTY STATE: NO SOURCE VIDEO SELECTED ──
@@ -935,10 +1032,11 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                   </div>
                 )}
 
-                {/* ── SUBTITLE STYLE PREVIEW (always visible so users can preview the selected style) ── */}
+                {/* ── SUBTITLE STYLE PREVIEW (only when a video source is loaded,
+                    so placeholder caption doesn't float over the empty state) ── */}
                 {/* Mirrors the backend safe zone: bottom-anchored at subPosition% with
                     ~11% horizontal margins so text never touches the frame edge. */}
-                {!isRenderedClip && selectedPresetId !== 'no_subtitle' && (
+                {!isRenderedClip && selectedPresetId !== 'no_subtitle' && videoStreamUrl && (
                   <div
                     className="absolute z-20 inset-x-0 px-[11%] flex justify-center pointer-events-none transition-all duration-200"
                     style={{ bottom: `${Math.max(4, 100 - subPosition)}%` }}
