@@ -428,7 +428,7 @@ class SplitScreenAndSubtitleEnhancementTest(unittest.TestCase):
                 content = f.read()
 
             self.assertIn("ViralStyle", content)
-            self.assertIn("&H0000FFFF&", content)
+            self.assertIn("&H0099D334&", content)
         finally:
             if os.path.exists(ass_path):
                 os.remove(ass_path)

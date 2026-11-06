@@ -69,7 +69,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
         </div>
 
         {this.state.error?.message && (
-          <pre className="max-h-40 max-w-lg overflow-auto rounded-lg border border-slate-800 bg-slate-950/80 px-3 py-2 text-left font-mono text-[11px] leading-relaxed text-rose-300">
+          <pre className="max-h-40 max-w-lg overflow-auto rounded-lg border border-slate-800 bg-slate-950/80 px-3 py-2 text-left font-mono text-[12px] leading-relaxed text-rose-300">
             {this.state.error.message}
           </pre>
         )}

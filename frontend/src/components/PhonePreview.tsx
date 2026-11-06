@@ -457,11 +457,11 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
   // ── SUBTITLE PREVIEW (teks transkrip asli, sinkron dengan posisi video) ──
   // Batas kata/karakter per gaya harus sama dengan backend (STYLE_CHUNK_LIMITS)
-  // supaya preview benar-benar mencerminkan hasil render.
+  // supaya preview benar-benar mencerminkan hasil render (aturan CapCut: frasa 3-4 kata horizontal).
   const SUBTITLE_LIMITS: Record<string, { maxWords: number; maxChars: number }> = {
-    tiktok_viral: { maxWords: 2, maxChars: 12 },
-    classic_karaoke: { maxWords: 3, maxChars: 12 },
-    minimalist: { maxWords: 4, maxChars: 16 },
+    tiktok_viral: { maxWords: 4, maxChars: 22 },
+    classic_karaoke: { maxWords: 4, maxChars: 22 },
+    minimalist: { maxWords: 5, maxChars: 24 },
     word_pop: { maxWords: 1, maxChars: 12 },
   };
 
@@ -497,7 +497,9 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
       }
       current.push({ ...w, word: text });
       currentLen += text.length + (current.length > 1 ? 1 : 0);
-      if (/[.?!,]$/.test(text)) {
+      // Hard sentence break on .?!, but for commas only break if the phrase already has >= 3 words
+      // so it never creates tiny awkward 1-2 word fragments (CapCut phrase rule).
+      if (/[.?!]$/.test(text) || (/,$/.test(text) && current.length >= 3)) {
         chunks.push(current);
         current = [];
         currentLen = 0;
@@ -583,7 +585,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
       case 'word_pop': {
         const word = activeChunk?.[0]?.word.toUpperCase() ?? 'KONSISTEN!';
         return (
-          <div className="flex flex-col items-center justify-center font-['Impact',_sans-serif] font-black uppercase text-[28px] text-[#FBBF24] tracking-wider text-center drop-shadow-[0_4px_10px_rgba(0,0,0,1)] select-none animate-pulse leading-none">
+          <div className="flex flex-col items-center justify-center font-['Impact',_sans-serif] font-black uppercase text-[28px] text-[#34D399] tracking-wider text-center drop-shadow-[0_4px_10px_rgba(0,0,0,1)] select-none animate-pulse leading-none">
             <span>{word}</span>
           </div>
         );
@@ -597,22 +599,31 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
           activeChunk && activeChunk.length > 0
             ? activeChunk
             : [
-                { word: 'KONSISTEN ITU', start: 0, end: 0 },
-                { word: 'LEBIH PENTING', start: 0, end: 0 },
+                { word: 'KONSISTEN', start: 0, end: 0 },
+                { word: 'ITU', start: 0, end: 0 },
+                { word: 'LEBIH', start: 0, end: 0 },
+                { word: 'PENTING', start: 0, end: 0 },
               ];
         return (
-          <div className="flex flex-col items-center justify-center font-['Montserrat',_sans-serif] font-black uppercase text-center select-none leading-tight drop-shadow-[0_2px_10px_rgba(0,0,0,1)]">
+          <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 font-['Montserrat',_'Plus_Jakarta_Sans',_sans-serif] font-black uppercase text-center select-none max-w-[92%] mx-auto leading-normal">
             {words.map((w, i) => {
               const isActive =
                 activeChunkWord !== null &&
                 w.start === activeChunkWord.start &&
                 w.end === activeChunkWord.end;
+              const isHighlighted = hasRealTranscript ? isActive : i === 0;
               return (
                 <span
                   key={`${w.word}-${i}`}
-                  className={`text-[16px] sm:text-[17px] tracking-wide font-black drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] ${
-                    i === 0 ? 'text-[#FBBF24]' : 'text-white'
-                  } ${isActive ? 'scale-105' : ''} ${i > 0 ? 'mt-0.5' : ''}`}
+                  style={{
+                    WebkitTextStroke: '1.2px #000000',
+                    paintOrder: 'stroke fill',
+                  }}
+                  className={`inline-block text-[15px] sm:text-[16px] tracking-wide font-black transition-all duration-150 drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)] ${
+                    isHighlighted
+                      ? 'text-[#34D399] scale-105 drop-shadow-[0_0_12px_rgba(52,211,153,0.55)]'
+                      : 'text-white'
+                  }`}
                 >
                   {w.word.toUpperCase()}
                 </span>

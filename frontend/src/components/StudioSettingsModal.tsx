@@ -32,6 +32,7 @@ import {
   TikTokLogo,
   YouTubeLogo,
 } from './BrandIcons';
+import { useDialog } from '../lib/useDialog';
 
 export interface AiProviderPreset {
   label: string;
@@ -188,6 +189,8 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
   handleDisconnectYouTube,
   onShutdown,
 }) => {
+  const dialogRef = useDialog<HTMLDivElement>(open, () => onOpenChange(false));
+
   if (!open) return null;
 
   /** Resolve the official brand mark for a provider key. */
@@ -273,8 +276,20 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
   const setupPct = Math.round((setupDone / 3) * 100);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-3 sm:p-5 md:p-8 animate-in fade-in-0 duration-200">
-      <div className="relative w-full max-w-5xl h-[680px] max-h-[92vh] max-md:h-[calc(100dvh-1.5rem)] max-md:max-h-[calc(100dvh-1.5rem)] max-md:rounded-xl rounded-2xl border border-slate-800/80 bg-[#0f141b] p-0 shadow-[0_25px_60px_rgba(0,0,0,0.85)] text-slate-100 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 font-['Instrument_Sans',_'Plus_Jakarta_Sans',_sans-serif]">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-3 sm:p-5 md:p-8 animate-in fade-in-0 duration-200"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onOpenChange(false);
+      }}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="studio-settings-title"
+        tabIndex={-1}
+        className="relative w-full max-w-5xl h-[680px] max-h-[92vh] max-md:h-[calc(100dvh-1.5rem)] max-md:max-h-[calc(100dvh-1.5rem)] max-md:rounded-xl rounded-2xl border border-slate-800/80 bg-[#0f141b] p-0 shadow-[0_25px_60px_rgba(0,0,0,0.85)] text-slate-100 flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 font-['Instrument_Sans',_'Plus_Jakarta_Sans',_sans-serif] outline-none"
+      >
         {/* Ambient top glow */}
         <div
           className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 h-48 w-full max-w-[420px] rounded-full bg-emerald-500/10 blur-[80px]"
@@ -288,7 +303,10 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
               <Settings2 className="h-5 w-5 max-md:h-4 max-md:w-4 stroke-[1.8]" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-base max-md:text-sm font-bold tracking-tight text-white font-['Outfit'] truncate">
+              <h2
+                id="studio-settings-title"
+                className="text-base max-md:text-sm font-bold tracking-tight text-white font-['Outfit'] truncate"
+              >
                 Pengaturan Studio
               </h2>
               <p className="text-xs text-slate-400 max-md:hidden">
@@ -299,7 +317,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
 
           <div className="flex items-center gap-2 flex-shrink-0">
             <span
-              className={`hidden md:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
+              className={`hidden md:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ${
                 aiConfig?.groq_key_set
                   ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
                   : 'border-slate-700 bg-slate-900 text-slate-400'
@@ -311,7 +329,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
               Whisper
             </span>
             <span
-              className={`hidden md:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
+              className={`hidden md:inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ${
                 ytConnected && ytChannel
                   ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
                   : 'border-slate-700 bg-slate-900 text-slate-400'
@@ -340,7 +358,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
           {/* ─── LEFT SIDEBAR NAVIGATION ─── */}
           <aside className="w-full md:w-64 bg-[#0e1218] border-b md:border-b-0 md:border-r border-slate-800/80 p-3 max-md:p-2 sm:p-4 flex flex-col justify-between flex-shrink-0">
             <div className="space-y-1 max-md:space-y-0">
-              <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-3 mb-2 font-['Outfit'] max-md:hidden">
+              <p className="text-[12px] font-bold text-slate-500 uppercase tracking-wider px-3 mb-2 font-['Outfit'] max-md:hidden">
                 Kategori Pengaturan
               </p>
 
@@ -375,12 +393,12 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                             {item.label}
                           </span>
                           <span
-                            className={`hidden max-md:block truncate text-[11px] font-semibold leading-tight ${isActive ? item.activeText : 'text-slate-200'}`}
+                            className={`hidden max-md:block truncate text-[12px] font-semibold leading-tight ${isActive ? item.activeText : 'text-slate-200'}`}
                           >
                             {item.short}
                           </span>
                           <span
-                            className={`hidden md:block text-[11px] truncate mt-0.5 font-normal ${
+                            className={`hidden md:block text-[12px] truncate mt-0.5 font-normal ${
                               isActive ? item.activeDesc : 'text-slate-500'
                             }`}
                           >
@@ -398,7 +416,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
             <div className="p-3 rounded-xl border border-slate-800/80 bg-[#131820] space-y-2.5 mt-4 max-md:hidden">
               {/* Setup progress */}
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-[11px]">
+                <div className="flex items-center justify-between text-[12px]">
                   <span className="font-bold text-slate-200 font-['Outfit']">Progres Setup</span>
                   <span className="font-mono font-semibold text-emerald-400">{setupPct}%</span>
                 </div>
@@ -408,7 +426,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                     style={{ width: `${setupPct}%` }}
                   />
                 </div>
-                <p className="text-[10px] text-slate-500">
+                <p className="text-[11px] text-slate-500">
                   {setupDone} dari 3 modul siap — LLM, Whisper, YouTube.
                 </p>
               </div>
@@ -420,7 +438,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                   <Server className="h-3.5 w-3.5 text-emerald-400" />
                   <span>Engine Lokal</span>
                 </span>
-                <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-semibold font-mono">
+                <span className="flex items-center gap-1 text-[12px] text-emerald-400 font-semibold font-mono">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                   Ready
                 </span>
@@ -428,12 +446,12 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
               <button
                 type="button"
                 onClick={onShutdown}
-                className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900/80 px-2.5 py-1.5 text-[11px] font-medium text-slate-300 hover:bg-rose-950/50 hover:text-rose-300 hover:border-rose-500/40 transition-colors cursor-pointer"
+                className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900/80 px-2.5 py-1.5 text-[12px] font-medium text-slate-300 hover:bg-rose-950/50 hover:text-rose-300 hover:border-rose-500/40 transition-colors cursor-pointer"
               >
                 <Power className="h-3.5 w-3.5" />
                 <span>Shut Down Server</span>
               </button>
-              <p className="text-[10px] text-slate-500 text-center pt-1">
+              <p className="text-[11px] text-slate-500 text-center pt-1">
                 VisionClipper Studio © 2026 — Built by kam2k-dev
               </p>
             </div>
@@ -467,14 +485,14 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                     ].map((s) => (
                       <span
                         key={s.n}
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ${
                           s.done
                             ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
                             : 'border-slate-700 bg-slate-900 text-slate-400'
                         }`}
                       >
                         <span
-                          className={`flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-mono ${
+                          className={`flex h-4 w-4 items-center justify-center rounded-full text-[11px] font-mono ${
                             s.done
                               ? 'bg-emerald-500/30 text-emerald-200'
                               : 'bg-slate-800 text-slate-400'
@@ -493,7 +511,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                   {/* 1. Provider Selection Cards */}
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-md bg-emerald-500/15 border border-emerald-500/40 text-[10px] font-mono font-bold text-emerald-300">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-md bg-emerald-500/15 border border-emerald-500/40 text-[11px] font-mono font-bold text-emerald-300">
                         1
                       </span>
                       <Label className="text-xs uppercase tracking-wider text-slate-400 font-bold">
@@ -563,7 +581,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                                 {shortLabel}
                               </span>
                               <span
-                                className={`text-[10px] font-mono block truncate w-full mt-0.5 ${isSelected ? 'text-emerald-300' : 'text-slate-500'}`}
+                                className={`text-[11px] font-mono block truncate w-full mt-0.5 ${isSelected ? 'text-emerald-300' : 'text-slate-500'}`}
                               >
                                 {badgeText}
                               </span>
@@ -579,7 +597,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label htmlFor="ai-endpoint">API Endpoint URL</Label>
-                        <span className="text-[11px] text-slate-500 font-mono">
+                        <span className="text-[12px] text-slate-500 font-mono">
                           OpenAI Compatible
                         </span>
                       </div>
@@ -594,7 +612,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                         placeholder="https://openrouter.ai/api/v1/chat/completions"
                         className="font-mono text-xs"
                       />
-                      <p className="text-[11px] text-slate-500">
+                      <p className="text-[12px] text-slate-500">
                         Harus mendukung skema chat completions OpenAI.
                       </p>
                     </div>
@@ -602,7 +620,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label htmlFor="ai-model">Nama Model LLM</Label>
-                        <span className="text-[11px] text-slate-500">Transkrip & Scoring</span>
+                        <span className="text-[12px] text-slate-500">Transkrip & Scoring</span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <Input
@@ -620,7 +638,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                           type="button"
                           onClick={handleFetchModels}
                           disabled={aiModelsLoading || !aiEndpointInput.trim()}
-                          className="flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-2 text-[11px] font-bold text-emerald-300 hover:bg-emerald-500/20 transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                          className="flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-2 text-[12px] font-bold text-emerald-300 hover:bg-emerald-500/20 transition-colors flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                           title="Deteksi otomatis model yang tersedia dari endpoint (pakai API key yang sama)"
                         >
                           <RefreshCw
@@ -632,7 +650,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
 
                       {/* Auto-detected model list */}
                       {aiModelsError && (
-                        <p className="text-[11px] text-red-400 flex items-center gap-1">
+                        <p className="text-[12px] text-red-400 flex items-center gap-1">
                           <XCircle className="h-3 w-3 flex-shrink-0" />
                           {aiModelsError}
                         </p>
@@ -640,13 +658,13 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                       {aiModelsOpen && aiModels.length > 0 && (
                         <div className="rounded-lg border border-slate-700/80 bg-[#0b0f14] max-h-44 overflow-y-auto scrollbar-thin shadow-lg">
                           <div className="px-2.5 py-1.5 border-b border-slate-800/80 flex items-center justify-between sticky top-0 bg-[#0b0f14]">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                               {aiModels.length} model tersedia
                             </span>
                             <button
                               type="button"
                               onClick={() => setAiModelsOpen(false)}
-                              className="text-[10px] text-slate-500 hover:text-slate-300"
+                              className="text-[11px] text-slate-500 hover:text-slate-300"
                             >
                               Tutup
                             </button>
@@ -660,7 +678,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                                 setAiTestResult(null);
                                 setAiModelsOpen(false);
                               }}
-                              className={`w-full text-left px-2.5 py-1.5 font-mono text-[11px] transition-colors flex items-center justify-between gap-2 ${
+                              className={`w-full text-left px-2.5 py-1.5 font-mono text-[12px] transition-colors flex items-center justify-between gap-2 ${
                                 aiModelInput === m
                                   ? 'bg-emerald-500/10 text-emerald-300'
                                   : 'text-slate-300 hover:bg-slate-800/70'
@@ -672,7 +690,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                           ))}
                         </div>
                       )}
-                      <p className="text-[11px] text-slate-500">
+                      <p className="text-[12px] text-slate-500">
                         Model yang digunakan untuk menganalisis transkrip audio & scoring hook.
                       </p>
                     </div>
@@ -689,7 +707,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                           {aiConfig?.api_key_set && (
                             <Badge
                               variant="success"
-                              className="text-[10px] py-0 px-1.5 font-mono font-normal"
+                              className="text-[11px] py-0 px-1.5 font-mono font-normal"
                             >
                               <Check className="h-3 w-3" />
                               Tersimpan: {aiConfig.api_key_masked}
@@ -778,7 +796,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                                 ? 'Koneksi AI Berhasil Terhubung!'
                                 : 'Koneksi AI Gagal'}
                             </p>
-                            <p className="font-mono text-[11px] opacity-90 mt-0.5 break-all">
+                            <p className="font-mono text-[12px] opacity-90 mt-0.5 break-all">
                               {aiTestResult.ok
                                 ? aiTestResult.message || `Respon: "${aiTestResult.reply}"`
                                 : aiTestResult.error}
@@ -854,7 +872,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                         {aiConfig?.groq_key_set && (
                           <Badge
                             variant="success"
-                            className="text-[10px] py-0 px-1.5 font-mono font-normal"
+                            className="text-[11px] py-0 px-1.5 font-mono font-normal"
                           >
                             <Check className="h-3 w-3" />
                             Tersimpan: {aiConfig.groq_key_masked}
@@ -942,7 +960,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                               ? 'Groq API Key Valid & Siap Digunakan!'
                               : 'Uji Groq Gagal'}
                           </p>
-                          <p className="font-mono text-[11px] opacity-90 mt-0.5">
+                          <p className="font-mono text-[12px] opacity-90 mt-0.5">
                             {aiGroqTestResult.ok
                               ? aiGroqTestResult.message
                               : aiGroqTestResult.error}
@@ -1017,7 +1035,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                               <span className="text-base font-bold text-white truncate font-['Outfit']">
                                 {ytChannel.title}
                               </span>
-                              <Badge variant="success" className="text-[10px]">
+                              <Badge variant="success" className="text-[11px]">
                                 Google OAuth Aktif
                               </Badge>
                             </div>
@@ -1033,7 +1051,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
 
                         <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-slate-800/80">
                           <div className="p-3 rounded-lg bg-[#0b0f14] border border-slate-800 text-center sm:text-left">
-                            <span className="text-[11px] text-slate-400 block font-medium uppercase">
+                            <span className="text-[12px] text-slate-400 block font-medium uppercase">
                               Subscribers
                             </span>
                             <span className="text-lg font-bold text-slate-100 mt-0.5 block font-['Outfit']">
@@ -1041,7 +1059,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                             </span>
                           </div>
                           <div className="p-3 rounded-lg bg-[#0b0f14] border border-slate-800 text-center sm:text-left">
-                            <span className="text-[11px] text-slate-400 block font-medium uppercase">
+                            <span className="text-[12px] text-slate-400 block font-medium uppercase">
                               Total Video
                             </span>
                             <span className="text-lg font-bold text-slate-100 mt-0.5 block font-['Outfit']">
@@ -1116,7 +1134,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                           <span className="font-bold text-slate-200 block mb-0.5">
                             🚀 1-Klik Upload
                           </span>
-                          <span className="text-slate-400 text-[11px]">
+                          <span className="text-slate-400 text-[12px]">
                             Upload langsung ke Shorts
                           </span>
                         </div>
@@ -1124,7 +1142,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                           <span className="font-bold text-slate-200 block mb-0.5">
                             🏷️ Auto Tagging
                           </span>
-                          <span className="text-slate-400 text-[11px]">
+                          <span className="text-slate-400 text-[12px]">
                             Judul, deskripsi & #Shorts
                           </span>
                         </div>
@@ -1132,7 +1150,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                           <span className="font-bold text-slate-200 block mb-0.5">
                             🔒 Token Lokal
                           </span>
-                          <span className="text-slate-400 text-[11px]">Aman di komputer Anda</span>
+                          <span className="text-slate-400 text-[12px]">Aman di komputer Anda</span>
                         </div>
                       </div>
 
@@ -1195,7 +1213,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                         },
                       ].map((step, i) => (
                         <li key={step.title} className="relative flex items-start gap-3.5">
-                          <span className="relative z-10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-cyan-500/40 bg-[#0b0f14] text-[11px] font-mono font-bold text-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.15)]">
+                          <span className="relative z-10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-cyan-500/40 bg-[#0b0f14] text-[12px] font-mono font-bold text-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.15)]">
                             {i + 1}
                           </span>
                           <div className="min-w-0 flex-1 rounded-xl border border-slate-800/80 bg-[#131820] px-4 py-3">
@@ -1264,7 +1282,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
 
             {/* Bottom Footer Bar */}
             <div className="px-6 py-4 max-md:px-3 max-md:py-2.5 border-t border-slate-800/80 bg-[#0f141b] flex items-center justify-between max-md:flex-col max-md:items-stretch max-md:gap-2 flex-shrink-0">
-              <p className="hidden sm:block text-[11px] text-slate-500 truncate pr-4">
+              <p className="hidden sm:block text-[12px] text-slate-500 truncate pr-4">
                 {activeTab === 'ai' && 'Simpan konfigurasi untuk mengaktifkan engine analisis AI.'}
                 {activeTab === 'whisper' &&
                   'Simpan untuk mengaktifkan transkripsi & subtitle otomatis.'}

@@ -101,6 +101,26 @@
   .font-mono {
     font-family: 'JetBrains Mono', monospace;
   }
+
+  /* Indikator fokus keyboard yang konsisten (hanya muncul saat navigasi
+     keyboard, tidak saat klik mouse). Input teks punya gaya fokus sendiri. */
+  :where(
+    button,
+    a[href],
+    summary,
+    [role='button'],
+    [role='switch'],
+    [role='checkbox'],
+    [role='tab'],
+    [tabindex]:not([tabindex='-1']),
+    input[type='checkbox'],
+    input[type='radio'],
+    input[type='range'],
+    select
+  ):focus-visible {
+    outline: 2px solid rgba(52, 211, 153, 0.85);
+    outline-offset: 2px;
+  }
 }
 
 @layer components {

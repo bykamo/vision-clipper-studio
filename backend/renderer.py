@@ -65,9 +65,9 @@ SAFE_WRAP_STYLE = 0
 # Per-style character budgets derived from the safe width (1080 - 2*120 = 840px)
 # and each font's approximate average glyph width (~0.62 * font size).
 STYLE_CHUNK_LIMITS = {
-    "tiktok_viral": {"max_words": 2, "max_chars": 12},
-    "classic_karaoke": {"max_words": 3, "max_chars": 12},
-    "minimalist": {"max_words": 4, "max_chars": 16},
+    "tiktok_viral": {"max_words": 4, "max_chars": 22},
+    "classic_karaoke": {"max_words": 4, "max_chars": 22},
+    "minimalist": {"max_words": 5, "max_chars": 24},
 }
 
 # Emoji tidak lagi dirender di subtitle (fitur emoji dihapus). Pola ini hanya
@@ -311,7 +311,10 @@ def _chunk_words(words, max_words=2, max_chars=14, uppercase=False,
         current_len = projected
 
         # A sentence terminator naturally closes the current chunk.
-        if text[-1] in terminators:
+        # Don't break on comma if the chunk only has 1-2 words, to avoid awkward single-word fragments.
+        is_hard_stop = text[-1] in ".?!"
+        is_comma_break = break_on_comma and text[-1] == "," and len(current_chunk) >= 3
+        if is_hard_stop or is_comma_break:
             chunks.append(current_chunk)
             current_chunk, current_len = [], 0
 
@@ -320,8 +323,8 @@ def _chunk_words(words, max_words=2, max_chars=14, uppercase=False,
     return chunks
 
 def _generate_tiktok_viral_style(words, out_ass_path, clip_start, clip_end, margin_v=600, extra_styles="", extra_dialogues=None):
-    """🎬 TikTok Viral: Plus Jakarta Sans Bold + Outline Tipis Modern + Highlight Kuning Pop."""
-    styles_block = f"Style: ViralStyle,Plus Jakarta Sans,84,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3.5,2,2,{SAFE_MARGIN_H},{SAFE_MARGIN_H},{margin_v},1\n"
+    """🎬 TikTok / CapCut Viral: Plus Jakarta Sans / Montserrat Bold + Outline Tebal Bersih + Highlight Emerald VisionClipper."""
+    styles_block = f"Style: ViralStyle,Montserrat,78,&H00FFFFFF,&H000000FF,&H00000000,&HA0000000,-1,0,0,0,100,100,0,0,1,5,2.5,2,{SAFE_MARGIN_H},{SAFE_MARGIN_H},{margin_v},1\n"
     if extra_styles:
         styles_block += f"{extra_styles}\n"
 
@@ -338,7 +341,7 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     limits = STYLE_CHUNK_LIMITS["tiktok_viral"]
-    chunks = _chunk_words(words, max_words=limits["max_words"], max_chars=limits["max_chars"], uppercase=False)
+    chunks = _chunk_words(words, max_words=limits["max_words"], max_chars=limits["max_chars"], uppercase=False, break_on_comma=False)
     
     with open(out_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header)
@@ -355,11 +358,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 for j in range(len(chunk)):
                     raw_word = chunk[j]["word"]
                     if j < i:
-                        display.append(raw_word)
+                        # Kata yang sudah lewat: putih solid
+                        display.append(f"{{\\c&H00FFFFFF&}}{raw_word}")
                     elif j == i:
-                        display.append(f"{{\\c&H0000FFFF&}}{{\\fs92}}{raw_word}{{\\fs84}}{{\\c&HFFFFFF&}}")
+                        # Kata aktif: Highlight Emerald VisionClipper (#34D399 -> &H0099D334&) dengan pop scale
+                        display.append(f"{{\\c&H0099D334&}}{{\\fs86}}{raw_word}{{\\fs78}}{{\\c&H00FFFFFF&}}")
                     else:
-                        display.append(f"{{\\alpha&HFF&}}{raw_word}{{\\alpha&H00&}}")
+                        # Kata mendatang: tetap terlihat dalam putih solid (CapCut style: satu kalimat/frasa utuh terlihat)
+                        display.append(f"{{\\c&H00FFFFFF&}}{raw_word}")
                 f.write(f"Dialogue: 0,{start_ass},{end_ass},ViralStyle,,0,0,0,,{' '.join(display)}\n")
 
 
