@@ -999,18 +999,6 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         </p>
                       </div>
                     )}
-
-                    {/* Smart crop masih menghitung trajektori (menunggu backend) */}
-                    {framingMode === 'smart_crop' && !isRenderedClip && Boolean(previewClip) && !smartCropTrajectory && !isProcessing && (
-                      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
-                        <div className="flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-black/70 px-3 py-1.5 text-amber-300 shadow-lg backdrop-blur-md">
-                          <ViewfinderCircleIcon className="h-3.5 w-3.5 animate-pulse" />
-                          <span className="text-[10px] font-semibold tracking-wide">
-                            Menghitung smart follow…
-                          </span>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 ) : (
                   // ── EMPTY STATE: NO SOURCE VIDEO SELECTED ──
