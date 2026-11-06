@@ -794,16 +794,16 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                   - Time kiri: SF Pro Text Semibold, tracking rapat
                   - Kanan: Cellular (4 bar rounded, naik kiri→kanan) + Battery
                   - Tanpa Wi-Fi, mengikuti tata letak nukilan iOS terbaru. */}
-              <div className="absolute top-[8px] inset-x-0 h-[27px] pl-[50px] pr-[22px] z-25 flex items-center justify-between text-white pointer-events-none select-none">
+              <div className="absolute top-[8px] inset-x-0 h-[27px] pl-[30px] pr-[16px] z-25 flex items-center justify-between text-white pointer-events-none select-none">
                 {/* Left Flank: Time (9:41, SF Pro Semibold, tight tracking) */}
                 <div className="flex items-center">
                   <span
-                    className="text-[16px] font-semibold text-white antialiased"
+                    className="text-[16px] font-semibold text-white/70 antialiased"
                     style={{
                       fontFamily:
                         "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Helvetica Neue', Helvetica, sans-serif",
                       letterSpacing: '-0.4px',
-                      textShadow: '0 1px 2px rgba(0, 0, 0, 0.45)',
+                      textShadow: '0 1px 2px rgba(0, 0, 0, 0.35)',
                     }}
                   >
                     9:41
@@ -814,10 +814,10 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                 <div className="flex items-center gap-[7px] pr-0.5">
                   {/* Cellular Signal */}
                   <svg
-                    className="w-[18px] h-[12.5px] text-white shrink-0"
+                    className="w-[18px] h-[12.5px] text-white/70 shrink-0"
                     viewBox="0 0 18 12.5"
                     fill="currentColor"
-                    style={{ filter: 'drop-shadow(0 1px 1px rgba(0, 0, 0, 0.4))' }}
+                    style={{ filter: 'drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35))' }}
                   >
                     <rect x="0" y="8.2" width="2.7" height="4.3" rx="0.9" />
                     <rect x="5" y="5.3" width="2.7" height="7.2" rx="0.9" />
@@ -827,10 +827,10 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
                   {/* Battery (rounded capsule + fill + right terminal nub) */}
                   <svg
-                    className="w-[26px] h-[12px] text-white shrink-0"
+                    className="w-[26px] h-[12px] text-white/70 shrink-0"
                     viewBox="0 0 26 12"
                     fill="none"
-                    style={{ filter: 'drop-shadow(0 1px 1px rgba(0, 0, 0, 0.4))' }}
+                    style={{ filter: 'drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35))' }}
                   >
                     <rect
                       x="0.7"
