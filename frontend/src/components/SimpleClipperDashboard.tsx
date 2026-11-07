@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   ScissorsIcon,
-  ShoppingBagIcon,
   FolderIcon,
   FolderOpenIcon,
   FolderArrowDownIcon,
@@ -259,9 +258,6 @@ const MiniSwitch: React.FC<{
 );
 
 export const SimpleClipperDashboard: React.FC = () => {
-  // Navigation Tabs (Modes)
-  const [activeTab, setActiveTab] = useState<'hook' | 'affiliate'>('hook');
-
   // Video Source State
   const [videoPathInput, setVideoPathInput] = useState<string>('');
   const [sourceKind, setSourceKind] = useState<'video' | 'render-folder'>('video');
@@ -1252,7 +1248,7 @@ export const SimpleClipperDashboard: React.FC = () => {
     const startTimestamp = new Date().toTimeString().split(' ')[0];
 
     setLogs([
-      `[${startTimestamp}] [SYSTEM] Inisialisasi ${activeTab.toUpperCase()} CLIPPER ENGINE...`,
+      `[${startTimestamp}] [SYSTEM] Inisialisasi VIDEO CLIPPER ENGINE...`,
       `[${startTimestamp}] [SYSTEM] Model AI: Groq Whisper Cloud | Bahasa: Auto-Detect | Subtitle Style: ${selectedPresetId}`,
       `[${startTimestamp}] [SYSTEM] Sumber video: ${source}`,
       `[${startTimestamp}] [SYSTEM] Memulai proses transkripsi & analisis AI (tanpa render)...`,
@@ -1267,7 +1263,7 @@ export const SimpleClipperDashboard: React.FC = () => {
       // Proceed with request
     }
 
-    const streamUrl = `/api/analyze?mode=${encodeURIComponent(activeTab)}&source=${encodeURIComponent(source)}&num_clips=${encodeURIComponent(clipCount)}&whisper_model=${encodeURIComponent(transcriptionModel)}&source_lang=${encodeURIComponent(sourceLang)}`;
+    const streamUrl = `/api/analyze?mode=hook&source=${encodeURIComponent(source)}&num_clips=${encodeURIComponent(clipCount)}&whisper_model=${encodeURIComponent(transcriptionModel)}&source_lang=${encodeURIComponent(sourceLang)}`;
     const es = new EventSource(streamUrl);
     eventSourceRef.current = es;
     let analysisComplete = false;
@@ -1754,35 +1750,6 @@ export const SimpleClipperDashboard: React.FC = () => {
           />
         </div>
 
-        {/* Center: Mode Switcher Pills */}
-        <div className="flex items-center rounded-full bg-slate-900/90 p-1 border border-slate-800 font-['Outfit',_sans-serif] max-lg:order-3 max-lg:w-full max-lg:justify-center max-md:order-2 max-md:w-auto max-md:flex-none max-md:p-0.5">
-          <button
-            onClick={() => setActiveTab('hook')}
-            title="Hook Cutter"
-            className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold transition-all max-lg:flex-1 max-lg:justify-center max-md:flex-none max-md:gap-1 max-md:px-2 max-md:py-1 ${
-              activeTab === 'hook' ? themeClasses.pillActive : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <ScissorsIcon className="h-3.5 w-3.5 stroke-[2]" />
-            <span className="max-md:hidden">Hook Cutter</span>
-            <span className="hidden max-md:inline text-[11px]">Hook</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('affiliate')}
-            title="Affiliate Clipper"
-            className={`flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-semibold transition-all max-lg:flex-1 max-lg:justify-center max-md:flex-none max-md:gap-1 max-md:px-2 max-md:py-1 ${
-              activeTab === 'affiliate'
-                ? themeClasses.pillActive
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <ShoppingBagIcon className="h-3.5 w-3.5 stroke-[2]" />
-            <span className="max-md:hidden">Affiliate Clipper</span>
-            <span className="hidden max-md:inline text-[11px]">Affiliate</span>
-          </button>
-        </div>
-
         {/* Right: Active Processing Badge & Studio Settings Icon */}
         <div className="flex items-center gap-2.5 max-lg:order-2 max-lg:ml-auto max-md:order-3 max-md:gap-1.5">
           {status === 'processing' ? (
@@ -1867,11 +1834,23 @@ export const SimpleClipperDashboard: React.FC = () => {
         {/* ── COLUMN 1: LEFT SIDEBAR (SETTINGS & CONTROLS) ── */}
         <aside
           ref={sidebarRef}
-          className={`flex min-h-0 flex-col rounded-2xl border ${themeClasses.sidebar} p-3.5 overflow-y-auto scrollbar-thin max-lg:overflow-visible`}
+          className={`flex min-h-0 flex-col rounded-2xl border ${themeClasses.sidebar} overflow-hidden max-lg:overflow-visible`}
         >
-          {/* ═══ WORKFLOW STEPPER (numbered vertical timeline) ═══ */}
+          {/* PERSISTENT TERMINAL HEADER (Setup Video) */}
+          <div className="flex h-8 items-center justify-between px-3.5 border-b border-slate-800/80 bg-[#161b22] flex-shrink-0">
+            <div className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f56]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]" />
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${isProcessing ? 'bg-[#27c93f] animate-pulse' : 'bg-[#27c93f]'}`}
+              />
+            </div>
+          </div>
 
-          {/* STEP 01 — SUMBER VIDEO */}
+          <div className="flex-1 min-h-0 p-3.5 overflow-y-auto scrollbar-thin flex flex-col">
+            {/* ═══ WORKFLOW STEPPER (numbered vertical timeline) ═══ */}
+
+            {/* STEP 01 — SUMBER VIDEO */}
           <StepCard
             step={1}
             icon={<CloudArrowDownIcon className="h-4 w-4 stroke-[2]" />}
@@ -2236,6 +2215,7 @@ export const SimpleClipperDashboard: React.FC = () => {
               </button>
             )}
           </div>
+          </div>
         </aside>
 
         {/* ── COLUMN 2: CENTER WORKSPACE (iPHONE PREVIEW MOCKUP) ── */}
@@ -2249,8 +2229,6 @@ export const SimpleClipperDashboard: React.FC = () => {
             }
             previewClip={previewOutputClip ? null : previewClipRange}
             clipTitle={previewOutputClip ? previewOutputClip.title : activeClipMeta?.title}
-            clipCaption={activeClipMeta?.caption}
-            clipHashtags={activeClipMeta?.hashtags}
             clipWords={previewClipWords}
             smartCropTrajectory={previewOutputClip ? null : smartCropTrajectory}
             isRenderedClip={Boolean(previewOutputClip)}
@@ -2271,17 +2249,12 @@ export const SimpleClipperDashboard: React.FC = () => {
             >
               {/* PERSISTENT TERMINAL HEADER (all phases) */}
               <div className="flex h-8 items-center justify-between px-3.5 border-b border-slate-800/80 bg-[#161b22] flex-shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f56]" />
-                    <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]" />
-                    <span
-                      className={`h-2.5 w-2.5 rounded-full ${isProcessing ? 'bg-[#27c93f] animate-pulse' : 'bg-[#27c93f]'}`}
-                    />
-                  </div>
-                  <span className="font-mono text-[12px] font-bold text-slate-400 tracking-wider">
-                    {phase === 'complete' ? 'OUTPUT CLIPS' : 'CLIP PREVIEW'}
-                  </span>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f56]" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]" />
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full ${isProcessing ? 'bg-[#27c93f] animate-pulse' : 'bg-[#27c93f]'}`}
+                  />
                 </div>
                 {phase === 'complete' && (
                   <div className="flex items-center gap-2">
@@ -2844,18 +2817,13 @@ export const SimpleClipperDashboard: React.FC = () => {
             <div className="rounded-xl border border-slate-800/90 bg-[#0d1117] overflow-hidden flex flex-col h-full max-lg:h-[260px]">
               {/* Terminal Window Header */}
               <div className="flex h-8 items-center justify-between px-3.5 border-b border-slate-800/80 bg-[#161b22] flex-shrink-0">
-                {/* Left: macOS Window Circles & Dynamic Phase Title */}
-                <div className="flex items-center gap-2.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f56]" />
-                    <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]" />
-                    <span
-                      className={`h-2.5 w-2.5 rounded-full ${isProcessing ? 'bg-[#27c93f] animate-pulse' : 'bg-[#27c93f]'}`}
-                    />
-                  </div>
-                  <span className="font-mono text-[12px] font-bold text-slate-400 tracking-wider">
-                    PROSES LOG
-                  </span>
+                {/* Left: macOS Window Circles */}
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f56]" />
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]" />
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full ${isProcessing ? 'bg-[#27c93f] animate-pulse' : 'bg-[#27c93f]'}`}
+                  />
                 </div>
 
                 {/* Right: Progress Bar & Actions */}

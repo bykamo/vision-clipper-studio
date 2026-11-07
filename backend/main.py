@@ -953,7 +953,7 @@ async def analyze(request: Request, mode: str = "", source: str = "", num_clips:
         return JSONResponse(status_code=409, content={"error": "A worker is already processing a request"})
     if not source.strip():
         return JSONResponse(status_code=400, content={"error": "Source parameter is empty"})
-    if mode and mode not in {"hook", "affiliate"}:
+    if mode and mode not in {"hook", "affiliate", "video", "default"}:
         return JSONResponse(status_code=400, content={"error": "Invalid mode"})
     if whisper_model not in {"groq"}:
         return JSONResponse(status_code=400, content={"error": "Invalid transcription model. Hanya 'groq' yang didukung."})
@@ -977,7 +977,7 @@ async def analyze(request: Request, mode: str = "", source: str = "", num_clips:
         sys.executable, "-u", "-m", "backend.worker",
         "--file", source,
         "--num-clips", str(clip_count),
-        "--mode", mode or "hook",
+        "--mode", "hook" if mode in {"", "hook", "video", "default"} else mode,
         "--model", whisper_model,
         "--source-lang", source_lang,
         "--analyze-only"

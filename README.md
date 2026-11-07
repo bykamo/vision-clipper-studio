@@ -186,13 +186,9 @@ python -m backend.worker --file "video_podcast.mp4" --num-clips 5 --mode hook
 
 ---
 
-## 🎛️ Mode Operasi
+## 🎛️ Operasi Video Clipper
 
-### 🎯 Hook Cutter
-Mode utama — AI menganalisa transkrip video, menemukan momen-momen *hook* paling menarik, lalu memotong dan mengolahnya jadi klip vertikal siap upload (TikTok, Reels, Shorts).
-
-### 🛒 Affiliate Clipper
-Mode alternatif — Dioptimalkan untuk konten *affiliate/review*, memotong segmen pembahasan produk dan *call-to-action (CTA)* secara otomatis.
+AI menganalisa transkrip video, menemukan momen-momen *highlight* & *hook* paling menarik secara otomatis, lalu memotong dan mengolahnya jadi klip vertikal siap upload (TikTok, Reels, Shorts).
 
 ### 📂 Posting Ulang Hasil Render Lama
 
