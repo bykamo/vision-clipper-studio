@@ -1739,21 +1739,21 @@ export const SimpleClipperDashboard: React.FC = () => {
           1. TOP APP HEADER
          ───────────────────────────────────────────────────────────── */}
       <header
-        className={`flex h-14 flex-shrink-0 items-center justify-between max-lg:h-auto max-lg:flex-wrap max-lg:gap-2 max-lg:px-3 max-lg:py-2.5 max-md:h-12 max-md:flex-nowrap max-md:gap-1.5 max-md:px-2.5 max-md:py-1.5 ${themeClasses.header} rounded-2xl border px-5 shadow-lg z-20 mx-3 mt-3`}
+        className={`flex h-11 flex-shrink-0 items-center justify-between max-lg:h-auto max-lg:flex-wrap max-lg:gap-1.5 max-lg:px-3 max-lg:py-2 max-md:h-10 max-md:flex-nowrap max-md:gap-1.5 max-md:px-2.5 max-md:py-1 ${themeClasses.header} rounded-xl border px-4 shadow-lg z-20 mx-3 mt-2`}
       >
         {/* Left: Brand Logo & Title */}
         <div className="flex items-center gap-3 max-lg:order-1 max-md:min-w-0">
           <img
             src="/images/logo-banner-transparent.png"
             alt="VisionClipper Studio"
-            className="h-9 max-md:h-6 w-auto object-contain select-none filter drop-shadow-sm"
+            className="h-7 max-md:h-5 w-auto object-contain select-none filter drop-shadow-sm"
           />
         </div>
 
         {/* Right: Active Processing Badge & Studio Settings Icon */}
-        <div className="flex items-center gap-2.5 max-lg:order-2 max-lg:ml-auto max-md:order-3 max-md:gap-1.5">
+        <div className="flex items-center gap-2 max-lg:order-2 max-lg:ml-auto max-md:order-3 max-md:gap-1.5">
           {status === 'processing' ? (
-            <div className="flex items-center gap-2 rounded-full bg-amber-950/60 border border-amber-500/40 px-3 py-1 max-md:px-2 max-md:py-0.5 text-xs font-bold text-amber-400 font-['Outfit',_sans-serif]">
+            <div className="flex items-center gap-2 rounded-full bg-amber-950/60 border border-amber-500/40 px-2.5 py-0.5 max-md:px-2 max-md:py-0.5 text-xs font-bold text-amber-400 font-['Outfit',_sans-serif]">
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"></span>
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500"></span>
@@ -1761,17 +1761,17 @@ export const SimpleClipperDashboard: React.FC = () => {
               <span className="tracking-wider uppercase text-[11px] max-md:hidden">PROCESSING</span>
             </div>
           ) : status === 'complete' ? (
-            <div className="flex items-center gap-1.5 rounded-full bg-emerald-950/60 border border-emerald-500/40 px-3 py-1 max-md:px-2 max-md:py-0.5 text-xs font-semibold text-emerald-400 font-['Outfit',_sans-serif]">
+            <div className="flex items-center gap-1.5 rounded-full bg-emerald-950/60 border border-emerald-500/40 px-2.5 py-0.5 max-md:px-2 max-md:py-0.5 text-xs font-semibold text-emerald-400 font-['Outfit',_sans-serif]">
               <CheckIcon className="h-3 w-3 stroke-[3]" />
               <span className="tracking-wider uppercase text-[11px] max-md:hidden">COMPLETE</span>
             </div>
           ) : status === 'error' ? (
-            <div className="flex items-center gap-1.5 rounded-full bg-rose-950/60 border border-rose-500/40 px-3 py-1 max-md:px-2 max-md:py-0.5 text-xs font-semibold text-rose-400 font-['Outfit',_sans-serif]">
+            <div className="flex items-center gap-1.5 rounded-full bg-rose-950/60 border border-rose-500/40 px-2.5 py-0.5 max-md:px-2 max-md:py-0.5 text-xs font-semibold text-rose-400 font-['Outfit',_sans-serif]">
               <span className="h-2 w-2 rounded-full bg-rose-500"></span>
               <span className="tracking-wider uppercase text-[11px] max-md:hidden">ERROR</span>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 rounded-full bg-emerald-950/60 border border-emerald-500/40 px-3 py-1 max-md:px-2 max-md:py-0.5 text-xs font-semibold text-emerald-400 font-['Outfit',_sans-serif]">
+            <div className="flex items-center gap-1.5 rounded-full bg-emerald-950/60 border border-emerald-500/40 px-2.5 py-0.5 max-md:px-2 max-md:py-0.5 text-xs font-semibold text-emerald-400 font-['Outfit',_sans-serif]">
               <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
               <span className="tracking-wider uppercase text-[11px] max-md:hidden">READY</span>
             </div>
@@ -1781,7 +1781,7 @@ export const SimpleClipperDashboard: React.FC = () => {
           <button
             type="button"
             onClick={() => handleOpenSettings()}
-            className={`relative flex h-9 w-9 max-md:h-8 max-md:w-8 items-center justify-center rounded-xl border transition-all shadow-sm active:scale-95 cursor-pointer ${
+            className={`relative flex h-8 w-8 max-md:h-7 max-md:w-7 items-center justify-center rounded-lg border transition-all shadow-sm active:scale-95 cursor-pointer ${
               aiConfig && !aiConfig.ready
                 ? 'border-amber-500/60 bg-amber-500/20 text-amber-300 ring-2 ring-amber-500/30 animate-pulse'
                 : 'border-slate-800 bg-slate-900/90 text-slate-300 hover:text-emerald-400 hover:border-emerald-500/40 hover:bg-slate-800'
@@ -1790,7 +1790,7 @@ export const SimpleClipperDashboard: React.FC = () => {
             aria-label="Buka pengaturan studio"
           >
             <Cog6ToothIcon
-              className={`h-5 w-5 max-md:h-4 max-md:w-4 stroke-[1.8] ${aiConfig && !aiConfig.ready ? 'text-amber-400' : 'text-slate-300 hover:text-emerald-400'}`}
+              className={`h-4.5 w-4.5 max-md:h-4 max-md:w-4 stroke-[1.8] ${aiConfig && !aiConfig.ready ? 'text-amber-400' : 'text-slate-300 hover:text-emerald-400'}`}
             />
             {aiConfig && !aiConfig.ready ? (
               <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">

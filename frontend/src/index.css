@@ -74,6 +74,29 @@
   * {
     box-sizing: border-box;
   }
+
+  /* ── Smooth scrolling ── */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* ── Sembunyikan semua scrollbar (tetap bisa di-scroll) ── */
+  * {
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE / Edge lama */
+  }
+  *::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none; /* Chrome / Safari / Edge */
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+
   body {
     background-color: #0b0f14;
     color: #f1f5f9;
