@@ -377,6 +377,13 @@ export const SimpleClipperDashboard: React.FC = () => {
   const [isCheckingYtStatus, setIsCheckingYtStatus] = useState(false);
   const [renderErrorMessage, setRenderErrorMessage] = useState<string | null>(null);
 
+  // YouTube Cookies State
+  const [cookiesChecking, setCookiesChecking] = useState(false);
+  const [cookiesStatus, setCookiesStatus] = useState<{
+    valid: boolean;
+    message?: string;
+  } | null>(null);
+
   // Studio Settings Modal State (AI, YouTube, TikTok)
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [settingsActiveTab, setSettingsActiveTab] = useState<
@@ -438,6 +445,9 @@ export const SimpleClipperDashboard: React.FC = () => {
       setAiModelInput(aiConfig.model || '');
       setAiApiKeyInput('');
       setAiGroqKeyInput('');
+    }
+    if (tab === 'youtube') {
+      void handleCheckCookies();
     }
     setAiTestResult(null);
     setAiGroqTestResult(null);
@@ -911,6 +921,61 @@ export const SimpleClipperDashboard: React.FC = () => {
       tone: 'danger',
       onConfirm: () => void performDisconnectYouTube(),
     });
+  };
+
+  // ─── YouTube Cookies (cookies.txt) Handlers ───
+  const handleCheckCookies = async (showNotification = false) => {
+    setCookiesChecking(true);
+    try {
+      const res = await fetch('/api/youtube/cookies/status');
+      if (res.ok) {
+        const data = await res.json();
+        setCookiesStatus({ valid: !!data.exists, message: data.path || data.message });
+        if (showNotification) {
+          const ts = new Date().toTimeString().split(' ')[0];
+          setLogs((prev) => [
+            ...prev,
+            data.exists
+              ? `[${ts}] [COOKIES] 🍪 cookies.txt ditemukan: ${data.path}`
+              : `[${ts}] [COOKIES] ⚠️ Belum ada cookies.txt.`,
+          ]);
+        }
+      } else {
+        setCookiesStatus({ valid: false, message: 'Gagal memeriksa status cookies.' });
+      }
+    } catch {
+      setCookiesStatus({ valid: false, message: 'Backend tidak tersedia.' });
+    } finally {
+      setCookiesChecking(false);
+    }
+  };
+
+  const handleCookiesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCookiesChecking(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/youtube/cookies', {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCookiesStatus({ valid: true, message: data.path || 'Cookies berhasil disimpan.' });
+        showToast('Cookies Tersimpan', 'cookies.txt berhasil diupload.', 'success');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setCookiesStatus({ valid: false, message: data.error || data.detail || 'Upload gagal.' });
+        showToast('Upload Gagal', data.error || data.detail || 'Periksa file Anda.', 'error');
+      }
+    } catch (e) {
+      setCookiesStatus({ valid: false, message: errorMessage(e) });
+    } finally {
+      setCookiesChecking(false);
+      if (e.target) e.target.value = '';
+    }
   };
 
   // Open Quick Upload Modal for TikTok (Solusi 1)
@@ -3696,6 +3761,10 @@ export const SimpleClipperDashboard: React.FC = () => {
         checkYouTubeStatus={checkYouTubeStatus}
         handleConnectYouTube={handleConnectYouTube}
         handleDisconnectYouTube={handleDisconnectYouTube}
+        cookiesChecking={cookiesChecking}
+        cookiesStatus={cookiesStatus}
+        handleCheckCookies={() => void handleCheckCookies()}
+        handleCookiesUpload={(e) => void handleCookiesUpload(e)}
         onShutdown={() => {
           setSettingsModalOpen(false);
           setServerModalOpen(true);

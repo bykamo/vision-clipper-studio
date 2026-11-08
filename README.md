@@ -33,6 +33,7 @@
 | 5 | **Viral Metadata & SEO** | Auto-generate judul opsi, deskripsi caption viral, hashtags, serta ide title hook disimpan dalam file `.txt` terpisah untuk tiap klip. |
 | 6 | **One-Click CLI & Clean Lifecycle** | Perintah CLI universal (`install`, `config`, `start`, `stop`, `status`, `uninstall`) dengan auto-isolated `.venv`. |
 | 7 | **Web Dashboard (GUI)** | Kontrol semuanya lewat tampilan web premium berbasis **FastAPI** di `localhost:5050`. |
+| 8 | **AI Agent Skill** | Bisa dipakai langsung oleh AI agent (**Claude**, **Codex/GPT**, **Hermes**, **Copilot**, dll) lewat [Agent Skill](#-integrasi-ai-agent-skill) dengan output JSON. |
 
 ---
 
@@ -65,9 +66,15 @@ vision-clipper-studio/
 │   │   └── types/            # Shared TypeScript types
 │   ├── public/               # Logo & mockup assets
 │   └── dist/                 # Hasil build (dibuat oleh `npm run build`)
+├── skills/                   # Agent Skill untuk AI agent (Claude, Codex, Hermes, Copilot)
+│   └── vision-clipper/
+│       ├── SKILL.md          # Instruksi skill (format Agent Skills standar)
+│       ├── scripts/vclip.py  # Helper CLI non-interaktif, output JSON
+│       └── references/       # Dokumentasi HTTP API untuk agent
 ├── scripts/                  # Helper Scripts
 │   ├── install_mac.sh        # macOS Installer
 │   ├── install_linux.sh      # Linux / VPS Installer (apt + torch CPU)
+│   ├── install_skill.sh      # Pasang Agent Skill ke ~/.claude, ~/.codex, ~/.hermes, dll
 │   ├── uninstall_mac.sh      # macOS/Linux Clean Uninstaller
 │   ├── configure_ai.sh       # macOS/Linux AI Wizard
 │   ├── install.bat           # Windows Installer
@@ -78,6 +85,7 @@ vision-clipper-studio/
 │   ├── visionclipper.service # systemd unit (VPS)
 │   └── nginx.conf.sample     # Reverse proxy + Basic Auth (opsional)
 ├── .env.example              # Contoh Environment Config
+├── AGENTS.md                 # Panduan singkat untuk AI agent yang bekerja di repo ini
 ├── setup.py                  # Package Setup
 └── MANIFEST.in               # Package Manifest
 ```
@@ -213,6 +221,67 @@ Klip yang sudah dirender sebelumnya dapat dibuka kembali langsung menggunakan di
 
 ---
 
+## 🤖 Integrasi AI Agent (Skill)
+
+VisionClipper menyediakan **Agent Skill** di [`skills/vision-clipper/`](skills/vision-clipper/SKILL.md), memakai format [Agent Skills](https://agentskills.io) standar (`SKILL.md` + YAML frontmatter). Dengan skill ini, AI agent seperti **Claude Code**, **OpenAI Codex / GPT**, **Hermes Agent**, **GitHub Copilot**, **Gemini CLI**, dan agent lain yang mendukung skill bisa memotong video tanpa membuka dashboard. Cukup minta *"potong video ini jadi 3 klip TikTok"*.
+
+### Pasang skill
+
+```bash
+# Symlink ke semua agent (~/.claude, ~/.codex, ~/.hermes, ~/.copilot, ~/.agents)
+./scripts/install_skill.sh
+
+# Atau hanya satu agent
+./scripts/install_skill.sh claude      # claude | codex | hermes | copilot | agents
+
+# Mode copy (bukan symlink), lalu set lokasi project
+./scripts/install_skill.sh hermes --copy
+export VISION_CLIPPER_HOME="/path/ke/vision-clipper"
+```
+
+| Agent | Lokasi skill |
+|---|---|
+| Claude Code | `~/.claude/skills/vision-clipper` (atau `.claude/skills/` per project) |
+| OpenAI Codex CLI | `~/.codex/skills/vision-clipper` |
+| Hermes Agent | `~/.hermes/skills/vision-clipper` |
+| GitHub Copilot (VS Code) | `~/.copilot/skills/vision-clipper` (atau `.github/skills/` per project) |
+| Agent lain | `~/.agents/skills/vision-clipper`, atau arahkan agent ke `skills/vision-clipper/SKILL.md` |
+
+> Agent yang belum mendukung skill (ChatGPT dengan code interpreter lokal, Aider, dll) tetap bisa memakainya: tempel isi `SKILL.md` ke system prompt / instruksi, atau minta agent membaca `AGENTS.md` di root repo.
+
+### Helper CLI `vclip.py`
+
+Skill memanggil `skills/vision-clipper/scripts/vclip.py`, wrapper non-interaktif di atas `backend.worker`. **stdout selalu berisi satu objek JSON**, log progres ke stderr, exit code `0` kalau sukses dan `1` kalau gagal. Script otomatis memakai interpreter `.venv` project.
+
+| Perintah | Fungsi |
+|---|---|
+| `vclip.py doctor` | Cek FFmpeg, `.venv`, dan API key (tanpa menampilkan nilai secret) |
+| `vclip.py analyze --source <path/URL> --num-clips 5 --mode hook --lang id` | Transkrip + AI pilih momen viral, belum render. Hasilnya `analysis_id` + daftar kandidat |
+| `vclip.py render --analysis <id\|latest> --clips 1,3 --sub-style tiktok_viral --framing smart_crop` | Render klip terpilih, kembalikan path `.mp4` + metadata |
+| `vclip.py auto --source <path/URL> --num-clips 3` | Analyze + render semua klip dalam sekali jalan |
+| `vclip.py clips [--project <folder>]` | Daftar hasil render lama beserta judul, caption, dan hashtag |
+
+Contoh output `render`:
+```json
+{
+  "ok": true,
+  "output_dir": "/.../clips/Judul_Video",
+  "rendered": [
+    {
+      "index": 1,
+      "video_path": "/.../clips/Judul_Video/01_Judul_Klip.mp4",
+      "metadata": { "title_options": ["..."], "caption": "...", "hashtags": ["#..."] }
+    }
+  ]
+}
+```
+
+Agent yang perlu fitur lain (upload YouTube, konfigurasi AI) saat server berjalan bisa memakai HTTP API. Dokumentasinya ada di [`skills/vision-clipper/references/http-api.md`](skills/vision-clipper/references/http-api.md).
+
+> ⚠️ Worker hanya boleh berjalan **satu job dalam satu waktu**. Jangan jalankan `vclip.py analyze/render` bersamaan dengan proses dari dashboard.
+
+---
+
 ## 🌐 Deploy ke VPS (Remote)
 
 Aplikasi ini **tidak butuh GPU**. Transkripsi memakai Groq Cloud, analisa hook memakai LLM API, dan encoding memakai `libx264` (CPU). NVENC hanya dicoba lebih dulu lalu otomatis fallback ke x264.
@@ -304,6 +373,8 @@ Jika harus diakses tanpa tunnel:
 | API Error / timeout | Jalankan `vision-clipper config` untuk memastikan Endpoint dan API Key sudah benar. |
 | Port 5050 bentrok | Matikan instance sebelumnya dengan `vision-clipper stop`. |
 | UI tampil kosong / fallback | `frontend/dist` belum ada. Jalankan `cd frontend && npm install && npm run build`. |
+| Agent: `Cannot locate the VisionClipper project` | Skill di-copy (bukan symlink). Set `export VISION_CLIPPER_HOME=/path/ke/vision-clipper`. |
+| Agent tidak memakai skill | Pastikan folder ada di direktori skill agent (`./scripts/install_skill.sh <agent>`) lalu restart agent. |
 
 ---
 

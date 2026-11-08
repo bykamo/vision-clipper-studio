@@ -140,6 +140,10 @@ interface StudioSettingsModalProps {
   checkYouTubeStatus: (refresh?: boolean) => void;
   handleConnectYouTube: () => void;
   handleDisconnectYouTube: () => void;
+  cookiesChecking: boolean;
+  cookiesStatus: { valid: boolean; message?: string } | null;
+  handleCheckCookies: () => void;
+  handleCookiesUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onShutdown: () => void;
 }
 
@@ -187,6 +191,10 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
   checkYouTubeStatus,
   handleConnectYouTube,
   handleDisconnectYouTube,
+  cookiesChecking,
+  cookiesStatus,
+  handleCheckCookies,
+  handleCookiesUpload,
   onShutdown,
 }) => {
   const dialogRef = useDialog<HTMLDivElement>(open, () => onOpenChange(false));
@@ -1007,166 +1015,205 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                   <TabHeader
                     chipClass="bg-red-500/10 border-red-500/40 text-red-400"
                     icon={<YouTubeLogo className="h-5 w-5" />}
-                    title="Integrasi Channel YouTube"
-                    desc="Otorisasi Google OAuth untuk publikasi klip Shorts otomatis langsung dari dashboard."
+                    title="Integrasi YouTube"
+                    desc="Kelola koneksi channel YouTube dan cookies otentikasi untuk download & upload video."
                   />
 
                   <Separator />
 
-                  {ytConnected && ytChannel ? (
-                    <div className="space-y-5">
-                      {/* Connected Profile Box */}
-                      <Card className="border-red-500/30 bg-gradient-to-r from-red-950/30 to-[#131820] p-5">
-                        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 text-center sm:text-left">
-                          {ytChannel.thumbnail && !ytAvatarFailed ? (
-                            <img
-                              src={ytChannel.thumbnail}
-                              alt=""
-                              onError={() => setYtAvatarFailed(true)}
-                              className="h-14 w-14 rounded-full border-2 border-red-500/60 object-cover shadow-sm flex-shrink-0"
-                            />
-                          ) : (
-                            <div className="h-14 w-14 rounded-full bg-red-600/30 text-red-300 font-bold flex items-center justify-center text-lg border border-red-500/40 flex-shrink-0">
-                              YT
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
-                              <span className="text-base font-bold text-white truncate font-['Outfit']">
-                                {ytChannel.title}
-                              </span>
-                              <Badge variant="success" className="text-[11px]">
-                                Google OAuth Aktif
-                              </Badge>
-                            </div>
-                            <p className="text-xs text-slate-400 font-mono mt-0.5">
-                              {ytChannel.customUrl || '@asal.sharing'}
-                            </p>
-                            <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
-                              Channel YouTube resmi Anda tersambung. Klip video yang selesai
-                              dirender dapat langsung di-upload sebagai Shorts.
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-slate-800/80">
-                          <div className="p-3 rounded-lg bg-[#0b0f14] border border-slate-800 text-center sm:text-left">
-                            <span className="text-[12px] text-slate-400 block font-medium uppercase">
-                              Subscribers
-                            </span>
-                            <span className="text-lg font-bold text-slate-100 mt-0.5 block font-['Outfit']">
-                              {ytChannel.subscriberCount || '2'}
-                            </span>
-                          </div>
-                          <div className="p-3 rounded-lg bg-[#0b0f14] border border-slate-800 text-center sm:text-left">
-                            <span className="text-[12px] text-slate-400 block font-medium uppercase">
-                              Total Video
-                            </span>
-                            <span className="text-lg font-bold text-slate-100 mt-0.5 block font-['Outfit']">
-                              {ytChannel.videoCount || '5'}
-                            </span>
-                          </div>
-                        </div>
-                      </Card>
-
-                      {/* Technical Specs List */}
-                      <div className="p-4 rounded-xl border border-slate-800/80 bg-[#131820] space-y-2 text-xs">
-                        <div className="flex justify-between items-center text-slate-400 pb-2 border-b border-slate-800/60">
-                          <span>Channel ID:</span>
-                          <span className="font-mono text-slate-200 text-xs">
-                            {ytChannel.id || 'UCmUbuH3agtBcNREw5VfzPlw'}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center text-slate-400 pb-2 border-b border-slate-800/60">
-                          <span>Permissions:</span>
-                          <span className="font-mono text-emerald-400 text-xs">
-                            youtube.upload, youtube.readonly
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center text-slate-400">
-                          <span>Status Token:</span>
-                          <span className="font-mono text-emerald-400 text-xs">
-                            Valid & Auto-Refresh
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Channel Action Buttons */}
-                      <div className="flex items-center justify-between pt-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => checkYouTubeStatus(true)}
-                          disabled={isCheckingYtStatus}
-                        >
-                          <RefreshCw
-                            className={`h-3.5 w-3.5 ${isCheckingYtStatus ? 'animate-spin text-emerald-400' : ''}`}
-                          />
-                          <span>
-                            {isCheckingYtStatus ? 'Memeriksa...' : 'Tes Ulang Koneksi YouTube'}
-                          </span>
-                        </Button>
-
-                        <Button variant="destructive" size="sm" onClick={handleDisconnectYouTube}>
-                          Putuskan Akun YouTube
-                        </Button>
-                      </div>
+                  {/* ─── YouTube Cookies Section ─── */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-md bg-red-500/15 border border-red-500/40 text-[11px] font-mono font-bold text-red-300">
+                        1
+                      </span>
+                      <Label className="text-xs uppercase tracking-wider text-slate-400 font-bold">
+                        Cookies Otentikasi YouTube
+                      </Label>
                     </div>
-                  ) : (
-                    /* Disconnected State */
-                    <Card className="border-slate-800/80 bg-[#131820] text-center p-6 sm:p-8 space-y-5">
-                      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-600/20 text-red-500 border border-red-500/40 shadow-inner">
-                        <YouTubeLogo className="h-7 w-7" />
-                      </div>
 
-                      <div className="space-y-1.5 max-w-md mx-auto">
-                        <h4 className="text-base font-bold text-white font-['Outfit']">
-                          Hubungkan Channel YouTube
-                        </h4>
-                        <p className="text-xs text-slate-400 leading-relaxed">
-                          Otorisasikan channel YouTube Anda melalui Google OAuth agar VisionClipper
-                          dapat memposting klip Shorts langsung dalam satu klik.
-                        </p>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-lg mx-auto text-left text-xs">
-                        <div className="p-3 rounded-xl bg-[#0b0f14] border border-slate-800">
-                          <span className="font-bold text-slate-200 block mb-0.5">
-                            🚀 1-Klik Upload
-                          </span>
-                          <span className="text-slate-400 text-[12px]">
-                            Upload langsung ke Shorts
-                          </span>
+                    <Card className="border-slate-800/80 bg-[#131820] p-4 space-y-3">
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-red-600/20 text-red-400 border border-red-500/40 flex-shrink-0">
+                          <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 12s0 8.455 1.894 9.05a3.016 3.016 0 0 0 2.122 2.136C17.895 23.455 24 23.455 24 12s0-8.455-1.894-9.05zM9 16V8l7 4-7 4z"/>
+                          </svg>
                         </div>
-                        <div className="p-3 rounded-xl bg-[#0b0f14] border border-slate-800">
-                          <span className="font-bold text-slate-200 block mb-0.5">
-                            🏷️ Auto Tagging
-                          </span>
-                          <span className="text-slate-400 text-[12px]">
-                            Judul, deskripsi & #Shorts
-                          </span>
-                        </div>
-                        <div className="p-3 rounded-xl bg-[#0b0f14] border border-slate-800">
-                          <span className="font-bold text-slate-200 block mb-0.5">
-                            🔒 Token Lokal
-                          </span>
-                          <span className="text-slate-400 text-[12px]">Aman di komputer Anda</span>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-sm font-bold text-white font-['Outfit']">
+                            Upload cookies.txt (Opsional)
+                          </h4>
+                          <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">
+                            Cookies YouTube format Netscape untuk bypass "Sign in to confirm" saat download video private/age-restricted.
+                          </p>
                         </div>
                       </div>
 
-                      <div className="pt-2">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="file"
+                          accept=".txt"
+                          onChange={handleCookiesUpload}
+                          className="hidden"
+                          id="cookies-file-input"
+                        />
+                        <label
+                          htmlFor="cookies-file-input"
+                          className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-dashed border-slate-700 bg-slate-900/50 px-3 py-2.5 text-xs text-slate-400 hover:border-red-500/50 hover:text-red-300 transition-colors cursor-pointer"
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                          </svg>
+                          <span>Pilih file cookies.txt...</span>
+                        </label>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={handleCheckCookies}
+                          disabled={cookiesChecking}
+                          className="flex-shrink-0"
+                        >
+                          <RefreshCw className={`h-3.5 w-3.5 ${cookiesChecking ? 'animate-spin text-emerald-400' : ''}`} />
+                          <span>{cookiesChecking ? 'Cek...' : 'Cek Status'}</span>
+                        </Button>
+                      </div>
+
+                      {cookiesStatus && (
+                        <div className={`p-3 rounded-lg border text-xs ${cookiesStatus.valid ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-200' : 'border-slate-700 bg-slate-900/50 text-slate-400'}`}>
+                          <div className="flex items-center gap-2">
+                            {cookiesStatus.valid ? (
+                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                            ) : (
+                              <XCircle className="h-3.5 w-3.5 text-slate-500" />
+                            )}
+                            <span className="font-semibold">
+                              {cookiesStatus.valid ? 'Cookies aktif' : 'Belum ada cookies'}
+                            </span>
+                          </div>
+                          {cookiesStatus.message && (
+                            <p className="mt-1 text-[11px] opacity-80">{cookiesStatus.message}</p>
+                          )}
+                        </div>
+                      )}
+
+                      <details className="group">
+                        <summary className="text-xs text-slate-500 hover:text-slate-300 cursor-pointer flex items-center gap-1">
+                          <span>Cara export cookies dari browser</span>
+                          <svg className="h-3 w-3 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </summary>
+                        <div className="mt-2 p-3 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px] text-slate-400 space-y-1.5">
+                          <p>1. Install ekstensi <strong className="text-slate-200">"Get cookies.txt LOCALLY"</strong> di Chrome/Firefox.</p>
+                          <p>2. Login ke YouTube, klik ikon ekstensi, pilih <strong className="text-slate-200">"Export"</strong>.</p>
+                          <p>3. Simpan file dengan nama <code className="font-mono text-emerald-300">cookies.txt</code> di root folder project.</p>
+                        </div>
+                      </details>
+                    </Card>
+                  </div>
+
+                  <Separator />
+
+                  {/* ─── YouTube OAuth Section ─── */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-md bg-red-500/15 border border-red-500/40 text-[11px] font-mono font-bold text-red-300">
+                        2
+                      </span>
+                      <Label className="text-xs uppercase tracking-wider text-slate-400 font-bold">
+                        Koneksi Channel YouTube (OAuth)
+                      </Label>
+                    </div>
+
+                    {ytConnected && ytChannel ? (
+                      <div className="space-y-4">
+                        {/* Connected Profile Box */}
+                        <Card className="border-red-500/30 bg-gradient-to-r from-red-950/30 to-[#131820] p-4">
+                          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-3 text-center sm:text-left">
+                            {ytChannel.thumbnail && !ytAvatarFailed ? (
+                              <img
+                                src={ytChannel.thumbnail}
+                                alt=""
+                                onError={() => setYtAvatarFailed(true)}
+                                className="h-12 w-12 rounded-full border-2 border-red-500/60 object-cover shadow-sm flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="h-12 w-12 rounded-full bg-red-600/30 text-red-300 font-bold flex items-center justify-center text-sm border border-red-500/40 flex-shrink-0">
+                                YT
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-center sm:justify-start gap-2 flex-wrap">
+                                <span className="text-sm font-bold text-white truncate font-['Outfit']">
+                                  {ytChannel.title}
+                                </span>
+                                <Badge variant="success" className="text-[10px]">
+                                  OAuth Aktif
+                                </Badge>
+                              </div>
+                              <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+                                {ytChannel.customUrl || '@channel'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-800/80">
+                            <div className="p-2 rounded-lg bg-[#0b0f14] border border-slate-800 text-center">
+                              <span className="text-[10px] text-slate-400 block uppercase">Subscribers</span>
+                              <span className="text-sm font-bold text-slate-100 block font-['Outfit']">
+                                {ytChannel.subscriberCount || '-'}
+                              </span>
+                            </div>
+                            <div className="p-2 rounded-lg bg-[#0b0f14] border border-slate-800 text-center">
+                              <span className="text-[10px] text-slate-400 block uppercase">Video</span>
+                              <span className="text-sm font-bold text-slate-100 block font-['Outfit']">
+                                {ytChannel.videoCount || '-'}
+                              </span>
+                            </div>
+                          </div>
+                        </Card>
+
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => checkYouTubeStatus(true)}
+                            disabled={isCheckingYtStatus}
+                            className="flex-1"
+                          >
+                            <RefreshCw className={`h-3.5 w-3.5 ${isCheckingYtStatus ? 'animate-spin text-emerald-400' : ''}`} />
+                            <span>{isCheckingYtStatus ? 'Memeriksa...' : 'Refresh Status'}</span>
+                          </Button>
+                          <Button variant="destructive" size="sm" onClick={handleDisconnectYouTube}>
+                            Putuskan
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <Card className="border-slate-800/80 bg-[#131820] text-center p-5 space-y-3">
+                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-red-600/20 text-red-500 border border-red-500/40">
+                          <YouTubeLogo className="h-6 w-6" />
+                        </div>
+                        <div className="space-y-1">
+                          <h4 className="text-sm font-bold text-white font-['Outfit']">
+                            Hubungkan Channel YouTube
+                          </h4>
+                          <p className="text-[11px] text-slate-400 leading-relaxed max-w-sm mx-auto">
+                            Otorisasikan via Google OAuth untuk upload klip Shorts otomatis.
+                          </p>
+                        </div>
                         <Button
                           variant="default"
                           size="lg"
                           onClick={handleConnectYouTube}
-                          className="bg-red-600 hover:bg-red-500 text-white font-bold"
+                          className="bg-red-600 hover:bg-red-500 text-white font-bold w-full"
                         >
                           <YouTubeLogo className="h-4 w-4" />
-                          <span>Hubungkan Channel YouTube (Google OAuth)</span>
+                          <span>Hubungkan via Google OAuth</span>
                         </Button>
-                      </div>
-                    </Card>
-                  )}
+                      </Card>
+                    )}
+                  </div>
                 </div>
               )}
 

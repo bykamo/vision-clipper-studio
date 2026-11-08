@@ -14,7 +14,7 @@ import time as _time
 import uuid
 import asyncio
 from urllib.parse import urlparse
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, File, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from backend import youtube_uploader
@@ -1321,6 +1321,60 @@ async def youtube_disconnect():
     """Disconnect and clear saved YouTube credentials."""
     success = youtube_uploader.disconnect_youtube()
     return {"status": "disconnected" if success else "failed"}
+
+
+# ── YouTube Cookies Endpoints ──
+@app.get("/api/youtube/cookies/status")
+async def youtube_cookies_status():
+    """Check whether cookies.txt exists at project root."""
+    cookies_path = os.path.join(PROJECT_ROOT, "cookies.txt")
+    if os.path.isfile(cookies_path):
+        try:
+            mtime = os.path.getmtime(cookies_path)
+            modified = _time.strftime('%Y-%m-%d %H:%M:%S', _time.localtime(mtime))
+            size = os.path.getsize(cookies_path)
+        except OSError:
+            modified = None
+            size = 0
+        return {
+            "exists": True,
+            "path": cookies_path,
+            "size": size,
+            "modified": modified,
+            "message": f"cookies.txt ditemukan ({size} bytes)",
+        }
+    return {"exists": False, "path": cookies_path, "message": "Belum ada cookies.txt di root project."}
+
+
+@app.post("/api/youtube/cookies")
+async def youtube_cookies_upload(file: UploadFile = File(...)):
+    """Accept an uploaded cookies.txt (Netscape format) and save to project root."""
+    try:
+        content = await file.read()
+        if not content:
+            return JSONResponse(status_code=400, content={"error": "File kosong."})
+
+        # Basic validation: must not contain null bytes (binary file).
+        text = content.decode('utf-8', errors='ignore')
+        if '\x00' in text[:1024]:
+            return JSONResponse(status_code=400, content={"error": "File bukan teks cookies yang valid."})
+
+        # Reject overly large files.
+        if len(content) > 2 * 1024 * 1024:
+            return JSONResponse(status_code=400, content={"error": "File terlalu besar (maks 2MB)."})
+
+        cookies_path = os.path.join(PROJECT_ROOT, "cookies.txt")
+        with open(cookies_path, "wb") as fh:
+            fh.write(content)
+
+        return {
+            "status": "saved",
+            "path": cookies_path,
+            "size": len(content),
+            "message": f"cookies.txt tersimpan ({len(content)} bytes).",
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @app.post("/api/social/youtube/upload")
