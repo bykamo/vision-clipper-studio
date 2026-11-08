@@ -1,14 +1,24 @@
-# 🎬 VisionClipper Studio
+# 🎬 VisionClipper
 
-**AI-Powered Viral Video Clipper — Combo Maut Edition**
+<p align="center">
+  <img src="frontend/public/images/logo-icon-transparent.png" alt="VisionClipper Logo" width="128" />
+</p>
 
-> Potong video panjang (podcast, interview, dll) menjadi klip vertikal pendek (TikTok, Reels, Shorts) secara otomatis menggunakan kekuatan AI.
+<p align="center">
+  <strong>AI-Powered Viral Video Clipper — Combo Maut Edition</strong>
+</p>
 
-![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-Web_Dashboard-009688?logo=fastapi&logoColor=white)
-![FFmpeg](https://img.shields.io/badge/FFmpeg-Required-green?logo=ffmpeg)
-![macOS / Windows](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?logo=apple&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-yellow)
+<p align="center">
+  Potong video panjang (podcast, interview, dll) menjadi klip vertikal pendek (TikTok, Reels, Shorts) secara otomatis menggunakan kekuatan AI.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/FastAPI-Web_Dashboard-009688?logo=fastapi&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/FFmpeg-Required-green?logo=ffmpeg" alt="FFmpeg" />
+  <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?logo=apple&logoColor=white" alt="Platform" />
+  <img src="https://img.shields.io/badge/License-MIT-yellow" alt="License" />
+</p>
 
 ---
 
