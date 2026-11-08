@@ -1847,7 +1847,7 @@ export const SimpleClipperDashboard: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 p-3.5 overflow-y-auto scrollbar-thin flex flex-col">
+          <div className="flex-1 min-h-0 p-3.5 overflow-y-auto flex flex-col">
             {/* ═══ WORKFLOW STEPPER (numbered vertical timeline) ═══ */}
 
             {/* STEP 01 — SUMBER VIDEO */}
@@ -2345,7 +2345,7 @@ export const SimpleClipperDashboard: React.FC = () => {
                   </div>
 
                   {/* Clip Cards List (Scrollable) */}
-                  <div className="space-y-2.5 overflow-y-auto flex-1 scrollbar-thin pr-1">
+                  <div className="space-y-2.5 overflow-y-auto flex-1 pr-1">
                     {clipCandidates.map((clip) => {
                       const title = clip.title_options?.[0] || 'Untitled';
                       const mins = Math.floor(clip.duration / 60);
@@ -2648,7 +2648,7 @@ export const SimpleClipperDashboard: React.FC = () => {
 
                   {/* Clips list with Direct YouTube Upload Action (Scrollable) */}
                   {generatedClips.length > 0 && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 overflow-y-auto flex-1 scrollbar-thin pr-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 overflow-y-auto flex-1 pr-1">
                       {generatedClips.map((clip, i) => {
                         const isUploading = isUploadingYt === clip.id;
                         const ytUrl = uploadedYtLinks[clip.id];
@@ -2868,7 +2868,7 @@ export const SimpleClipperDashboard: React.FC = () => {
               {/* Terminal Monospace Logs Output */}
               <div
                 ref={terminalRef}
-                className="flex-1 p-3 font-mono text-[12px] leading-relaxed text-[#f59e0b] overflow-y-auto space-y-1 scrollbar-thin select-text bg-[#0d1117]"
+                className="flex-1 p-3 font-mono text-[12px] leading-relaxed text-[#f59e0b] overflow-y-auto space-y-1 select-text bg-[#0d1117]"
               >
                 {logs.map((line, idx) => {
                   let colorClass = 'text-[#f59e0b]';
@@ -2946,7 +2946,7 @@ export const SimpleClipperDashboard: React.FC = () => {
               {outputDir}
             </div>
 
-            <div className="space-y-1.5 mb-4 max-h-48 overflow-y-auto scrollbar-thin">
+            <div className="space-y-1.5 mb-4 max-h-48 overflow-y-auto">
               {generatedClips.map((c, i) => (
                 <div
                   key={c.id}

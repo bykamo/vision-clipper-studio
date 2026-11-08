@@ -362,7 +362,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                 Kategori Pengaturan
               </p>
 
-              <nav className="flex md:flex-col gap-1.5 max-md:gap-1 overflow-x-auto md:overflow-visible pb-1 md:pb-0 max-md:pb-0 scrollbar-none">
+              <nav className="flex md:flex-col gap-1.5 max-md:gap-1 overflow-x-auto md:overflow-visible pb-1 md:pb-0 max-md:pb-0">
                 {navItems.map((item) => {
                   const isActive = activeTab === item.key;
                   return (
@@ -460,7 +460,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
           {/* ─── RIGHT MAIN SETTINGS CANVAS ─── */}
           <main className="flex-1 flex flex-col min-w-0 bg-[#0b0f14] overflow-hidden">
             {/* Scrollable Canvas Body */}
-            <div className="p-6 sm:p-8 max-md:p-4 space-y-6 max-md:space-y-5 overflow-y-auto flex-1 scrollbar-thin">
+            <div className="p-6 sm:p-8 max-md:p-4 space-y-6 max-md:space-y-5 overflow-y-auto flex-1">
               {/* ──────── TAB 1: MODEL AI (LLM) ──────── */}
               {activeTab === 'ai' && (
                 <div className="space-y-6">
@@ -656,7 +656,7 @@ export const StudioSettingsModal: React.FC<StudioSettingsModalProps> = ({
                         </p>
                       )}
                       {aiModelsOpen && aiModels.length > 0 && (
-                        <div className="rounded-lg border border-slate-700/80 bg-[#0b0f14] max-h-44 overflow-y-auto scrollbar-thin shadow-lg">
+                        <div className="rounded-lg border border-slate-700/80 bg-[#0b0f14] max-h-44 overflow-y-auto shadow-lg">
                           <div className="px-2.5 py-1.5 border-b border-slate-800/80 flex items-center justify-between sticky top-0 bg-[#0b0f14]">
                             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                               {aiModels.length} model tersedia

@@ -80,17 +80,6 @@
     scroll-behavior: smooth;
   }
 
-  /* ── Sembunyikan semua scrollbar (tetap bisa di-scroll) ── */
-  * {
-    scrollbar-width: none; /* Firefox */
-    -ms-overflow-style: none; /* IE / Edge lama */
-  }
-  *::-webkit-scrollbar {
-    width: 0;
-    height: 0;
-    display: none; /* Chrome / Safari / Edge */
-  }
-
   @media (prefers-reduced-motion: reduce) {
     html {
       scroll-behavior: auto;
@@ -293,4 +282,17 @@
     outline-offset: 2px;
     border-radius: 999px;
   }
+}
+
+/* ── Sembunyikan SEMUA scrollbar (tetap bisa di-scroll) ──
+   Diletakkan di luar @layer agar menang atas utility Tailwind
+   seperti `scrollbar-thin` / `scrollbar-none`. */
+* {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE / Edge lama */
+}
+*::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important; /* Chrome / Safari / Edge */
 }
