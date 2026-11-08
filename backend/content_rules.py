@@ -170,26 +170,79 @@ def has_question(text) -> bool:
     return "?" in str(text or "")
 
 
-def ensure_closing_question(caption, mode="hook"):
-    """Guarantee the caption ends with a short, specific question.
+# Words that, when a question consists ONLY of them, mean the question is vague
+# opinion-bait ("Setuju gak?") instead of a specific, claim-tied question.
+_VAGUE_QUESTION_WORDS = {
+    "setuju", "gak", "ga", "nggak", "enggak", "betul", "bener", "gimana",
+    "bagaimana", "menurut", "lu", "kalian", "kamu", "anda", "pendapat",
+    "relate", "iya", "ya", "tidak", "gk",
+}
+
+def _is_vague_question(q):
+    """True when a question is generic opinion-bait with no specific stake."""
+    ql = (q or "").strip().lower()
+    if not ql.endswith("?"):
+        return False
+    if any(bait in ql for bait in GENERIC_BAIT):
+        return True
+    words = re.findall(r"[a-z\u00C0-\u024F]+", ql)
+    if not words:
+        return False
+    # A question made up only of vague bait words ("Setuju gak?", "Gimana?")
+    # has no stake in the actual claim.
+    return all(w in _VAGUE_QUESTION_WORDS for w in words)
+
+
+def _extract_last_question(text):
+    """Return the final question sentence in `text`, or '' if none."""
+    q_idx = (text or "").rfind("?")
+    if q_idx == -1:
+        return ""
+    candidates = [i for i in (text.rfind(".", 0, q_idx), text.rfind("!", 0, q_idx)) if i != -1]
+    start = max(candidates) + 1 if candidates else 0
+    return text[start: q_idx + 1].strip()
+
+
+def ensure_closing_question(caption, mode="hook", specific=None):
+    """Guarantee the caption ends with a short, SPECIFIC closing question.
+
+    Order of preference:
+      1. `specific` — a clip-specific question written by the LLM (pass 2).
+      2. the question already present in the caption, when it is not vague bait.
+      3. the mode fallback (last resort, generic).
 
     A vague bait ("gimana menurut kalian?") is replaced with a concrete
     either/or question, because specific questions are answerable in 2 words
     and therefore actually get replies.
     """
     text = str(caption or "").strip()
-    lowered = text.lower()
     fallback = QUESTION_FALLBACKS.get(mode, QUESTION_FALLBACKS["hook"])
 
-    if has_question(text):
-        if any(bait in lowered for bait in GENERIC_BAIT):
-            head = re.split(r"[?.!]", text)[0].strip()
-            return f"{head} {fallback}".strip() if head else fallback
-        return text
+    specific = str(specific or "").strip().rstrip()
+    if specific and not specific.endswith(("?", "!", ".")):
+        specific += "?"
+
+    last_q = _extract_last_question(text)
+
+    if text.endswith("?"):
+        if last_q and not _is_vague_question(last_q):
+            # Caption already ends on a specific question → keep as-is.
+            return text
+        # Vague question (or question made only of bait words) → swap it.
+        head = re.split(r"[?.!]", text)[0].strip()
+        question = specific or fallback
+        return f"{head} {question}".strip() if head else question
+
+    # No question yet: append the clip-specific one if we have it.
+    if specific:
+        if not text:
+            return specific
+        if text[-1] in ".!?":
+            return f"{text} {specific}"
+        return f"{text} {specific}"
 
     if not text:
         return fallback
-    # Keep the sentence terminator so the appended question reads naturally.
     if text[-1] in ".!?":
         return f"{text} {fallback}"
     return f"{text} {fallback}"
@@ -458,7 +511,8 @@ def apply_clip_rules(clip, segments, mode="hook"):
     snap_clip_end(clip, segments, mode=mode)
 
     clip["caption"] = ensure_closing_question(
-        clean_caption(clip.get("caption", ""), mode=mode), mode=mode
+        clean_caption(clip.get("caption", ""), mode=mode), mode=mode,
+        specific=clip.get("closing_question"),
     )
     clip["hashtags"] = normalize_hashtags(clip.get("hashtags"), mode=mode)
 

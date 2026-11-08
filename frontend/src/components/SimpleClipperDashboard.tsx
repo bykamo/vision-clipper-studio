@@ -1742,12 +1742,20 @@ export const SimpleClipperDashboard: React.FC = () => {
         className={`flex h-11 flex-shrink-0 items-center justify-between max-lg:h-auto max-lg:flex-wrap max-lg:gap-1.5 max-lg:px-3 max-lg:py-2 max-md:h-10 max-md:flex-nowrap max-md:gap-1.5 max-md:px-2.5 max-md:py-1 ${themeClasses.header} rounded-xl border px-4 shadow-lg z-20 mx-3 mt-2`}
       >
         {/* Left: Brand Logo & Title */}
-        <div className="flex items-center gap-3 max-lg:order-1 max-md:min-w-0">
+        <div className="flex items-center gap-1.5 max-lg:order-1 max-md:min-w-0">
           <img
-            src="/images/logo-banner-transparent.png"
-            alt="VisionClipper Studio"
-            className="h-7 max-md:h-5 w-auto object-contain select-none filter drop-shadow-sm"
+            src="/images/logo-icon-tight.png"
+            alt="VisionClipper"
+            className="h-8 max-md:h-6 w-auto object-contain select-none filter drop-shadow-sm"
           />
+          <span className="hidden sm:inline-flex items-baseline gap-1 whitespace-nowrap select-none">
+            <span className="font-['Outfit',_sans-serif] text-[14px] font-extrabold tracking-tight text-white">
+              Vision
+            </span>
+            <span className="font-['Anton',_sans-serif] text-[14px] font-bold tracking-wide text-emerald-400 drop-shadow-[0_0_8px_rgba(16,185,129,0.5)]">
+              Clipper
+            </span>
+          </span>
         </div>
 
         {/* Right: Active Processing Badge & Studio Settings Icon */}

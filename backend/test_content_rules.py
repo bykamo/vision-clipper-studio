@@ -61,9 +61,47 @@ class CaptionRulesTest(unittest.TestCase):
         self.assertNotIn("menurut kalian", result.lower())
         self.assertTrue(result.endswith("?"))
 
+    def test_question_mid_caption_is_kept_and_closing_appended(self):
+        # A rhetorical question in the middle of the caption is fine; the
+        # closing question is appended at the end so the final line provokes
+        # two-word replies about the claim.
+        result = ensure_closing_question(
+            "Ada yang ngerasa gitu gak? Kerja keras gak bikin kaya.",
+            mode="hook",
+            specific="Lu tim lembur atau tim strategi?",
+        )
+        self.assertTrue(result.endswith("Lu tim lembur atau tim strategi?"))
+        self.assertIn("ngerasa gitu gak?", result.lower())
+        self.assertIn("kerja keras gak bikin kaya.", result.lower())
+
     def test_existing_specific_question_is_kept(self):
         caption = "Spesialisasi menang di tahun ke-5. Lu pilih yang mana?"
         self.assertEqual(ensure_closing_question(caption), caption)
+
+    def test_clip_specific_question_is_preferred_over_fallback(self):
+        # When pass 2 returned a clip-specific question, it must replace the
+        # generic fallback instead of "Lu tim yang mana?".
+        result = ensure_closing_question(
+            "Spesialisasi menang di tahun kelima.", mode="hook",
+            specific="Lu pilih spesialis atau generalis?",
+        )
+        self.assertTrue(result.endswith("Lu pilih spesialis atau generalis?"))
+        self.assertNotIn("Lu tim yang mana", result)
+
+    def test_specific_question_not_appended_when_caption_still_ends_in_generic_bait(self):
+        # Vague bait in the caption is swapped for the clip-specific question.
+        result = ensure_closing_question(
+            "Kerja keras gak bikin kaya. Gimana menurut kalian?", mode="hook",
+            specific="Lu tim lembur atau tim strategi?",
+        )
+        self.assertNotIn("menurut kalian", result.lower())
+        self.assertTrue(result.endswith("Lu tim lembur atau tim strategi?"))
+
+    def test_existing_specific_last_question_not_double_appended(self):
+        caption = "Kerja keras gak bikin kaya. Lu tim lembur atau tim strategi?"
+        result = ensure_closing_question(caption, mode="hook", specific="Sesuatu yang beda?")
+        # Last question is already specific → keep caption as-is, no append.
+        self.assertEqual(result, caption)
 
     def test_generic_quote_detected(self):
         self.assertTrue(is_generic_caption("Konsisten itu penting banget"))

@@ -881,9 +881,9 @@ def build_clip_enrichment_prompt(clips_with_slices, video_summary="", mode="hook
         )
         tone = "an authentic Indonesian TikTok affiliate creator"
         good_examples = (
-            '  * "Review jujur headset Rp50 ribu ini, buat meeting online aman banget, ada di keranjang kuning"\n'
-            '  * "Nyesel baru tau barang ini sekarang, beneran ngebantu banget pas kerjaan numpuk"\n'
-            '  * "Solusi paling masuk akal buat yang pengen rapi tanpa harus keluar modal jutaan."'
+            '  * caption: "Review jujur headset Rp50 ribu ini, buat meeting online aman banget, ada di keranjang kuning" / closing_question: "Masih mikir atau langsung ambil?"\n'
+            '  * caption: "Nyesel baru tau barang ini sekarang, beneran ngebantu banget pas kerjaan numpuk" / closing_question: "Lu butuh yang kayak gini juga atau masih bisa nahan?"\n'
+            '  * caption: "Solusi paling masuk akal buat yang pengen rapi tanpa harus keluar modal jutaan" / closing_question: "Budget lu di bawah 100 ribu atau lebih?"'
         )
     else:
         cta_rule = ""
@@ -895,9 +895,9 @@ def build_clip_enrichment_prompt(clips_with_slices, video_summary="", mode="hook
         )
         tone = "an authentic Indonesian podcast/video clipper posting on TikTok"
         good_examples = (
-            '  * "Realita pahit kenapa kerja keras doang gak bakal bikin lu kaya kalau polanya salah"\n'
-            '  * "Mindset kayak gini yang bikin banyak orang stuck bertahun-tahun tanpa sadar."\n'
-            '  * "Alasan kenapa orang yang beneran kompeten justru jarang banyak omong di publik."'
+            '  * caption: "Realita pahit kenapa kerja keras doang gak bakal bikin lu kaya kalau polanya salah" / closing_question: "Lu tim lembur atau tim strategi?"\n'
+            '  * caption: "Mindset kayak gini yang bikin banyak orang stuck bertahun-tahun tanpa sadar" / closing_question: "Umur berapa lu baru sadar ini?"\n'
+            '  * caption: "Alasan kenapa orang yang beneran kompeten justru jarang banyak omong di publik" / closing_question: "Lu sadarnya duluan atau kena dulu?"'
         )
 
     blocks = []
@@ -927,9 +927,10 @@ For EACH clip below, write 3 title_options (hook overlay text), 1 caption, and h
 ## CAPTION RULES (100% HUMAN CREATOR TONE, NO AI VIBES)
 - 1-2 kalimat punchy (max 100-120 chars). Maksimal 1 emoji.
 - TIKTOK SEO: sisipkan 1-2 keyword pencarian secara NATURAL dalam 40-50 karakter pertama (kalimat pembuka = yang terlihat sebelum "...selengkapnya").
-- NEVER END WITH A QUESTION: do NOT end with engagement bait ("Gimana menurut kalian?", "Setuju gak?", "Coba komen di bawah!"). End with a strong definitive statement, benefit takeaway, or hard-hitting observation.
+- CAPTION IS A STATEMENT: the caption text ends with a strong definitive statement, benefit takeaway, or hard-hitting observation. NEVER end the caption with a question and NEVER write engagement bait ("Gimana menurut kalian?", "Setuju gak?", "Ada yang relate?", "Coba komen di bawah!").
+- `closing_question` (field TERPISAH, bukan bagian dari caption): TULIS SATU pertanyaan penutup pendek & SPESIFIK tentang klaim di klip ini. Pertanyaannya harus bisa dijawab dua kata — either/or ("Lu tim lembur atau tim strategi?") atau self-identification ("Umur berapa lu sadar ini?"). Pertanyaan ini yang dipakai untuk memancing komentar.
 - FORBIDDEN AI WORDS: "Apakah kamu", "Ini dia", "Pernahkah Anda", "Yuk simak", "Tonton sampai habis", "Tahukah kamu", "Fakta menarik", "Jangan lewatkan", "Simak penjelasannya".
-{cta_rule}- GOOD EXAMPLES:
+{cta_rule}- GOOD EXAMPLES (caption adalah statement; closing_question terpisah):
 {good_examples}
 
 ## HASHTAG STRATEGY (for small/new accounts)
@@ -942,6 +943,7 @@ For EACH clip below, write 3 title_options (hook overlay text), 1 caption, and h
       "index": 1,
       "title_options": ["Curiosity Title", "Benefit Title", "Controversial Title"],
       "caption": "Realita pahit kenapa kerja keras doang gak bakal bikin lu kaya kalau polanya salah",
+      "closing_question": "Lu tim lembur atau tim strategi?",
       "hashtags": ["#fyp", "#mindsetbisnis", "#psikologija", "#keuanganpribadi"]
     }}
   ]

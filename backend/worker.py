@@ -322,6 +322,8 @@ def main():
                 for key in ("title_options", "caption", "hashtags"):
                     if extra.get(key):
                         c[key] = extra[key]
+                if extra.get("closing_question"):
+                    c["closing_question"] = extra["closing_question"]
                 if not c.get("title_options"):
                     c["title_options"] = [c.get("title", "Untitled")]
 
