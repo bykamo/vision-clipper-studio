@@ -15,6 +15,14 @@ VisionClipper is a local AI video clipper. Pipeline: download/resolve source →
 
 Drive it through the helper script `scripts/vclip.py`. It prints **one JSON object on stdout**, progress logs on stderr, and exits `0` on success / `1` on failure (`"ok": false`, `"error"`, `"log_tail"`).
 
+## MCP server
+
+If you are an MCP-capable agent, VisionClipper is also available as an MCP
+server exposing the same five operations (`doctor`, `analyze`, `render`,
+`auto`, `clips`) as tools. Configure it with [`.vscode/mcp.json`](../../.vscode/mcp.json)
+(in this repo) and follow [references/mcp.md](references/mcp.md) — the tool
+descriptions and the rules in this file apply unchanged.
+
 ## Running the helper
 
 ```bash
@@ -105,6 +113,7 @@ python3 scripts/vclip.py clips --project "<folder>"  # clips + metadata of one p
 
 ## Other interfaces
 
+- **MCP server** (for MCP-capable agents): same tools as this script — see [references/mcp.md](references/mcp.md).
 - **HTTP API** (when the dashboard server is running on `:5050`): SSE endpoints for analyze/render, YouTube upload, AI config. See [references/http-api.md](references/http-api.md).
 - **Raw worker**: `python -m backend.worker --help` from the project root (same pipeline, plain-text logs).
 - **Dashboard**: `vision-clipper` starts the web UI at `http://localhost:5050`; `vision-clipper stop` stops it.

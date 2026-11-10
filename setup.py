@@ -27,10 +27,17 @@ setup(
         # Dipakai moviepy untuk membaca/menulis frame gambar.
         "pillow>=10.1.0",
     ],
+    extras_require={
+        # mcp 2.x renamed FastMCP -> MCPServer; backend/mcp_server.py uses the
+        # v1 FastMCP API, so pin below 2.
+        "mcp": ["mcp>=1.0.0,<2"],
+    },
     entry_points={
         "console_scripts": [
             "vision-clipper=backend.cli:main",
             "visionclipper=backend.cli:main",
+            "vision-clipper-mcp=backend.mcp_server:main",
+            "visionclipper-mcp=backend.mcp_server:main",
         ],
     },
     classifiers=[
