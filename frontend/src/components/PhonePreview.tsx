@@ -1,34 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  HeartIcon,
-  BookmarkIcon,
-  ShareIcon,
-  ChatBubbleOvalLeftEllipsisIcon,
-  PlusIcon,
-  MusicalNoteIcon,
-  MagnifyingGlassIcon,
-  HomeIcon,
-  UserGroupIcon,
-  UserIcon as UserIconOutline,
-  ShieldCheckIcon,
-} from '@heroicons/react/24/outline';
-import { SiTiktok, SiInstagram, SiYoutubeshorts } from 'react-icons/si';
-import {
   PlayIcon,
   PauseIcon,
-  HeartIcon as HeartIconSolid,
-  BookmarkIcon as BookmarkIconSolid,
-  CheckBadgeIcon,
-  HomeIcon as HomeIconSolid,
-  UserGroupIcon as UserGroupIconSolid,
-  UserIcon as UserIconSolid,
-  ChatBubbleOvalLeftEllipsisIcon as ChatBubbleOvalLeftEllipsisIconSolid,
   SpeakerWaveIcon,
   SpeakerXMarkIcon,
-  ViewfinderCircleIcon,
 } from '@heroicons/react/24/solid';
-
-export type SocialOverlayType = 'tiktok' | 'reels' | 'shorts' | 'none';
+import type { SmartCropTrajectory } from '../types';
 
 /** Satu kata transkrip (detik absolut terhadap file video sumber). */
 export interface PreviewWord {
@@ -43,17 +20,16 @@ interface PhonePreviewProps {
   videoSource?: string;
   previewClip?: { start: number; end: number } | null;
   clipTitle?: string;
-  clipCaption?: string;
-  clipHashtags?: string[];
   /** Kata-kata transkrip di dalam klip yang sedang dipreview (sinkron dengan video). */
   clipWords?: PreviewWord[];
+  /** Trajektori smart crop (sama dengan render) bila framing smart_crop aktif. */
+  smartCropTrajectory?: SmartCropTrajectory | null;
   isRenderedClip?: boolean;
   isProcessing?: boolean;
   subPosition?: number;
   watermarkEnabled?: boolean;
   sourceWatermark?: string;
   accountWatermark?: string;
-  initialOverlay?: SocialOverlayType;
 }
 
 export const PhonePreview: React.FC<PhonePreviewProps> = ({
@@ -62,16 +38,14 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   videoSource,
   previewClip,
   clipTitle,
-  clipCaption,
-  clipHashtags,
   clipWords,
+  smartCropTrajectory,
   isRenderedClip = false,
   isProcessing = false,
   subPosition = 68,
   watermarkEnabled = true,
   sourceWatermark = '',
   accountWatermark = '',
-  initialOverlay = 'tiktok',
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -81,41 +55,20 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
   const [mediaError, setMediaError] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1.0);
   const [showPlayPulse, setShowPlayPulse] = useState(false);
-  const [isLiked, setIsLiked] = useState(false);
-  const [isBookmarked, setIsBookmarked] = useState(false);
-  const [showSafeZone, setShowSafeZone] = useState(false);
-  const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'friends' | 'inbox' | 'profile'>(
-    'home',
-  );
-
-  // Social Overlay Mode State: TikTok (default), Reels, Shorts, or Off
-  const [overlayMode, setOverlayMode] = useState<SocialOverlayType>(() => {
-    try {
-      return (localStorage.getItem('vc_preview_overlay') as SocialOverlayType) || initialOverlay;
-    } catch {
-      return initialOverlay;
-    }
-  });
-
-  const changeOverlayMode = (mode: SocialOverlayType) => {
-    setOverlayMode(mode);
-    try {
-      localStorage.setItem('vc_preview_overlay', mode);
-    } catch {
-      // ignore
-    }
-  };
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   // Panel kedua untuk mode Dual Stack (split_screen): menampilkan sisi kanan
   // video sambil mengikuti waktu & status putar panel utama.
   const secondaryVideoRef = useRef<HTMLVideoElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
+  // Container layar konten (tempat video dirender) untuk menghitung skala crop.
+  const screenContentRef = useRef<HTMLDivElement | null>(null);
   // Tracks whether the current mute state was forced by the browser autoplay
   // policy (not an explicit user choice). When true, the first user gesture
   // should restore sound instead of toggling playback.
   const autoplayMutedRef = useRef(false);
   const [scale, setScale] = useState<number>(0.62);
+  const [screenContentWidth, setScreenContentWidth] = useState<number>(0);
 
   // Dynamically calculate scale factor to fit exactly within the available preview column stage
   useEffect(() => {
@@ -146,6 +99,23 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
       observer.disconnect();
       window.removeEventListener('resize', updateScale);
     };
+  }, []);
+
+  // Lebar layar konten (px CSS, BELUM kena transform scale) dipakai untuk
+  // menghitung ukuran video saat smart crop aktif. Screen-nya fixed 356px.
+  // PENTING: pakai offsetWidth (bukan getBoundingClientRect) karena lebar
+  // getBoundingClientRect sudah menyertakan transform scale dari wrapper
+  // iPhone (mis. 356 * 0.62 = 221px), sedangkan style video ditulis dalam
+  // koordinat lokal sebelum di-scale. Mencampur keduanya membuat video jadi
+  // lebih kecil / melenceng dari layar (preview terlihat "hancur").
+  useEffect(() => {
+    const el = screenContentRef.current;
+    if (!el) return;
+    const measure = () => setScreenContentWidth(el.offsetWidth || 0);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   // Check if source is a local playable video file path
@@ -274,6 +244,50 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     }
   };
 
+  // ── SMART CROP LIVE PREVIEW ──
+  // Aktif hanya saat framing smart_crop, ada klip range (belum rendered), dan
+  // trajektori sudah ter-fetch. Posisi frame dihitung dari waktu klip-relatif.
+  const smartCropActive =
+    framingMode === 'smart_crop' &&
+    !isRenderedClip &&
+    Boolean(previewClip) &&
+    Boolean(smartCropTrajectory) &&
+    (smartCropTrajectory?.positions?.length ?? 0) > 0;
+
+  const smartCropFrameIndex = (() => {
+    if (!smartCropActive || !previewClip || !smartCropTrajectory) return 0;
+    const tc = (currentTime || 0) - previewClip.start;
+    const fps = smartCropTrajectory.fps || 30;
+    const idx = Math.round(tc * fps);
+    const maxIndex = smartCropTrajectory.positions.length - 1;
+    return Math.max(0, Math.min(maxIndex, idx));
+  })();
+
+  // Style video eksplisit: skala video sumber ke crop 9:16 lalu geser kiri/atas
+  // mengikuti `positions[frame]`. Menggantikan `object-cover` center statis.
+  const smartCropVideoStyle = (() => {
+    if (!smartCropActive || !smartCropTrajectory) return null;
+    const { orig_w, orig_h, crop_w, crop_h, crop_y, positions } = smartCropTrajectory;
+    const containerW = screenContentWidth || 356;
+    // Layar konten iPhone: lebar 356, tinggi 772. Gunakan rasio fixed bila tinggi belum terukur.
+    const containerH = containerW * (772 / 356);
+    // Cover-scale: crop 9:16 diisi penuh ke layar (tinggi layar dominan lebih sempit).
+    const s = Math.max(containerW / crop_w, containerH / crop_h);
+    const x = (positions[smartCropFrameIndex] ?? 0) * s;
+    const y = crop_y * s;
+    return {
+      position: 'absolute' as const,
+      top: `${-y}px`,
+      left: `${-x}px`,
+      width: `${orig_w * s}px`,
+      height: `${orig_h * s}px`,
+      // Tailwind preflight menetapkan `video { max-width: 100% }`, yang akan
+      // membatasi width eksplisit kita ke lebar layar (356px) padahal height
+      // tetap skala penuh -> video jadi sempit & melenceng. Nonaktifkan.
+      maxWidth: 'none',
+    };
+  })();
+
   // Panel kedua (mode Dual Stack) mengikuti panel utama: waktu, play/pause,
   // dan selalu tanpa suara supaya tidak ada audio ganda.
   useEffect(() => {
@@ -389,11 +403,11 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
   // ── SUBTITLE PREVIEW (teks transkrip asli, sinkron dengan posisi video) ──
   // Batas kata/karakter per gaya harus sama dengan backend (STYLE_CHUNK_LIMITS)
-  // supaya preview benar-benar mencerminkan hasil render.
+  // supaya preview benar-benar mencerminkan hasil render (aturan CapCut: frasa 3-4 kata horizontal).
   const SUBTITLE_LIMITS: Record<string, { maxWords: number; maxChars: number }> = {
-    tiktok_viral: { maxWords: 2, maxChars: 12 },
-    classic_karaoke: { maxWords: 3, maxChars: 12 },
-    minimalist: { maxWords: 4, maxChars: 16 },
+    tiktok_viral: { maxWords: 4, maxChars: 22 },
+    classic_karaoke: { maxWords: 4, maxChars: 22 },
+    minimalist: { maxWords: 5, maxChars: 24 },
     word_pop: { maxWords: 1, maxChars: 12 },
   };
 
@@ -429,7 +443,9 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
       }
       current.push({ ...w, word: text });
       currentLen += text.length + (current.length > 1 ? 1 : 0);
-      if (/[.?!,]$/.test(text)) {
+      // Hard sentence break on .?!, but for commas only break if the phrase already has >= 3 words
+      // so it never creates tiny awkward 1-2 word fragments (CapCut phrase rule).
+      if (/[.?!]$/.test(text) || (/,$/.test(text) && current.length >= 3)) {
         chunks.push(current);
         current = [];
         currentLen = 0;
@@ -474,12 +490,12 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     switch (selectedPresetId) {
       case 'classic_karaoke': {
         const words = activeChunk ?? [
-          { word: 'KONSISTEN', start: 0, end: 0 },
-          { word: 'ITU', start: 0, end: 0 },
-          { word: 'LEBIH', start: 0, end: 0 },
+          { word: 'Konsisten', start: 0, end: 0 },
+          { word: 'itu', start: 0, end: 0 },
+          { word: 'lebih', start: 0, end: 0 },
         ];
         return (
-          <div className="flex flex-wrap items-center justify-center gap-x-1.5 font-['Montserrat',_sans-serif] font-black uppercase text-center select-none leading-tight drop-shadow-[0_2px_8px_rgba(0,0,0,1)]">
+          <div className="flex flex-wrap items-center justify-center gap-x-1.5 font-['Montserrat',_sans-serif] font-extrabold text-center select-none leading-tight drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]">
             {words.map((w, i) => {
               const isActive =
                 activeChunkWord !== null &&
@@ -488,17 +504,27 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
               return (
                 <span
                   key={`${w.word}-${i}`}
-                  className={`text-[15px] sm:text-[16px] tracking-wide font-black ${
-                    isActive ? 'text-[#00D4F5]' : 'text-white'
+                  style={{
+                    WebkitTextStroke: '1.5px #000000',
+                    paintOrder: 'stroke fill',
+                  }}
+                  className={`inline-block text-[15.5px] sm:text-[16.5px] tracking-[0.015em] font-extrabold transition-all duration-100 ${
+                    isActive ? 'text-[#00F5D4] scale-105' : 'text-white'
                   }`}
                 >
-                  {w.word.toUpperCase()}
+                  {w.word}
                 </span>
               );
             })}
             {!hasRealTranscript && (
-              <span className="text-white text-[15px] sm:text-[16px] tracking-wide font-black">
-                DARI MOTIVASI
+              <span
+                style={{
+                  WebkitTextStroke: '1.5px #000000',
+                  paintOrder: 'stroke fill',
+                }}
+                className="text-white text-[15.5px] sm:text-[16.5px] tracking-[0.015em] font-extrabold"
+              >
+                dari motivasi
               </span>
             )}
           </div>
@@ -507,7 +533,13 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
       case 'minimalist': {
         const text = activeChunk?.map((w) => w.word).join(' ') ?? 'Konsisten itu lebih penting';
         return (
-          <div className="font-['Inter',_sans-serif] font-medium text-[12px] text-white tracking-wide text-center drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] select-none bg-black/60 px-3.5 py-1.5 rounded-lg border border-white/10 backdrop-blur-xs">
+          <div
+            style={{
+              WebkitTextStroke: '1.1px #0a0a0a',
+              paintOrder: 'stroke fill',
+            }}
+            className="font-['Plus_Jakarta_Sans',_sans-serif] font-bold text-[14px] text-white tracking-[0.01em] text-center drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] select-none leading-snug"
+          >
             <span>{text}</span>
           </div>
         );
@@ -515,7 +547,13 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
       case 'word_pop': {
         const word = activeChunk?.[0]?.word.toUpperCase() ?? 'KONSISTEN!';
         return (
-          <div className="flex flex-col items-center justify-center font-['Impact',_sans-serif] font-black uppercase text-[28px] text-[#FBBF24] tracking-wider text-center drop-shadow-[0_4px_10px_rgba(0,0,0,1)] select-none animate-pulse leading-none">
+          <div
+            style={{
+              WebkitTextStroke: '2px #000000',
+              paintOrder: 'stroke fill',
+            }}
+            className="flex flex-col items-center justify-center font-['Impact',_sans-serif] font-black uppercase text-[28px] text-white tracking-wider text-center drop-shadow-[0_4px_8px_rgba(0,0,0,0.95)] select-none leading-none"
+          >
             <span>{word}</span>
           </div>
         );
@@ -529,24 +567,31 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
           activeChunk && activeChunk.length > 0
             ? activeChunk
             : [
-                { word: 'KONSISTEN ITU', start: 0, end: 0 },
-                { word: 'LEBIH PENTING', start: 0, end: 0 },
+                { word: 'Konsisten', start: 0, end: 0 },
+                { word: 'itu', start: 0, end: 0 },
+                { word: 'lebih', start: 0, end: 0 },
+                { word: 'penting', start: 0, end: 0 },
               ];
         return (
-          <div className="flex flex-col items-center justify-center font-['Montserrat',_sans-serif] font-black uppercase text-center select-none leading-tight drop-shadow-[0_2px_10px_rgba(0,0,0,1)]">
+          <div className="flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 font-['Montserrat',_'Plus_Jakarta_Sans',_sans-serif] font-extrabold text-center select-none max-w-[92%] mx-auto leading-normal">
             {words.map((w, i) => {
               const isActive =
                 activeChunkWord !== null &&
                 w.start === activeChunkWord.start &&
                 w.end === activeChunkWord.end;
+              const isHighlighted = hasRealTranscript ? isActive : i === 0;
               return (
                 <span
                   key={`${w.word}-${i}`}
-                  className={`text-[16px] sm:text-[17px] tracking-wide font-black drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)] ${
-                    i === 0 ? 'text-[#FBBF24]' : 'text-white'
-                  } ${isActive ? 'scale-105' : ''} ${i > 0 ? 'mt-0.5' : ''}`}
+                  style={{
+                    WebkitTextStroke: '1.4px #000000',
+                    paintOrder: 'stroke fill',
+                  }}
+                  className={`inline-block text-[15px] sm:text-[16px] tracking-[0.015em] font-extrabold transition-all duration-100 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] ${
+                    isHighlighted ? 'text-[#34D399] scale-105' : 'text-white'
+                  }`}
                 >
-                  {w.word.toUpperCase()}
+                  {w.word}
                 </span>
               );
             })}
@@ -592,99 +637,34 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     : 0;
   const remainingTime = Math.max(0, timelineDuration - timelineCurrent);
 
-  // Dynamic values for Social Media overlay
-  const displayAccount = (accountWatermark || 'visionclipper.ai').replace(/^@/, '');
-  const displayCaption =
-    clipCaption ||
-    clipTitle ||
-    'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore.';
-  const displayHashtags =
-    clipHashtags && clipHashtags.length > 0
-      ? clipHashtags
-          .map((t) => (t.startsWith('#') ? t : `#${t}`))
-          .slice(0, 4)
-          .join(' ')
-      : '#fyp #foryou #trending #viral';
-
   return (
-    <div className="flex flex-col h-full max-lg:h-auto w-full rounded-2xl bg-[#090d13] border border-slate-800/80 p-3 sm:p-3.5 max-sm:p-2.5 shadow-xl overflow-hidden">
-      {/* ── TOP HEADER OF PREVIEW + SOCIAL PLATFORM SWITCHER ── */}
-      <div className="flex items-center justify-between mb-3 max-sm:mb-2 px-1 gap-2 max-sm:gap-1.5 flex-shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <ViewfinderCircleIcon
-            className={`h-4 w-4 flex-shrink-0 ${isRenderedClip ? 'text-amber-400' : 'text-emerald-400'}`}
+    <div className="flex flex-col h-full max-lg:h-auto w-full rounded-2xl bg-[#090d13] border border-slate-800/80 shadow-xl overflow-hidden">
+      {/* PERSISTENT TERMINAL HEADER (Video Preview) */}
+      <div className="flex h-8 items-center justify-between px-3.5 border-b border-slate-800/80 bg-[#161b22] flex-shrink-0">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f56]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#ffbd2e]" />
+          <span
+            className={`h-2.5 w-2.5 rounded-full ${isProcessing ? 'bg-[#27c93f] animate-pulse' : 'bg-[#27c93f]'}`}
           />
-          <div className="flex flex-col truncate">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-200 font-['Outfit'] truncate">
-              {isRenderedClip ? 'OUTPUT CLIP PREVIEW' : 'VIDEO PREVIEW'}
-            </h2>
-            {clipTitle && (
-              <span
-                className="text-[10px] text-slate-400 truncate max-w-[120px] sm:max-w-[150px]"
-                title={clipTitle}
-              >
-                {clipTitle}
-              </span>
-            )}
-          </div>
         </div>
-
-        {/* Platform Overlay Selector Pills (TikTok, Reels, Shorts, Clean) + Safe Zone */}
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-900/90 border border-slate-800 shadow-inner">
-            {[
-              { id: 'tiktok', label: 'TikTok', Icon: SiTiktok, color: 'text-white' },
-              { id: 'reels', label: 'Reels', Icon: SiInstagram, color: 'text-pink-400' },
-              { id: 'shorts', label: 'Shorts', Icon: SiYoutubeshorts, color: 'text-red-500' },
-            ].map((p) => {
-              const isActive = overlayMode === p.id;
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => changeOverlayMode(isActive ? 'none' : (p.id as SocialOverlayType))}
-                  className={`flex items-center justify-center w-6 h-6 rounded-md transition-all ${
-                    isActive
-                      ? 'bg-emerald-500/20 border border-emerald-500/40 shadow-xs'
-                      : 'opacity-45 hover:opacity-100 hover:bg-slate-800/60'
-                  }`}
-                  title={isActive ? `Matikan tampilan ${p.label}` : `Tampilkan overlay ${p.label}`}
-                  aria-label={
-                    isActive ? `Matikan tampilan ${p.label}` : `Tampilkan overlay ${p.label}`
-                  }
-                  aria-pressed={isActive}
-                >
-                  <p.Icon className={`w-3.5 h-3.5 ${isActive ? p.color : 'text-slate-300'}`} />
-                </button>
-              );
-            })}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setShowSafeZone(!showSafeZone)}
-            className={`flex items-center justify-center w-6 h-6 rounded-lg transition-all border ${
-              showSafeZone
-                ? 'bg-amber-500/20 border-amber-500/40 shadow-xs'
-                : 'bg-slate-900/90 border-slate-800 hover:bg-slate-800/60'
-            }`}
-            title="Toggle TikTok 9:16 Safe Zone Overlay"
-            aria-label="Toggle TikTok 9:16 Safe Zone Overlay"
-            aria-pressed={showSafeZone}
+        {clipTitle && (
+          <span
+            className="text-[11px] font-mono text-slate-400 truncate max-w-[200px] ml-2"
+            title={clipTitle}
           >
-            <ShieldCheckIcon
-              className={`w-3.5 h-3.5 ${showSafeZone ? 'text-amber-400' : 'text-slate-500'}`}
-            />
-          </button>
-        </div>
+            {clipTitle}
+          </span>
+        )}
       </div>
 
-      {/* ─────────────────────────────────────────────────────────────
-          CENTER STAGE: PHOTOREALISTIC WEBMOBILEFIRST iPHONE 17 PRO (2-LAYER COMPOSITE)
-          - True 1:1 Apple Viewport Underneath (.iphone-screen: 354px × 771px)
-          - Transparent Official iPhone 17 Pro Overlay (.iphone-frame-overlay: 389px × 800px)
-          - Dynamically auto-scaled to fit 100% of available column viewport
-         ───────────────────────────────────────────────────────────── */}
+      <div className="flex-1 min-h-0 flex flex-col p-3 sm:p-3.5 max-sm:p-2.5 overflow-hidden">
+        {/* ─────────────────────────────────────────────────────────────
+            CENTER STAGE: PHOTOREALISTIC WEBMOBILEFIRST iPHONE 17 PRO (2-LAYER COMPOSITE)
+            - True 1:1 Apple Viewport Underneath (.iphone-screen: 354px × 771px)
+            - Transparent Official iPhone 17 Pro Overlay (.iphone-frame-overlay: 389px × 800px)
+            - Dynamically auto-scaled to fit 100% of available column viewport
+           ───────────────────────────────────────────────────────────── */}
       <div
         ref={stageRef}
         className="flex flex-1 min-h-0 w-full items-center justify-center p-1 overflow-hidden relative select-none max-lg:flex-none max-lg:min-h-[460px]"
@@ -722,51 +702,64 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
               {/* Front Screen Diagonal Glass Reflection Highlight */}
               <div className="pointer-events-none absolute inset-0 z-20 bg-gradient-to-tr from-transparent via-white/[0.015] to-white/[0.04] rounded-[46px]" />
 
-              {/* ── AUTHENTIC iOS STATUS BAR (Shows through transparent ears of PNG overlay) ── */}
-              <div className="absolute top-[8px] inset-x-0 h-[27px] px-6 z-25 flex items-center justify-between text-white pointer-events-none select-none">
-                {/* Left Flank: Authentic iOS Time (9:41 SF Pro Style) */}
-                <div className="pl-1 flex items-center">
-                  <span className="text-[15px] font-semibold tracking-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)] font-sans antialiased">
+              {/* ── AUTHENTIC iOS 26 STATUS BAR (Apple HIG) ──
+                  - Time kiri: SF Pro Text Semibold, tracking rapat
+                  - Kanan: Cellular (4 bar rounded, naik kiri→kanan) + Battery
+                  - Tanpa Wi-Fi, mengikuti tata letak nukilan iOS terbaru. */}
+              <div className="absolute top-[8px] inset-x-0 h-[27px] pl-[30px] pr-[16px] z-25 flex items-center justify-between text-white pointer-events-none select-none">
+                {/* Left Flank: Time (9:41, SF Pro Semibold, tight tracking) */}
+                <div className="flex items-center">
+                  <span
+                    className="text-[16px] font-semibold text-white/70 antialiased"
+                    style={{
+                      fontFamily:
+                        "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Helvetica Neue', Helvetica, sans-serif",
+                      letterSpacing: '-0.4px',
+                      textShadow: '0 1px 2px rgba(0, 0, 0, 0.35)',
+                    }}
+                  >
                     9:41
                   </span>
                 </div>
 
-                {/* Right Flank: Authentic iOS Cellular (4 Stadium Pills) + Battery */}
-                <div className="flex items-center gap-1.5 pr-1">
-                  {/* 1. iOS Cellular 4-Pill Signal Indicator */}
+                {/* Right Flank: Cellular (4 rounded bars, ascending left→right) + Battery */}
+                <div className="flex items-center gap-[7px] pr-0.5">
+                  {/* Cellular Signal */}
                   <svg
-                    className="w-[17px] h-[11.5px] text-white shrink-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]"
-                    viewBox="0 0 17.5 12"
-                    fill="none"
+                    className="w-[18px] h-[12.5px] text-white/70 shrink-0"
+                    viewBox="0 0 18 12.5"
+                    fill="currentColor"
+                    style={{ filter: 'drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35))' }}
                   >
-                    <rect x="0.5" y="8" width="3" height="4" rx="1.5" fill="currentColor" />
-                    <rect x="5" y="5.5" width="3" height="6.5" rx="1.5" fill="currentColor" />
-                    <rect x="9.5" y="3" width="3" height="9" rx="1.5" fill="currentColor" />
-                    <rect x="14" y="0.5" width="3" height="11.5" rx="1.5" fill="currentColor" />
+                    <rect x="0" y="8.2" width="2.7" height="4.3" rx="0.9" />
+                    <rect x="5" y="5.3" width="2.7" height="7.2" rx="0.9" />
+                    <rect x="10" y="2.4" width="2.7" height="10.1" rx="0.9" />
+                    <rect x="15" y="0" width="2.7" height="12.5" rx="0.9" />
                   </svg>
 
-                  {/* 2. iOS Battery Capsule */}
+                  {/* Battery (rounded capsule + fill + right terminal nub) */}
                   <svg
-                    className="w-[24.5px] h-[11.5px] text-white shrink-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.7)]"
-                    viewBox="0 0 24.5 11.5"
+                    className="w-[26px] h-[12px] text-white/70 shrink-0"
+                    viewBox="0 0 26 12"
                     fill="none"
+                    style={{ filter: 'drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35))' }}
                   >
                     <rect
-                      x="0.6"
-                      y="0.6"
+                      x="0.7"
+                      y="0.7"
                       width="20.4"
-                      height="10.3"
-                      rx="3.5"
+                      height="10.6"
+                      rx="3.4"
                       stroke="currentColor"
-                      strokeWidth="1.1"
-                      strokeOpacity="0.4"
+                      strokeWidth="1"
+                      strokeOpacity="0.45"
                     />
-                    <rect x="2.1" y="2.1" width="13.8" height="7.3" rx="1.8" fill="currentColor" />
+                    <rect x="2.1" y="2.1" width="14" height="7.8" rx="1.9" fill="currentColor" />
                     <path
-                      d="M22.5 4.1C23.3 4.1 23.7 4.5 23.7 5.2V6.3C23.7 7.0 23.3 7.4 22.5 7.4"
+                      d="M22.6 3.9C23.5 3.9 24 4.4 24 5.1V6.9C24 7.6 23.5 8.1 22.6 8.1"
                       stroke="currentColor"
-                      strokeWidth="1.1"
-                      strokeOpacity="0.4"
+                      strokeWidth="1"
+                      strokeOpacity="0.45"
                       strokeLinecap="round"
                       fill="none"
                     />
@@ -776,6 +769,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
 
               {/* OLED Screen Content Container */}
               <div
+                ref={screenContentRef}
                 className={`relative w-full h-full bg-slate-950 overflow-hidden flex items-center justify-center ${
                   videoStreamUrl ? 'cursor-pointer' : ''
                 }`}
@@ -851,8 +845,11 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                         className={`relative z-10 transition-all duration-300 ${
                           !isRenderedClip && framingMode === 'fit_blur'
                             ? 'w-full h-auto max-h-full object-contain'
-                            : 'w-full h-full object-cover'
+                            : smartCropVideoStyle
+                              ? ''
+                              : 'w-full h-full object-cover'
                         }`}
+                        style={smartCropVideoStyle ?? undefined}
                         playsInline
                       />
                     )}
@@ -935,10 +932,11 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                   </div>
                 )}
 
-                {/* ── SUBTITLE STYLE PREVIEW (always visible so users can preview the selected style) ── */}
+                {/* ── SUBTITLE STYLE PREVIEW (only when a video source is loaded,
+                    so placeholder caption doesn't float over the empty state) ── */}
                 {/* Mirrors the backend safe zone: bottom-anchored at subPosition% with
                     ~11% horizontal margins so text never touches the frame edge. */}
-                {!isRenderedClip && selectedPresetId !== 'no_subtitle' && (
+                {!isRenderedClip && selectedPresetId !== 'no_subtitle' && videoStreamUrl && (
                   <div
                     className="absolute z-20 inset-x-0 px-[11%] flex justify-center pointer-events-none transition-all duration-200"
                     style={{ bottom: `${Math.max(4, 100 - subPosition)}%` }}
@@ -947,563 +945,23 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                   </div>
                 )}
 
-                {/* ── 1. TIKTOK SOCIAL MEDIA UI OVERLAY ── */}
-                {overlayMode === 'tiktok' && (
-                  <div className="absolute inset-0 z-20 flex flex-col pointer-events-none select-none">
-                    {/* Top Feed Tabs: Mengikuti | Untuk Anda | Search (clears Dynamic Island) */}
-                    <div className="pt-[52px] px-4 flex items-center justify-between text-white/90 flex-shrink-0">
-                      {/* Left balancing spacer to keep center tabs perfectly centered */}
-                      <div className="w-7 h-7" />
-
-                      {/* Center Feed Tabs: Mengikuti | Untuk Anda */}
-                      <div className="flex items-center gap-4 text-[14.5px] drop-shadow-md">
-                        <span className="text-white/60 font-semibold cursor-pointer pointer-events-auto hover:text-white transition-colors">
-                          Mengikuti
-                        </span>
-                        <div className="relative cursor-pointer pointer-events-auto font-extrabold text-white">
-                          <span>Untuk Anda</span>
-                          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-5 h-[2.5px] bg-white rounded-full shadow-xs" />
-                        </div>
-                      </div>
-
-                      {/* Right: Search Icon Button */}
-                      <button className="w-7 h-7 flex items-center justify-center p-0.5 text-white/90 pointer-events-auto hover:text-white cursor-pointer transition-transform active:scale-90">
-                        <MagnifyingGlassIcon className="h-[21px] w-[21px] stroke-[2.3]" />
-                      </button>
-                    </div>
-
-                    {/* Flexible middle keeps UI pinned to top + bottom like the real feed */}
-                    <div className="flex-1" />
-
-                    {/* Bottom Half: Creator Info + Right Social Actions */}
-                    <div className="flex items-end justify-between w-full pl-4 pr-2.5 pb-2">
-                      {/* Bottom-Left: Creator Username, Caption, Music Audio */}
-                      <div className="flex-1 pr-2 pb-1 space-y-1.5 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] text-left min-w-0">
-                        {/* Creator Handle */}
-                        <div className="flex items-center gap-1">
-                          <span className="font-['Outfit',_sans-serif] text-[16px] font-bold text-white tracking-wide truncate">
-                            @{displayAccount}
-                          </span>
-                          <CheckBadgeIcon className="h-4 w-4 text-sky-400 flex-shrink-0" />
-                        </div>
-
-                        {/* Video Caption */}
-                        <p className="text-[14px] leading-[1.3] text-white/95 line-clamp-2 font-normal">
-                          {displayCaption}
-                        </p>
-
-                        {/* Hashtags */}
-                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[14px] text-white/85 font-bold">
-                          {displayHashtags.split(' ').map((tag, idx) => (
-                            <span key={idx}>{tag}</span>
-                          ))}
-                        </div>
-
-                        {/* Music Audio Ticker */}
-                        <div className="flex items-center gap-1.5 text-[13px] text-white/90 pt-0.5">
-                          <MusicalNoteIcon
-                            className={`h-4 w-4 shrink-0 ${isPlaying ? 'animate-spin' : ''} stroke-[2]`}
-                            style={{ animationDuration: '4s' }}
-                          />
-                          <div className="w-44 overflow-hidden whitespace-nowrap">
-                            <p className="text-[13px] truncate">Suara Asli - {displayAccount}</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Right Side: TikTok Signature Floating Action Stack */}
-                      <div className="flex flex-col items-center gap-3 pointer-events-auto shrink-0 pb-1">
-                        {/* 1. Creator Avatar with Follow Red Plus */}
-                        <div className="relative mb-1">
-                          <div className="h-11 w-11 rounded-full border-2 border-white bg-slate-800 overflow-hidden shadow-lg flex items-center justify-center">
-                            <div className="w-full h-full rounded-full bg-gradient-to-tr from-sky-400 via-indigo-500 to-pink-500 flex items-center justify-center text-white text-[14px] font-bold">
-                              {displayAccount.charAt(0).toUpperCase()}
-                            </div>
-                          </div>
-                          <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-rose-500 text-white shadow-md hover:scale-110 cursor-pointer transition-transform">
-                            <PlusIcon className="h-2.5 w-2.5 stroke-[3]" />
-                          </div>
-                        </div>
-
-                        {/* 2. Heart / Like Button */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setIsLiked(!isLiked);
-                          }}
-                          className="flex flex-col items-center group transition-transform active:scale-75 cursor-pointer"
-                        >
-                          <div
-                            className={`p-0.5 rounded-full ${isLiked ? 'text-rose-500' : 'text-white drop-shadow-md'}`}
-                          >
-                            {isLiked ? (
-                              <HeartIconSolid className="h-8 w-8 text-rose-500 animate-pulse" />
-                            ) : (
-                              <HeartIcon className="h-8 w-8 stroke-[2]" />
-                            )}
-                          </div>
-                          <span className="text-[11.5px] font-bold text-white drop-shadow-md">
-                            {isLiked ? '248.6K' : '248.5K'}
-                          </span>
-                        </button>
-
-                        {/* 3. Comment Button */}
-                        <div className="flex flex-col items-center cursor-pointer hover:scale-105 transition-transform">
-                          <div className="p-0.5 text-white drop-shadow-md">
-                            <ChatBubbleOvalLeftEllipsisIcon className="h-8 w-8 stroke-[2]" />
-                          </div>
-                          <span className="text-[11.5px] font-bold text-white drop-shadow-md">
-                            1,842
-                          </span>
-                        </div>
-
-                        {/* 4. Bookmark / Favorite Button */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setIsBookmarked(!isBookmarked);
-                          }}
-                          className="flex flex-col items-center group transition-transform active:scale-75 cursor-pointer"
-                        >
-                          <div
-                            className={`p-0.5 rounded-full ${isBookmarked ? 'text-amber-400' : 'text-white drop-shadow-md'}`}
-                          >
-                            {isBookmarked ? (
-                              <BookmarkIconSolid className="h-8 w-8 text-amber-400" />
-                            ) : (
-                              <BookmarkIcon className="h-8 w-8 stroke-[2]" />
-                            )}
-                          </div>
-                          <span className="text-[11.5px] font-bold text-white drop-shadow-md">
-                            {isBookmarked ? '34.3K' : '34.2K'}
-                          </span>
-                        </button>
-
-                        {/* 5. Share Button */}
-                        <div className="flex flex-col items-center cursor-pointer hover:scale-105 transition-transform">
-                          <div className="p-0.5 text-white drop-shadow-md">
-                            <ShareIcon className="h-7 w-7 stroke-[2]" />
-                          </div>
-                          <span className="text-[11.5px] font-bold text-white drop-shadow-md">
-                            12.8K
-                          </span>
-                        </div>
-
-                        {/* 6. Rotating Vinyl Record Sound Disc (Tap to mute/unmute audio) */}
-                        <div
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleMute();
-                          }}
-                          className="relative mt-1 cursor-pointer hover:scale-110 active:scale-95 transition-transform"
-                          title={isMuted ? 'Nyalakan Audio' : 'Matikan Audio'}
-                        >
-                          <div
-                            className={`h-9 w-9 rounded-full border border-slate-700 bg-neutral-900 shadow-xl overflow-hidden flex items-center justify-center ${
-                              isPlaying && !isMuted ? 'animate-spin' : ''
-                            }`}
-                            style={{ animationDuration: '3.5s' }}
-                          >
-                            <div className="h-[18px] w-[18px] rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center">
-                              <span
-                                className={`h-1.5 w-1.5 rounded-full ${isMuted ? 'bg-rose-500' : 'bg-emerald-400'}`}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Bottom TikTok Tab Navigation Bar — sits above the iOS home-indicator safe area */}
-                    <div className="h-[50px] border-t border-white/10 flex items-center justify-between px-1 pointer-events-auto bg-gradient-to-t from-black/85 via-black/50 to-transparent flex-shrink-0">
-                      {/* 1. Beranda */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveBottomTab('home');
-                        }}
-                        className="flex flex-col items-center justify-center flex-1 h-full cursor-pointer transition-colors group"
-                      >
-                        {activeBottomTab === 'home' ? (
-                          <HomeIconSolid className="h-[23px] w-[23px] text-white drop-shadow-sm" />
-                        ) : (
-                          <HomeIcon className="h-[23px] w-[23px] text-white/70 group-hover:text-white stroke-[2]" />
-                        )}
-                        <span
-                          className={`text-[10px] mt-1 leading-none ${activeBottomTab === 'home' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}
-                        >
-                          Beranda
-                        </span>
-                      </button>
-
-                      {/* 2. Teman */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveBottomTab('friends');
-                        }}
-                        className="flex flex-col items-center justify-center flex-1 h-full cursor-pointer transition-colors group"
-                      >
-                        {activeBottomTab === 'friends' ? (
-                          <UserGroupIconSolid className="h-[23px] w-[23px] text-white drop-shadow-sm" />
-                        ) : (
-                          <UserGroupIcon className="h-[23px] w-[23px] text-white/70 group-hover:text-white stroke-[2]" />
-                        )}
-                        <span
-                          className={`text-[10px] mt-1 leading-none ${activeBottomTab === 'friends' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}
-                        >
-                          Teman
-                        </span>
-                      </button>
-
-                      {/* 3. Center Create [+] Button */}
-                      <div
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex flex-col items-center justify-center flex-1 h-full cursor-pointer hover:scale-105 active:scale-95 transition-transform"
-                        title="Buat Video"
-                      >
-                        <div className="relative flex h-[26px] w-[41px] items-center justify-center">
-                          <div className="absolute inset-y-0 left-0 w-[32px] rounded-[8px] bg-[#00f2fe]" />
-                          <div className="absolute inset-y-0 right-0 w-[32px] rounded-[8px] bg-[#fe0979]" />
-                          <div className="relative flex h-full w-[34px] items-center justify-center rounded-[7px] bg-white text-black shadow-xs">
-                            <PlusIcon className="h-4 w-4 stroke-[3] text-black" />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* 4. Kotak Masuk */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveBottomTab('inbox');
-                        }}
-                        className="flex flex-col items-center justify-center flex-1 h-full cursor-pointer transition-colors group"
-                      >
-                        <div className="relative">
-                          {activeBottomTab === 'inbox' ? (
-                            <ChatBubbleOvalLeftEllipsisIconSolid className="h-[23px] w-[23px] text-white drop-shadow-sm" />
-                          ) : (
-                            <ChatBubbleOvalLeftEllipsisIcon className="h-[23px] w-[23px] text-white/70 group-hover:text-white stroke-[2]" />
-                          )}
-                          <span className="absolute -top-0.5 -right-1 h-2 w-2 rounded-full bg-rose-500 ring-1 ring-black" />
-                        </div>
-                        <span
-                          className={`text-[10px] mt-1 leading-none whitespace-nowrap ${activeBottomTab === 'inbox' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}
-                        >
-                          Kotak Masuk
-                        </span>
-                      </button>
-
-                      {/* 5. Profil */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveBottomTab('profile');
-                        }}
-                        className="flex flex-col items-center justify-center flex-1 h-full cursor-pointer transition-colors group"
-                      >
-                        {activeBottomTab === 'profile' ? (
-                          <UserIconSolid className="h-[23px] w-[23px] text-white drop-shadow-sm" />
-                        ) : (
-                          <UserIconOutline className="h-[23px] w-[23px] text-white/70 group-hover:text-white stroke-[2]" />
-                        )}
-                        <span
-                          className={`text-[10px] mt-1 leading-none ${activeBottomTab === 'profile' ? 'text-white font-extrabold' : 'text-white/70 font-semibold group-hover:text-white'}`}
-                        >
-                          Profil
-                        </span>
-                      </button>
-                    </div>
-
-                    {/* iOS home-indicator safe area (34px) */}
-                    <div className="h-[34px] bg-gradient-to-b from-black/50 to-black/85 flex-shrink-0" />
-                  </div>
-                )}
-
-                {/* ── 2. INSTAGRAM REELS UI OVERLAY ── */}
-                {overlayMode === 'reels' && (
-                  <div className="absolute inset-0 pointer-events-none z-25 flex flex-col justify-between overflow-hidden">
-                    {/* Top Reels Header (Below iOS 18/26 Status Bar) */}
-                    <div className="pt-[46px] px-4 flex items-center justify-between text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
-                      <div className="flex items-center gap-1">
-                        <span className="text-[15px] font-bold tracking-tight">Reels</span>
-                        <svg
-                          className="w-4 h-4 text-white"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2.5}
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="m19.5 8.25-7.5 7.5-7.5-7.5"
-                          />
-                        </svg>
-                      </div>
-                      <svg
-                        className="w-5 h-5 text-white"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z"
-                        />
-                      </svg>
-                    </div>
-
-                    {/* Right Action Icons Column (Reels Style) */}
-                    <div className="absolute right-3 bottom-14 flex flex-col items-center gap-4 z-25 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
-                      <div className="flex flex-col items-center">
-                        <svg
-                          className="w-7 h-7 text-white"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z"
-                          />
-                        </svg>
-                        <span className="text-[11px] font-semibold text-white mt-0.5">184K</span>
-                      </div>
-
-                      <div className="flex flex-col items-center">
-                        <svg
-                          className="w-7 h-7 text-white"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641a4.483 4.483 0 0 1-.923 1.785A5.969 5.969 0 0 0 6 21c1.282 0 2.47-.402 3.445-1.087.81.22 1.668.337 2.555.337Z"
-                          />
-                        </svg>
-                        <span className="text-[11px] font-semibold text-white mt-0.5">1,290</span>
-                      </div>
-
-                      <div className="flex flex-col items-center">
-                        <svg
-                          className="w-7 h-7 text-white"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5"
-                          />
-                        </svg>
-                        <span className="text-[11px] font-semibold text-white mt-0.5">42K</span>
-                      </div>
-
-                      {/* 3 dots */}
-                      <div className="flex flex-col items-center">
-                        <svg
-                          className="w-7 h-7 text-white"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M6.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM12.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0ZM18.75 12a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z"
-                          />
-                        </svg>
-                      </div>
-
-                      {/* Audio square thumbnail */}
-                      <div className="w-8 h-8 rounded-md border border-white/60 bg-slate-900 p-0.5 flex items-center justify-center">
-                        <div className="w-full h-full bg-gradient-to-tr from-fuchsia-600 to-amber-500 rounded-sm flex items-center justify-center text-[9px] text-white">
-                          ♫
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Bottom Left Creator & Caption Info */}
-                    <div className="px-3.5 pb-12 flex flex-col text-left z-25 max-w-[78%] drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-9 h-9 rounded-full border border-white p-0.5 bg-gradient-to-tr from-yellow-400 via-rose-500 to-purple-600 flex items-center justify-center">
-                          <div className="w-full h-full rounded-full bg-slate-950 flex items-center justify-center text-white text-[11px] font-bold">
-                            {displayAccount.charAt(0).toUpperCase()}
-                          </div>
-                        </div>
-                        <span className="text-[14px] font-bold text-white tracking-tight">
-                          @{displayAccount}
-                        </span>
-                        <button className="px-2.5 py-1 rounded-md border border-white/70 text-[11.5px] font-bold text-white ml-1">
-                          Ikuti
-                        </button>
-                      </div>
-                      <p className="text-[13px] text-white/95 leading-tight mt-1.5 line-clamp-2">
-                        {displayCaption}
-                      </p>
-                      <div className="flex items-center gap-1 mt-1 text-[11.5px] text-white/80">
-                        <span>♫ Audio asli • {displayAccount}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* ── 3. YOUTUBE SHORTS UI OVERLAY ── */}
-                {overlayMode === 'shorts' && (
-                  <div className="absolute inset-0 pointer-events-none z-25 flex flex-col justify-between overflow-hidden">
-                    {/* Top Shorts Header (Below iOS 18/26 Status Bar) */}
-                    <div className="pt-[46px] px-4 flex items-center justify-between text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]">
-                      <div className="flex items-center gap-1">
-                        <span className="text-[15px] font-black tracking-tight text-white font-['Outfit']">
-                          Shorts
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <svg
-                          className="w-5 h-5 text-white"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
-                          />
-                        </svg>
-                        <svg
-                          className="w-5 h-5 text-white"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={2}
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M12 6.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 12.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5ZM12 18.75a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5Z"
-                          />
-                        </svg>
-                      </div>
-                    </div>
-
-                    {/* Right Action Icons Column (Shorts Style) */}
-                    <div className="absolute right-3 bottom-14 flex flex-col items-center gap-3.5 z-25 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
-                      <div className="flex flex-col items-center">
-                        <svg
-                          className="w-7 h-7 text-white"
-                          viewBox="0 0 24 24"
-                          fill="currentColor"
-                          aria-hidden="true"
-                        >
-                          <path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z" />
-                        </svg>
-                        <span className="text-[11px] font-semibold text-white mt-0.5">312K</span>
-                      </div>
-
-                      <div className="flex flex-col items-center">
-                        <svg
-                          className="w-7 h-7 text-white"
-                          viewBox="0 0 24 24"
-                          fill="currentColor"
-                          aria-hidden="true"
-                        >
-                          <path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v2c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z" />
-                        </svg>
-                        <span className="text-[11px] font-semibold text-white mt-0.5">Dislike</span>
-                      </div>
-
-                      <div className="flex flex-col items-center">
-                        <ChatBubbleOvalLeftEllipsisIconSolid className="w-7 h-7 text-white" />
-                        <span className="text-[11px] font-semibold text-white mt-0.5">2.4K</span>
-                      </div>
-
-                      <div className="flex flex-col items-center">
-                        <ShareIcon className="w-7 h-7 text-white stroke-[2.5]" />
-                        <span className="text-[11px] font-semibold text-white mt-0.5">Bagikan</span>
-                      </div>
-
-                      {/* Sound square */}
-                      <div className="w-8 h-8 rounded-md border border-white/60 bg-red-600 p-0.5 flex items-center justify-center">
-                        <span className="text-[10px] text-white">▶</span>
-                      </div>
-                    </div>
-
-                    {/* Bottom Left Shorts Creator & Caption Info */}
-                    <div className="px-3.5 pb-12 flex flex-col text-left z-25 max-w-[78%] drop-shadow-[0_2px_4px_rgba(0,0,0,0.95)]">
-                      <div className="flex items-center gap-1.5">
-                        <div className="w-7 h-7 rounded-full bg-red-600 flex items-center justify-center text-white text-[11px] font-bold">
-                          {displayAccount.charAt(0).toUpperCase()}
-                        </div>
-                        <span className="text-[14px] font-bold text-white tracking-tight">
-                          @{displayAccount}
-                        </span>
-                        <button className="px-2.5 py-1 rounded-full bg-white text-black text-[11px] font-black uppercase tracking-wider ml-1">
-                          Subscribe
-                        </button>
-                      </div>
-                      <p className="text-[13px] text-white/95 leading-tight mt-1.5 line-clamp-2">
-                        {displayCaption}
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* ── LIVE GLASS WATERMARK BADGES (Top Safe Zone) ── */}
+                {/* ── LIVE LIQUID GLASS WATERMARK (Top Safe Zone — No Background) ── */}
                 {/* Parent hanya mengaktifkan `watermarkEnabled` setelah step
                     Branding terbuka (pre-render), jadi badge tidak muncul di
                     tahap config awal. */}
                 {watermarkEnabled && !isRenderedClip && (
-                  <div className="absolute top-12 inset-x-3.5 flex items-center justify-between pointer-events-none z-30">
-                    <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#121418]/75 backdrop-blur-md border border-white/15 shadow-[0_4px_12px_rgba(0,0,0,0.5)] max-w-[55%]">
-                      <span className="text-[9.5px] text-white/90 font-medium truncate tracking-wide">
-                        <span className="text-cyan-400 mr-1 text-[8px]">▶</span>Source:{' '}
-                        {sourceWatermark || 'Nama Channel'}
-                      </span>
-                    </div>
+                  <div className="absolute top-12 inset-x-4 flex items-center justify-between pointer-events-none z-30">
+                    <span className="liquid-glass-text text-[10px] font-semibold tracking-wide truncate max-w-[58%]">
+                      Source: {sourceWatermark || 'Nama Channel'}
+                    </span>
 
-                    <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#121418]/75 backdrop-blur-md border border-white/15 shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
-                      <span className="text-[10px] font-bold text-amber-300 font-mono tracking-tight">
-                        {accountWatermark
-                          ? accountWatermark.startsWith('@')
-                            ? accountWatermark
-                            : `@${accountWatermark}`
-                          : '@akun_kamu'}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {/* SAFE ZONE OVERLAY GUIDE */}
-                {showSafeZone && (
-                  <div className="absolute inset-x-[11%] top-[12%] bottom-[20%] border-2 border-dashed border-amber-400/80 rounded-2xl pointer-events-none z-30 flex flex-col justify-between p-2">
-                    <div className="bg-amber-500 text-black font-mono font-bold text-[8px] px-1.5 py-0.5 rounded self-start shadow-xs">
-                      TIKTOK SAFE ZONE (9:16)
-                    </div>
-                    <div className="bg-amber-500 text-black font-mono font-bold text-[8px] px-1.5 py-0.5 rounded self-end shadow-xs">
-                      CONTENT CLEAR AREA
-                    </div>
+                    <span className="liquid-glass-text text-[10.5px] font-bold font-mono tracking-tight">
+                      {accountWatermark
+                        ? accountWatermark.startsWith('@')
+                          ? accountWatermark
+                          : `@${accountWatermark}`
+                        : '@akun_kamu'}
+                    </span>
                   </div>
                 )}
 
@@ -1672,6 +1130,7 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
             {playbackRate}x
           </button>
         </div>
+      </div>
       </div>
     </div>
   );

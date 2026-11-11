@@ -24,7 +24,18 @@ if not exist ".venv" (
 echo [*] Menginstall dependencies ke .venv...
 call .venv\Scripts\activate.bat
 python -m pip install --upgrade pip setuptools wheel
+
+:: Pasang PyTorch CPU-only terlebih dahulu agar pip install -e . tidak mendownload CUDA multi-GB
+python -c "import torch" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [*] Menginstall PyTorch CPU-only (hemat ~4 GB disk)...
+    pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+) else (
+    echo [✓] PyTorch sudah terpasang.
+)
+
 pip install -e .
+pip cache purge >nul 2>&1
 
 :: 3. Build Frontend jika belum tersedia
 if not exist "frontend\dist\index.html" (

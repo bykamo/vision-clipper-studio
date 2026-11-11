@@ -10,6 +10,7 @@ import numpy as np
 from backend.renderer import (
     SceneCutDetector,
     _build_shot_trajectory,
+    _natural_padding,
     _parse_loudnorm_json,
     _write_crop_commands,
     build_audio_filter,
@@ -17,6 +18,9 @@ from backend.renderer import (
     build_split_screen_graph,
     _calc_margin_v,
     generate_ass_subtitles,
+    detect_tracking_engines,
+    select_tracking_engine,
+    compute_smart_crop_trajectory,
 )
 
 
@@ -315,11 +319,14 @@ class SplitScreenAndSubtitleEnhancementTest(unittest.TestCase):
             with open(ass_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            self.assertIn("Style: GlassSource,Plus Jakarta Sans,32", content)
-            self.assertIn("Style: GlassAccount,Plus Jakarta Sans,34", content)
-            self.assertIn("&H70181412", content)  # Smoked glass color
-            self.assertIn("Dialogue: 0,0:00:00.00,0:00:05.00,GlassSource,,0,0,0,,▶  Source: Deddy Corbuzier", content)
-            self.assertIn("Dialogue: 0,0:00:00.00,0:00:05.00,GlassAccount,,0,0,0,,@visionclipper", content)
+            self.assertIn("Style: GlassSource,Plus Jakarta Sans,34", content)
+            self.assertIn("Style: GlassAccount,Plus Jakarta Sans,36", content)
+            # Liquid glass: BorderStyle=1 (tanpa background box BorderStyle=3 / &H70181412)
+            self.assertNotIn("&H70181412", content)
+            self.assertNotIn(",3,14,3,", content)
+            self.assertNotIn("▶", content)
+            self.assertIn("Source: Deddy Corbuzier", content)
+            self.assertIn("@visionclipper", content)
             self.assertIn("ViralStyle", content)
         finally:
             if os.path.exists(ass_path):
@@ -347,7 +354,8 @@ class SplitScreenAndSubtitleEnhancementTest(unittest.TestCase):
 
             self.assertIn("Style: GlassSource", content)
             self.assertIn("Style: GlassAccount", content)
-            self.assertIn("▶  Source: Close The Door", content)
+            self.assertNotIn("▶", content)
+            self.assertIn("Source: Close The Door", content)
             self.assertIn("@myhandle", content)
             self.assertNotIn("ViralStyle", content)
         finally:
@@ -428,10 +436,119 @@ class SplitScreenAndSubtitleEnhancementTest(unittest.TestCase):
                 content = f.read()
 
             self.assertIn("ViralStyle", content)
-            self.assertIn("&H0000FFFF&", content)
+            self.assertIn("&H0099D334&", content)
         finally:
             if os.path.exists(ass_path):
                 os.remove(ass_path)
+
+
+class TrackingEngineSelectionTest(unittest.TestCase):
+    def test_detect_tracking_engines_prefers_yunet_with_yolo_fallback(self):
+        with patch("backend.renderer._is_yunet_available", return_value=True), \
+             patch("backend.renderer._is_yolo_available", return_value=True), \
+             patch("backend.renderer._is_haar_available", return_value=True), \
+             patch("backend.renderer._get_torch_device", return_value="cpu"):
+            info = detect_tracking_engines()
+            self.assertEqual(info["recommended"], "yunet")
+            self.assertEqual(info["fallback"], "yolo")
+            self.assertEqual(info["available"], ["yunet", "yolo", "haar"])
+
+            plan = select_tracking_engine("auto")
+            self.assertEqual(plan["primary"], "yunet")
+            self.assertEqual(plan["fallback"], "yolo")
+
+    def test_select_tracking_engine_respects_explicit_preference_and_fallbacks(self):
+        with patch("backend.renderer._is_yunet_available", return_value=True), \
+             patch("backend.renderer._is_yolo_available", return_value=True), \
+             patch("backend.renderer._is_haar_available", return_value=True), \
+             patch("backend.renderer._get_torch_device", return_value="cuda"):
+            plan_yolo = select_tracking_engine("yolo")
+            self.assertEqual(plan_yolo["primary"], "yolo")
+            self.assertEqual(plan_yolo["fallback"], "yunet")
+
+            plan_yunet = select_tracking_engine("yunet")
+            self.assertEqual(plan_yunet["primary"], "yunet")
+            self.assertEqual(plan_yunet["fallback"], "haar")
+
+        # Jika YuNet tidak tersedia, otomatis pakai YOLO
+        with patch("backend.renderer._is_yunet_available", return_value=False), \
+             patch("backend.renderer._is_yolo_available", return_value=True), \
+             patch("backend.renderer._is_haar_available", return_value=True), \
+             patch("backend.renderer._get_torch_device", return_value="cpu"):
+            plan = select_tracking_engine("auto")
+            self.assertEqual(plan["primary"], "yolo")
+            self.assertEqual(plan["fallback"], "haar")
+
+    @patch("backend.renderer._probe_video_stream", return_value=(1920, 1080, 30.0))
+    @patch("backend.renderer._iter_ffmpeg_frames")
+    @patch("backend.renderer._get_yolo_model")
+    @patch("backend.renderer._get_yunet_detector")
+    @patch("backend.renderer._detect_faces_yunet")
+    def test_compute_trajectory_skips_yolo_load_when_yunet_succeeds(
+        self, mock_detect_yunet, mock_get_yunet, mock_get_yolo, mock_iter_frames, _mock_probe
+    ):
+        frames = [np.zeros((360, 640, 3), dtype=np.uint8) for _ in range(15)]
+        mock_iter_frames.return_value = iter(frames)
+        mock_get_yunet.return_value = MagicMock()
+        mock_detect_yunet.return_value = [{"cx": 200.0, "cy": 150.0, "w": 60.0, "h": 80.0, "area": 4800.0, "engine": "yunet"}]
+
+        with patch("backend.renderer.select_tracking_engine", return_value={
+            "requested": "auto", "primary": "yunet", "fallback": "yolo", "device": "cpu", "available": ["yunet", "yolo"]
+        }):
+            traj = compute_smart_crop_trajectory("dummy.mp4", 0.0, 0.5)
+
+        self.assertEqual(traj["engine"], "yunet")
+        self.assertGreater(traj["engine_hits"]["yunet"], 0)
+        self.assertEqual(traj["engine_hits"]["yolo"], 0)
+        # Efisiensi utama: YOLOv8 tidak pernah di-load saat YuNet sudah mendeteksi wajah
+        mock_get_yolo.assert_not_called()
+
+    @patch("backend.renderer._probe_video_stream", return_value=(1920, 1080, 30.0))
+    @patch("backend.renderer._iter_ffmpeg_frames")
+    @patch("backend.renderer._get_yolo_model")
+    @patch("backend.renderer._get_yunet_detector")
+    @patch("backend.renderer._detect_faces_yunet", return_value=[])
+    @patch("backend.renderer._detect_persons_yolo")
+    def test_compute_trajectory_lazy_loads_yolo_when_yunet_misses(
+        self, mock_detect_yolo, _mock_detect_yunet, mock_get_yunet, mock_get_yolo, mock_iter_frames, _mock_probe
+    ):
+        frames = [np.zeros((360, 640, 3), dtype=np.uint8) for _ in range(15)]
+        mock_iter_frames.return_value = iter(frames)
+        mock_get_yunet.return_value = MagicMock()
+        mock_get_yolo.return_value = MagicMock()
+        mock_detect_yolo.return_value = [{"cx": 480.0, "cy": 200.0, "w": 120.0, "h": 240.0, "area": 28800.0, "engine": "yolo"}]
+
+        with patch("backend.renderer.select_tracking_engine", return_value={
+            "requested": "auto", "primary": "yunet", "fallback": "yolo", "device": "cpu", "available": ["yunet", "yolo"]
+        }):
+            traj = compute_smart_crop_trajectory("dummy.mp4", 0.0, 0.5)
+
+        mock_get_yolo.assert_called_once()
+        self.assertGreater(traj["engine_hits"]["yolo"], 0)
+
+
+class NaturalPaddingTest(unittest.TestCase):
+    def test_tail_does_not_leak_into_next_word(self):
+        # Kata saat ini selesai di 20.00, kata berikutnya mulai di 20.05 (gap cuma 50ms)
+        segments = [
+            {"words": [{"word": "terakhir", "start": 18.0, "end": 20.0}]},
+            {"words": [{"word": "berikutnya", "start": 20.05, "end": 21.0}]},
+        ]
+        lead, tail = _natural_padding(segments, clip_start=18.0, clip_end=20.0)
+        # 20.0 + tail HARUS kurang dari 20.05 (tidak boleh menabrak kata berikutnya)
+        self.assertLess(20.0 + tail, 20.05)
+        self.assertGreaterEqual(tail, 0.0)
+
+    def test_tail_allows_natural_decay_when_silence_follows(self):
+        # Ada jeda hening panjang setelah 20.0 (kata berikutnya baru di 25.0)
+        segments = [
+            {"words": [{"word": "terakhir", "start": 18.0, "end": 20.0}]},
+            {"words": [{"word": "berikutnya", "start": 25.0, "end": 26.0}]},
+        ]
+        lead, tail = _natural_padding(segments, clip_start=18.0, clip_end=20.0)
+        self.assertGreater(tail, 0.1)
+        self.assertLessEqual(tail, 0.50)
+
 
 if __name__ == "__main__":
     unittest.main()

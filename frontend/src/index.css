@@ -59,15 +59,8 @@
 }
 
 .step-connector {
-  background-image: repeating-linear-gradient(
-    to bottom,
-    rgba(52, 211, 153, 0.75) 0 4px,
-    transparent 4px 12px
-  );
-  background-repeat: repeat-y;
-  animation:
-    step-dash-draw 240ms ease-out both,
-    step-dash-march 400ms linear 2;
+  background-color: rgba(52, 211, 153, 0.55);
+  animation: step-dash-draw 240ms ease-out both;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -81,6 +74,18 @@
   * {
     box-sizing: border-box;
   }
+
+  /* ── Smooth scrolling ── */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+
   body {
     background-color: #0b0f14;
     color: #f1f5f9;
@@ -107,6 +112,26 @@
   pre,
   .font-mono {
     font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Indikator fokus keyboard yang konsisten (hanya muncul saat navigasi
+     keyboard, tidak saat klik mouse). Input teks punya gaya fokus sendiri. */
+  :where(
+    button,
+    a[href],
+    summary,
+    [role='button'],
+    [role='switch'],
+    [role='checkbox'],
+    [role='tab'],
+    [tabindex]:not([tabindex='-1']),
+    input[type='checkbox'],
+    input[type='radio'],
+    input[type='range'],
+    select
+  ):focus-visible {
+    outline: 2px solid rgba(52, 211, 153, 0.85);
+    outline-offset: 2px;
   }
 }
 
@@ -137,6 +162,16 @@
 
   .ios-playback-controls {
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  }
+
+  /* Liquid Glass Font Effect (tanpa background box/pill):
+     fill huruf semi-translusen sehingga video menembus + rim kaca putih tajam */
+  .liquid-glass-text {
+    color: rgba(248, 244, 238, 0.58);
+    -webkit-text-stroke: 0.75px rgba(255, 255, 255, 0.88);
+    text-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.55),
+      0 0 8px rgba(255, 255, 255, 0.18);
   }
 
   /* iOS 26 "Liquid Glass" transport */
@@ -257,4 +292,17 @@
     outline-offset: 2px;
     border-radius: 999px;
   }
+}
+
+/* ── Sembunyikan SEMUA scrollbar (tetap bisa di-scroll) ──
+   Diletakkan di luar @layer agar menang atas utility Tailwind
+   seperti `scrollbar-thin` / `scrollbar-none`. */
+* {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE / Edge lama */
+}
+*::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important; /* Chrome / Safari / Edge */
 }

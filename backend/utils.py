@@ -75,10 +75,12 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TEMP_DIR = os.path.join(PROJECT_ROOT, "temp")
 os.makedirs(TEMP_DIR, exist_ok=True)
 DEFAULT_OUT_DIR = os.path.join(PROJECT_ROOT, "clips")
+FONTS_DIR = os.path.join(PROJECT_ROOT, "backend", "fonts")
+os.makedirs(FONTS_DIR, exist_ok=True)
 
 def cleanup_temp_files():
     """Membersihkan sisa file temporary dari sesi sebelumnya."""
-    for _pattern in ["tmp*.wav", "temp_crop_*.mp4", "temp_cinema_*.mp4", "temp_cropcmd_*.txt", "temp_*.ass", "temp_sub*.vtt", "temp_*.mp3"]:
+    for _pattern in ["tmp*.wav", "temp_crop_*.mp4", "temp_cinema_*.mp4", "temp_cropcmd_*.txt", "temp_*.ass", "temp_sub*.vtt", "temp_*.mp3", "trajectory_*.json"]:
         for _f in glob.glob(os.path.join(TEMP_DIR, _pattern)):
             try:
                 os.remove(_f)

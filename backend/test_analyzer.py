@@ -5,6 +5,9 @@ from unittest.mock import patch, MagicMock
 
 from backend.analyzer import (
     build_viral_prompt,
+    build_candidate_discovery_prompt,
+    build_clip_enrichment_prompt,
+    get_persona_guide,
     call_llm_api,
     extract_json_block,
     get_fallback_models,
@@ -380,6 +383,46 @@ class UtilsEnhancementTest(unittest.TestCase):
         with patch("os.path.exists", return_value=True):
             probe = get_ffprobe_binary()
             self.assertEqual(probe, "/opt/ffmpeg_custom/bin/ffprobe")
+
+
+class PersonaAndTemperatureTest(unittest.TestCase):
+    def test_persona_guide_injected_across_all_prompts(self):
+        default_guide = get_persona_guide()
+        self.assertIn("PERSONA KURATOR INDONESIA", default_guide)
+
+        p_viral = build_viral_prompt("[00:00:00 --> 00:00:10] Tes", 2, mode="hook")
+        p_disc = build_candidate_discovery_prompt("[00:00:00 --> 00:00:10] Tes", 5, mode="hook")
+        p_enrich = build_clip_enrichment_prompt(
+            [{"index": 1, "start": 0.0, "end": 10.0, "title": "Tes", "transcript": "Tes"}],
+            mode="hook",
+        )
+        for p in (p_viral, p_disc, p_enrich):
+            self.assertIn("PERSONA KURATOR INDONESIA", p)
+
+    def test_persona_env_override_applies_to_prompts(self):
+        custom = "PERSONA KHUSUS: Bahasa santai Jaksel tanpa basa-basi."
+        with patch.dict(os.environ, {"ROUTER_PERSONA": custom}):
+            self.assertEqual(get_persona_guide(), custom)
+            p_enrich = build_clip_enrichment_prompt(
+                [{"index": 1, "start": 0.0, "end": 10.0, "title": "Tes", "transcript": "Tes"}],
+                mode="hook",
+            )
+            self.assertIn(custom, p_enrich)
+
+    @patch("requests.post")
+    def test_call_llm_api_uses_explicit_temperature(self, mock_post):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = '{"choices": [{"message": {"content": "{}"}}]}'
+        mock_resp.json.return_value = {"choices": [{"message": {"content": "{}"}}]}
+        mock_post.return_value = mock_resp
+
+        call_llm_api(
+            "prompt", "model-primary", "https://api.example.com", "fake-key",
+            temperature=0.75,
+        )
+        sent_payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(sent_payload["temperature"], 0.75)
 
 
 if __name__ == "__main__":

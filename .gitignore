@@ -60,3 +60,14 @@ server_error.log
 vision_clipper.db
 *.pid
 .visionclipper.pid
+
+# Local scripts, reports & analytics (not for commit)
+auth-youtube.sh
+queue_upload.py
+track_views.py
+render_recut_local.sh
+LAPORAN_*.md
+PILAR.md
+PUBLISH*.md
+analytics/
+queue/

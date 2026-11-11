@@ -2,12 +2,15 @@ import unittest
 
 from backend.content_rules import (
     MAX_DURATION,
+    END_GRACE_SEC,
     MIN_HASHTAGS,
     apply_clip_rules,
     apply_content_rules,
+    build_quality,
     clean_caption,
     dedupe_overlapping,
     ensure_closing_question,
+    has_persona_risk,
     is_generic_caption,
     normalize_hashtags,
     snap_clip_end,
@@ -61,9 +64,47 @@ class CaptionRulesTest(unittest.TestCase):
         self.assertNotIn("menurut kalian", result.lower())
         self.assertTrue(result.endswith("?"))
 
+    def test_question_mid_caption_is_kept_and_closing_appended(self):
+        # A rhetorical question in the middle of the caption is fine; the
+        # closing question is appended at the end so the final line provokes
+        # two-word replies about the claim.
+        result = ensure_closing_question(
+            "Ada yang ngerasa gitu gak? Kerja keras gak bikin kaya.",
+            mode="hook",
+            specific="Lu tim lembur atau tim strategi?",
+        )
+        self.assertTrue(result.endswith("Lu tim lembur atau tim strategi?"))
+        self.assertIn("ngerasa gitu gak?", result.lower())
+        self.assertIn("kerja keras gak bikin kaya.", result.lower())
+
     def test_existing_specific_question_is_kept(self):
         caption = "Spesialisasi menang di tahun ke-5. Lu pilih yang mana?"
         self.assertEqual(ensure_closing_question(caption), caption)
+
+    def test_clip_specific_question_is_preferred_over_fallback(self):
+        # When pass 2 returned a clip-specific question, it must replace the
+        # generic fallback instead of "Lu tim yang mana?".
+        result = ensure_closing_question(
+            "Spesialisasi menang di tahun kelima.", mode="hook",
+            specific="Lu pilih spesialis atau generalis?",
+        )
+        self.assertTrue(result.endswith("Lu pilih spesialis atau generalis?"))
+        self.assertNotIn("Lu tim yang mana", result)
+
+    def test_specific_question_not_appended_when_caption_still_ends_in_generic_bait(self):
+        # Vague bait in the caption is swapped for the clip-specific question.
+        result = ensure_closing_question(
+            "Kerja keras gak bikin kaya. Gimana menurut kalian?", mode="hook",
+            specific="Lu tim lembur atau tim strategi?",
+        )
+        self.assertNotIn("menurut kalian", result.lower())
+        self.assertTrue(result.endswith("Lu tim lembur atau tim strategi?"))
+
+    def test_existing_specific_last_question_not_double_appended(self):
+        caption = "Kerja keras gak bikin kaya. Lu tim lembur atau tim strategi?"
+        result = ensure_closing_question(caption, mode="hook", specific="Sesuatu yang beda?")
+        # Last question is already specific → keep caption as-is, no append.
+        self.assertEqual(result, caption)
 
     def test_generic_quote_detected(self):
         self.assertTrue(is_generic_caption("Konsisten itu penting banget"))
@@ -145,6 +186,109 @@ class ApplyRulesTest(unittest.TestCase):
         ]
         result = apply_content_rules(clips, _segments((0, 200, "teks.")), mode="hook")
         self.assertEqual([c["start"] for c in result], [0.0, 100.0])
+
+    def test_whisper_groq_words_without_punctuation_snaps_to_sentence_end(self):
+        # Simulasi output Whisper Groq: kata-kata tidak punya titik, titik ada di segmen
+        segments = [
+            {
+                "start": 0.0,
+                "end": 20.0,
+                "text": "Ini kalimat pertama yang penting.",
+                "words": [
+                    {"word": "Ini", "start": 0.0, "end": 0.4},
+                    {"word": "kalimat", "start": 0.5, "end": 1.0},
+                    {"word": "pertama", "start": 1.1, "end": 1.7},
+                    {"word": "yang", "start": 1.8, "end": 2.1},
+                    {"word": "penting", "start": 2.2, "end": 2.8},
+                ]
+            },
+            {
+                "start": 20.0,
+                "end": 40.0,
+                "text": "Ini kesimpulan inti yang wajib selesai.",
+                "words": [
+                    {"word": "Ini", "start": 20.0, "end": 20.3},
+                    {"word": "kesimpulan", "start": 20.4, "end": 21.2},
+                    {"word": "inti", "start": 21.3, "end": 21.8},
+                    {"word": "yang", "start": 21.9, "end": 22.3},
+                    {"word": "wajib", "start": 22.4, "end": 22.8},
+                    {"word": "selesai", "start": 22.9, "end": 23.5},
+                ]
+            }
+        ]
+        # LLM memotong terlalu cepat di detik 22.5 (sebelum kata 'selesai' di 23.5)
+        clip = {"start": 0.0, "end": 22.5}
+        snap_clip_end(clip, segments, mode="hook")
+        # snap harus maju menuntaskan kalimat sampai detik 23.5
+        self.assertEqual(clip["end"], 23.5)
+
+    def test_avoid_ending_on_hanging_conjunction(self):
+        # Jika LLM memotong di kata sambung "karena"
+        segments = [
+            {
+                "start": 0.0,
+                "end": 25.0,
+                "text": "Pekerjaan ini selesai karena kita fokus.",
+                "words": [
+                    {"word": "Pekerjaan", "start": 0.0, "end": 0.8},
+                    {"word": "ini", "start": 0.9, "end": 1.2},
+                    {"word": "selesai", "start": 1.3, "end": 2.0},
+                    {"word": "karena", "start": 2.1, "end": 2.6},
+                    {"word": "kita", "start": 2.7, "end": 3.0},
+                    {"word": "fokus", "start": 3.1, "end": 3.8},
+                ]
+            }
+        ]
+        clip = {"start": 0.0, "end": 2.6}  # Tepat di kata 'karena'
+        snap_clip_end(clip, segments, mode="hook")
+        # Tidak boleh berhenti di 2.6 (kata 'karena'), melainkan menuntaskan kalimat sampai 'fokus' (3.8)
+        self.assertEqual(clip["end"], 3.8)
+
+    def test_snap_boundary_works_when_segment_has_no_words_array(self):
+        # Segmen monolitik dari Whisper tanpa array words
+        segments = [
+            {"start": 10.0, "end": 25.0, "text": "Ini kalimat pembuka yang cukup panjang."},
+            {"start": 25.0, "end": 45.0, "text": "Ini kelanjutan argumen yang menuntaskan ide."},
+        ]
+        clip = {"start": 11.0, "end": 42.0}
+        snap_clip_end(clip, segments, mode="hook")
+        # Start harus diselaraskan ke awal ujaran terdekat (10.0) dan end menuntaskan ke 45.0
+        self.assertEqual(clip["start"], 10.0)
+        self.assertEqual(clip["end"], 45.0)
+
+
+class PersonaRulesTest(unittest.TestCase):
+    def test_formal_pronoun_normalized_to_lu(self):
+        cleaned = clean_caption("Review jujur ini buat kamu yang mau hemat.")
+        self.assertIn("buat lu", cleaned)
+        self.assertNotIn("kamu", cleaned)
+
+        cleaned_anda = clean_caption("Bagaimana menurut Anda?")
+        self.assertIn("lu", cleaned_anda.lower())
+        self.assertNotIn("anda", cleaned_anda.lower())
+
+    def test_persona_risk_flags_robotic_phrases(self):
+        self.assertTrue(has_persona_risk("Hal ini membuktikan bahwa sistem bekerja."))
+        self.assertTrue(has_persona_risk("Strategi tersebut sangat efektif."))
+        self.assertTrue(has_persona_risk("Sebagai kesimpulan, jangan lupa evaluasi."))
+        self.assertFalse(has_persona_risk("Kerja keras tanpa pola cuma bikin lu capek. Lu tim mana?"))
+
+    def test_quality_flags_duration_grace_and_persona(self):
+        # Durasi 48 detik (di atas MAX_DURATION 45 tapi di bawah 45 + END_GRACE_SEC 6 = 51)
+        clip = {
+            "start": 0.0,
+            "end": 48.0,
+            "caption": "Kerja cerdas lebih penting daripada kerja rodi. Lu tim strategi?",
+            "hashtags": ["#mindset", "#kerja", "#produktivitas"],
+            "hook_line": "Kerja cerdas",
+            "first_comment": "Pin comment",
+        }
+        quality = build_quality(clip, mode="hook")
+        self.assertTrue(quality["duration_ok"])
+        self.assertFalse(quality["in_target"])  # > 40s -> in_target False, tapi duration_ok True
+        self.assertTrue(quality["persona_ok"])
+        self.assertFalse(quality["persona_risk"])
+
 
 if __name__ == "__main__":
     unittest.main()

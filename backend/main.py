@@ -14,7 +14,7 @@ import time as _time
 import uuid
 import asyncio
 from urllib.parse import urlparse
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, File, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from backend import youtube_uploader
@@ -525,13 +525,18 @@ async def bootstrap_session():
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    index_path = os.path.join(SERVE_DIR, "index.html")
-    if not os.path.exists(index_path):
-        # Do not serve raw unbundled TSX/HTML
-        return _set_session_cookie(HTMLResponse(content=FALLBACK_HTML, status_code=200))
-    with open(index_path, "r", encoding="utf-8") as f:
-        html_content = f.read()
-    return _set_session_cookie(HTMLResponse(content=html_content))
+    dist_index = os.path.join(DIST_DIR, "index.html")
+    serve_index = os.path.join(SERVE_DIR, "index.html")
+    # Do not serve raw unbundled TSX/HTML from frontend root directory
+    if os.path.exists(dist_index):
+        with open(dist_index, "r", encoding="utf-8") as f:
+            html_content = f.read()
+        return _set_session_cookie(HTMLResponse(content=html_content))
+    elif SERVE_DIR != FRONTEND_DIR and os.path.exists(serve_index):
+        with open(serve_index, "r", encoding="utf-8") as f:
+            html_content = f.read()
+        return _set_session_cookie(HTMLResponse(content=html_content))
+    return _set_session_cookie(HTMLResponse(content=FALLBACK_HTML, status_code=200))
 
 @app.get("/api/list-dir")
 async def list_dir_api(path: str = ""):
@@ -948,7 +953,7 @@ async def analyze(request: Request, mode: str = "", source: str = "", num_clips:
         return JSONResponse(status_code=409, content={"error": "A worker is already processing a request"})
     if not source.strip():
         return JSONResponse(status_code=400, content={"error": "Source parameter is empty"})
-    if mode and mode not in {"hook", "affiliate"}:
+    if mode and mode not in {"hook", "affiliate", "video", "default"}:
         return JSONResponse(status_code=400, content={"error": "Invalid mode"})
     if whisper_model not in {"groq"}:
         return JSONResponse(status_code=400, content={"error": "Invalid transcription model. Hanya 'groq' yang didukung."})
@@ -972,7 +977,7 @@ async def analyze(request: Request, mode: str = "", source: str = "", num_clips:
         sys.executable, "-u", "-m", "backend.worker",
         "--file", source,
         "--num-clips", str(clip_count),
-        "--mode", mode or "hook",
+        "--mode", "hook" if mode in {"", "hook", "video", "default"} else mode,
         "--model", whisper_model,
         "--source-lang", source_lang,
         "--analyze-only"
@@ -1072,6 +1077,85 @@ async def analysis_clip_words(analysis_id: str = "", index: str = "1"):
         "start": clip_start,
         "end": clip_end,
         "words": words,
+    })
+
+@app.get("/api/smart-crop-trajectory")
+async def smart_crop_trajectory(analysis_id: str = "", index: str = "1"):
+    """Return the cached smart crop trajectory for one analysed clip.
+
+    The preview needs the exact crop positions the renderer will use. Because
+    the renderer adds spoken-word padding around the clip, the endpoint accepts
+    an ``analysis_id`` + ``index`` and recomputes the same padded start/end on
+    the server side (instead of trusting raw path/start/end from the client).
+    """
+    if not _valid_analysis_id(analysis_id):
+        return JSONResponse(status_code=400, content={"error": "Invalid analysis_id"})
+    try:
+        clip_index = int(index)
+    except (TypeError, ValueError):
+        return JSONResponse(status_code=400, content={"error": "index must be an integer"})
+
+    analysis_path = os.path.join(TEMP_ANALYSIS_DIR, f"{analysis_id}.json")
+    if not os.path.exists(analysis_path):
+        return JSONResponse(status_code=404, content={"error": "Analysis file not found"})
+
+    try:
+        with open(analysis_path, "r", encoding="utf-8") as f:
+            analysis = json.load(f)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Failed to read analysis: {e}"})
+
+    clips = analysis.get("clips") or []
+    segments = analysis.get("segments") or []
+    video_path = analysis.get("video_path") or ""
+    if not isinstance(clips, list) or not 1 <= clip_index <= len(clips):
+        return JSONResponse(status_code=400, content={"error": "clip index out of range"})
+    if not video_path:
+        return JSONResponse(status_code=500, content={"error": "Analysis data is missing video_path"})
+
+    clip = clips[clip_index - 1]
+    raw_start = max(0.0, float(clip.get("start", 0.0)))
+    raw_end = float(clip.get("end", 0.0))
+
+    # Padding identik dengan renderer (write side) agar preview == render.
+    from backend.renderer import _natural_padding, get_or_compute_smart_crop_trajectory
+    try:
+        lead, tail = _natural_padding(segments, raw_start, raw_end)
+    except Exception:
+        lead, tail = 0.05, 0.25
+    start = max(0.0, raw_start - lead)
+    end = raw_end + tail
+
+    # Validate the source file the same way /api/video-stream does.
+    raw_path = video_path
+    if not os.path.isabs(raw_path):
+        candidate = os.path.join(PROJECT_ROOT, raw_path)
+        raw_path = candidate if os.path.exists(candidate) else os.path.abspath(raw_path)
+    else:
+        raw_path = os.path.normpath(raw_path)
+    real_path = os.path.realpath(raw_path)
+    if not os.path.exists(real_path) or not os.path.isfile(real_path):
+        return JSONResponse(status_code=404, content={"error": f"Video file not found: {video_path}"})
+    if os.path.splitext(real_path)[1].lower() not in ALLOWED_VIDEO_EXTENSIONS:
+        return JSONResponse(status_code=403, content={"error": "File type not allowed for video streaming"})
+    if not _is_path_safe_and_allowed(real_path, must_exist=True):
+        return JSONResponse(status_code=403, content={"error": "Access to path is forbidden"})
+
+    # Compute off the event loop: face tracking can take seconds on long clips.
+    loop = asyncio.get_running_loop()
+    try:
+        trajectory = await loop.run_in_executor(
+            None, lambda: get_or_compute_smart_crop_trajectory(real_path, start, end)
+        )
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": f"Smart crop tracking failed: {e}"})
+
+    return JSONResponse(content={
+        "analysis_id": analysis_id,
+        "index": clip_index,
+        "start": start,
+        "end": end,
+        **trajectory,
     })
 
 @app.post("/api/render-selected")
@@ -1237,6 +1321,60 @@ async def youtube_disconnect():
     """Disconnect and clear saved YouTube credentials."""
     success = youtube_uploader.disconnect_youtube()
     return {"status": "disconnected" if success else "failed"}
+
+
+# ── YouTube Cookies Endpoints ──
+@app.get("/api/youtube/cookies/status")
+async def youtube_cookies_status():
+    """Check whether cookies.txt exists at project root."""
+    cookies_path = os.path.join(PROJECT_ROOT, "cookies.txt")
+    if os.path.isfile(cookies_path):
+        try:
+            mtime = os.path.getmtime(cookies_path)
+            modified = _time.strftime('%Y-%m-%d %H:%M:%S', _time.localtime(mtime))
+            size = os.path.getsize(cookies_path)
+        except OSError:
+            modified = None
+            size = 0
+        return {
+            "exists": True,
+            "path": cookies_path,
+            "size": size,
+            "modified": modified,
+            "message": f"cookies.txt ditemukan ({size} bytes)",
+        }
+    return {"exists": False, "path": cookies_path, "message": "Belum ada cookies.txt di root project."}
+
+
+@app.post("/api/youtube/cookies")
+async def youtube_cookies_upload(file: UploadFile = File(...)):
+    """Accept an uploaded cookies.txt (Netscape format) and save to project root."""
+    try:
+        content = await file.read()
+        if not content:
+            return JSONResponse(status_code=400, content={"error": "File kosong."})
+
+        # Basic validation: must not contain null bytes (binary file).
+        text = content.decode('utf-8', errors='ignore')
+        if '\x00' in text[:1024]:
+            return JSONResponse(status_code=400, content={"error": "File bukan teks cookies yang valid."})
+
+        # Reject overly large files.
+        if len(content) > 2 * 1024 * 1024:
+            return JSONResponse(status_code=400, content={"error": "File terlalu besar (maks 2MB)."})
+
+        cookies_path = os.path.join(PROJECT_ROOT, "cookies.txt")
+        with open(cookies_path, "wb") as fh:
+            fh.write(content)
+
+        return {
+            "status": "saved",
+            "path": cookies_path,
+            "size": len(content),
+            "message": f"cookies.txt tersimpan ({len(content)} bytes).",
+        }
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @app.post("/api/social/youtube/upload")

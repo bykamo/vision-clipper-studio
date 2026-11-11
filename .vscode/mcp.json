@@ -1,0 +1,10 @@
+{
+  "servers": {
+    "vision-clipper": {
+      "type": "stdio",
+      "command": "${workspaceFolder}/.venv/bin/python",
+      "args": ["-u", "-m", "backend.mcp_server"],
+      "env": {}
+    }
+  }
+}

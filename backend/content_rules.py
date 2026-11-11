@@ -61,6 +61,24 @@ BANNED_AI_PHRASES = (
     "mari kita bahas",
     "jangan lewatkan",
     "ini dia",
+    "sebagai kesimpulan",
+    "perlu diketahui",
+    "dalam video ini",
+    "pada kesempatan ini",
+)
+
+ROBOTIC_PHRASES = (
+    "hal ini",
+    "tersebut",
+    "sebagai kesimpulan",
+    "perlu diingat",
+    "dapat disimpulkan",
+    "sebagai informasi",
+    "perlu diketahui",
+    "dalam video ini",
+    "pada video ini",
+    "sebagai konten kreator",
+    "sebagai seorang",
 )
 
 # Generic engagement bait the prompt used to forbid entirely. A *specific*
@@ -153,6 +171,13 @@ def clean_caption(caption, mode="hook"):
     text = re.sub(r"\s{2,}", " ", text).strip()
     text = re.sub(r"[ \t]*([,.!?])", r"\1", text)
 
+    # Normalisasi sapaan kaku ("Anda", "kamu") ke gaya lu-gw agar konsisten
+    def _swap_pronoun(m):
+        w = m.group(0)
+        return "Lu" if w[0].isupper() and m.start() == 0 else "lu"
+
+    text = re.sub(r"\b(anda|kamu)\b", _swap_pronoun, text, flags=re.IGNORECASE)
+
     if len(text) > MAX_CAPTION_CHARS:
         cut = text[:MAX_CAPTION_CHARS]
         # Prefer cutting on a sentence boundary, else on a word boundary.
@@ -170,26 +195,79 @@ def has_question(text) -> bool:
     return "?" in str(text or "")
 
 
-def ensure_closing_question(caption, mode="hook"):
-    """Guarantee the caption ends with a short, specific question.
+# Words that, when a question consists ONLY of them, mean the question is vague
+# opinion-bait ("Setuju gak?") instead of a specific, claim-tied question.
+_VAGUE_QUESTION_WORDS = {
+    "setuju", "gak", "ga", "nggak", "enggak", "betul", "bener", "gimana",
+    "bagaimana", "menurut", "lu", "kalian", "kamu", "anda", "pendapat",
+    "relate", "iya", "ya", "tidak", "gk",
+}
+
+def _is_vague_question(q):
+    """True when a question is generic opinion-bait with no specific stake."""
+    ql = (q or "").strip().lower()
+    if not ql.endswith("?"):
+        return False
+    if any(bait in ql for bait in GENERIC_BAIT):
+        return True
+    words = re.findall(r"[a-z\u00C0-\u024F]+", ql)
+    if not words:
+        return False
+    # A question made up only of vague bait words ("Setuju gak?", "Gimana?")
+    # has no stake in the actual claim.
+    return all(w in _VAGUE_QUESTION_WORDS for w in words)
+
+
+def _extract_last_question(text):
+    """Return the final question sentence in `text`, or '' if none."""
+    q_idx = (text or "").rfind("?")
+    if q_idx == -1:
+        return ""
+    candidates = [i for i in (text.rfind(".", 0, q_idx), text.rfind("!", 0, q_idx)) if i != -1]
+    start = max(candidates) + 1 if candidates else 0
+    return text[start: q_idx + 1].strip()
+
+
+def ensure_closing_question(caption, mode="hook", specific=None):
+    """Guarantee the caption ends with a short, SPECIFIC closing question.
+
+    Order of preference:
+      1. `specific` — a clip-specific question written by the LLM (pass 2).
+      2. the question already present in the caption, when it is not vague bait.
+      3. the mode fallback (last resort, generic).
 
     A vague bait ("gimana menurut kalian?") is replaced with a concrete
     either/or question, because specific questions are answerable in 2 words
     and therefore actually get replies.
     """
     text = str(caption or "").strip()
-    lowered = text.lower()
     fallback = QUESTION_FALLBACKS.get(mode, QUESTION_FALLBACKS["hook"])
 
-    if has_question(text):
-        if any(bait in lowered for bait in GENERIC_BAIT):
-            head = re.split(r"[?.!]", text)[0].strip()
-            return f"{head} {fallback}".strip() if head else fallback
-        return text
+    specific = str(specific or "").strip().rstrip()
+    if specific and not specific.endswith(("?", "!", ".")):
+        specific += "?"
+
+    last_q = _extract_last_question(text)
+
+    if text.endswith("?"):
+        if last_q and not _is_vague_question(last_q):
+            # Caption already ends on a specific question → keep as-is.
+            return text
+        # Vague question (or question made only of bait words) → swap it.
+        head = re.split(r"[?.!]", text)[0].strip()
+        question = specific or fallback
+        return f"{head} {question}".strip() if head else question
+
+    # No question yet: append the clip-specific one if we have it.
+    if specific:
+        if not text:
+            return specific
+        if text[-1] in ".!?":
+            return f"{text} {specific}"
+        return f"{text} {specific}"
 
     if not text:
         return fallback
-    # Keep the sentence terminator so the appended question reads naturally.
     if text[-1] in ".!?":
         return f"{text} {fallback}"
     return f"{text} {fallback}"
@@ -216,6 +294,23 @@ def is_generic_caption(caption) -> bool:
     return not (has_number or has_contrast or concrete)
 
 
+def has_persona_risk(caption) -> bool:
+    """Deteksi caption yang masih berbau AI kaku atau kalimat kelewat panjang."""
+    text = str(caption or "").strip()
+    if not text:
+        return False
+    lowered = text.lower()
+    if any(phrase in lowered for phrase in ROBOTIC_PHRASES + BANNED_AI_PHRASES):
+        return True
+    if re.search(r"\b(anda|saudara|hadirin|pembaca|pemirsa)\b", lowered):
+        return True
+    # Kalimat tunggal terlalu panjang (>18 kata tanpa jeda titik/tanya/seru) terasa seperti paragraf AI
+    for sentence in re.split(r"[.!?]+", text):
+        if len(sentence.split()) > 18:
+            return True
+    return False
+
+
 def _iter_words(segments):
     for seg in segments or []:
         words = seg.get("words") or []
@@ -231,34 +326,194 @@ def _iter_words(segments):
                 yield text, float(seg.get("start", 0.0)), float(seg.get("end", 0.0))
 
 
-def snap_clip_end(clip, segments, mode="hook"):
-    """Clamp a clip to ``MAX_DURATION`` while cutting on a sentence boundary.
+SENTENCE_ENDINGS = (".", "?", "!", "…")
+HANGING_WORDS = {
+    "karena", "tapi", "tetapi", "jadi", "dan", "atau", "artinya", "makanya", "terus",
+    "nah", "yang", "kalau", "kalo", "soalnya", "sehingga", "supaya", "biar", "trus",
+    "namun", "bahkan", "sedangkan", "yaitu", "contohnya", "misalnya", "serta", "lalu",
+    "kemudian", "sebab", "maka", "dengan", "untuk", "pada", "di", "ke", "dari", "ini",
+    "itu", "bahwa", "adalah", "merupakan",
+}
+PAUSE_SEC = 0.40           # Jeda hening yang dianggap batas jeda alami ucapan
+END_GRACE_SEC = 6.0        # Toleransi tambahan di atas MAX_DURATION demi menyelesaikan kalimat/payoff
+START_BACKTRACK_SEC = 3.5  # Maksimal detik mundur untuk menangkap pembukaan kalimat utuh
 
-    Cutting mid-sentence destroys the payoff, so we look for the last sentence
-    terminator inside the allowed window and end there. If none exists we fall
-    back to the hard limit (still better than a 90s clip nobody finishes).
+
+def _split_segment_words(text, start, end):
+    """Pecah teks segmen menjadi kata dengan timestamp proporsional.
+
+    Salinan lokal dari `backend.transcriber.split_segment_into_words` supaya
+    modul ini tetap bebas dependency (mengimpor transcriber akan menarik
+    `backend.utils`, yang memuat `.env` saat import).
     """
-    start = float(clip.get("start", 0.0))
-    end = float(clip.get("end", 0.0))
+    words_split = str(text or "").strip().split()
+    if not words_split:
+        return []
+    try:
+        start = float(start)
+        end = float(end)
+    except (TypeError, ValueError):
+        return []
+
+    duration = max(0.0, end - start)
+    total_chars = sum(len(w) for w in words_split)
+    words_list = []
+    current = start
+    for word in words_split:
+        word_dur = (len(word) / total_chars) * duration if total_chars > 0 else (duration / len(words_split))
+        words_list.append({"word": word, "start": current, "end": current + word_dur})
+        current += word_dur
+    return words_list
+
+def _build_speech_units(segments):
+    """Mengekstrak unit kata/ujaran berurutan beserta status akhir kalimat & jeda suara.
+
+    Groq Whisper API sering menghasilkan daftar kata (words) tanpa tanda baca,
+    sedangkan tanda baca (titik, tanda tanya, tanda seru) berada pada teks segmen.
+    Fungsi ini menyinkronkan tanda baca segmen ke kata terakhirnya dan menghitung
+    jeda hening (gap) ke kata berikutnya.
+
+    Kalau segmen tidak punya `words` sama sekali, teksnya dipecah proporsional
+    supaya snapping tetap punya unit kata — bukan satu blok beku multi-detik
+    yang membuat start/end tidak bisa diselaraskan.
+    """
+    units = []
+    for seg in segments or []:
+        seg_text = str(seg.get("text", "")).strip()
+        words = [w for w in (seg.get("words") or []) if str(w.get("word", "")).strip()]
+
+        if not words:
+            words = _split_segment_words(seg_text, seg.get("start", 0.0), seg.get("end", 0.0))
+            if not words:
+                continue
+
+        for i, w in enumerate(words):
+            raw_w = str(w.get("word", "")).strip()
+            is_last = (i == len(words) - 1)
+            has_sent_end = raw_w.endswith(SENTENCE_ENDINGS) or (is_last and seg_text.endswith(SENTENCE_ENDINGS))
+            units.append({
+                "text": raw_w,
+                "start": float(w.get("start", 0.0)),
+                "end": float(w.get("end", 0.0)),
+                "sent_end": has_sent_end,
+            })
+
+    units.sort(key=lambda u: u["start"])
+    for i in range(len(units) - 1):
+        units[i]["gap_after"] = max(0.0, units[i + 1]["start"] - units[i]["end"])
+    if units:
+        units[-1]["gap_after"] = 99.0
+    return units
+
+
+def _is_good_sentence_end(u, require_sentence=False):
+    cleaned = re.sub(r"[^\w]+", "", u["text"].lower())
+    if cleaned in HANGING_WORDS:
+        return False
+    if require_sentence:
+        return u["sent_end"]
+    return u["sent_end"] or (u.get("gap_after", 0.0) >= PAUSE_SEC)
+
+
+def _snap_start_boundary(units, start):
+    """Selaraskan start ke awal kata/kalimat terdekat, mundur jika di tengah kalimat."""
+    idx = next((i for i, u in enumerate(units) if u["end"] > start), None)
+    if idx is None:
+        return start
+
+    target_unit = units[idx]
+    # Jika start berjarak terlalu jauh dari batas unit, jangan paksa snap
+    # (tapi momen masih lampau yang jauh tidak boleh ditarik ke tengah kalimat)
+    if abs(start - target_unit["start"]) > 2.5:
+        return start
+
+    j = idx
+    # Mundur ke awal kalimat jika start jatuh di tengah kalimat yang sedang berjalan
+    while (j > 0
+           and not units[j - 1]["sent_end"]
+           and units[j - 1].get("gap_after", 0.0) < PAUSE_SEC
+           and (start - units[j - 1]["start"]) <= START_BACKTRACK_SEC):
+        j -= 1
+        w_prev = re.sub(r"[^\w]+", "", units[j]["text"].lower())
+        if w_prev in {"dan", "atau", "tapi", "soalnya"} and j + 1 <= idx:
+            j += 1
+            break
+
+    return units[j]["start"]
+
+
+def _snap_end_boundary(units, start, end, min_dur, max_dur):
+    """Selaraskan end agar tidak memotong isi penting/payoff di tengah jalan."""
+    lo = start + min_dur
+    hi = start + max_dur
+    hard_max_with_grace = hi + END_GRACE_SEC
+    # Batas pencarian maju: tetap boleh menuntaskan kalimat yang sedang berjalan
+    # sepanjang masih di dalam jendela legal (hi) atau paling lambat end + END_GRACE_SEC.
+    lookahead_limit = min(hard_max_with_grace, max(hi, end + END_GRACE_SEC))
+
+    # 1. Prioritas utama: jika kalimat sedang berlangsung di dekat 'end'
+    #    (dan 'end' belum jauh melampaui hard_max_with_grace), tuntaskan kalimat tersebut.
+    if end <= hard_max_with_grace:
+        for u in units:
+            if u["end"] < end - 0.4:
+                continue
+            if u["end"] > lookahead_limit:
+                break
+            if _is_good_sentence_end(u, require_sentence=True):
+                return u["end"]
+
+    # 2. Cari akhir kalimat penuh dulu, baru jeda hening di dalam jendela legal [lo, hi]
+    window = [u for u in units if lo <= u["end"] <= hi]
+
+    for require_sent in (True, False):
+        good_candidates = [u for u in window if _is_good_sentence_end(u, require_sentence=require_sent)]
+        if good_candidates:
+            return good_candidates[-1]["end"]
+
+    # 3. Fallback: ambil unit bukan hanging word dengan jeda terbesar (tie-break: yang paling akhir)
+    non_hanging = [u for u in window if re.sub(r"[^\w]+", "", u["text"].lower()) not in HANGING_WORDS]
+    if non_hanging:
+        best_pause = max(non_hanging, key=lambda u: (round(u.get("gap_after", 0.0), 2), u["end"]))
+        return best_pause["end"]
+
+    if window:
+        return window[-1]["end"]
+
+    return min(end, hi)
+
+
+def snap_clip_boundaries(clip, segments, mode="hook"):
+    """Clamp dan selaraskan start serta end klip ke batas kata & kalimat alami.
+
+    Mencegah klip terpotong di tengah kalimat/kata dan menghindari berhenti
+    pada kata sambung (hanging words). Menjamin isi penting & payoff tuntas.
+    """
+    try:
+        start = float(clip.get("start", 0.0))
+        end = float(clip.get("end", 0.0))
+    except (TypeError, ValueError):
+        return clip
+
+    units = _build_speech_units(segments)
+    if not units:
+        return clip
+
     max_dur = MAX_DURATION.get(mode, MAX_DURATION["hook"])
     min_dur = MIN_DURATION.get(mode, MIN_DURATION["hook"])
 
-    if end - start <= max_dur:
-        return clip
+    new_start = _snap_start_boundary(units, start)
+    new_end = _snap_end_boundary(units, new_start, end, min_dur, max_dur)
 
-    hard_limit = start + max_dur
-    soft_limit = start + max(max_dur - 6.0, min_dur)
-    best = None
-    for text, _w_start, w_end in _iter_words(segments):
-        if w_end <= soft_limit:
-            continue
-        if w_end > hard_limit:
-            break
-        if text and text[-1] in ".?!":
-            best = w_end
+    if new_end > new_start:
+        clip["start"] = round(new_start, 2)
+        clip["end"] = round(new_end, 2)
 
-    clip["end"] = round(min(hard_limit, best) if best else hard_limit, 2)
     return clip
+
+
+def snap_clip_end(clip, segments, mode="hook"):
+    """Backward-compatible alias untuk snap_clip_boundaries."""
+    return snap_clip_boundaries(clip, segments, mode=mode)
 
 
 def dedupe_overlapping(clips, threshold=0.6):
@@ -296,17 +551,23 @@ def build_quality(clip, mode="hook"):
     caption = clip.get("caption", "")
     hashtags = clip.get("hashtags") or []
 
+    # Toleransi END_GRACE_SEC agar klip yang menuntaskan kalimat (misal 48s)
+    # tidak ditandai error duration_ok di UI dashboard
+    legal_ceiling = hard_max + END_GRACE_SEC
+
     return {
         "duration": duration,
-        # `ok` allows the full legal window; `in_target` is the ideal band the
-        # UI highlights so a 45s clip is not shown as broken, just not ideal.
-        "duration_ok": low <= duration <= hard_max,
+        # `ok` allows the full legal window with sentence grace; `in_target`
+        # is the ideal band the UI highlights for maximum completion rate.
+        "duration_ok": low <= duration <= legal_ceiling,
         "in_target": low <= duration <= high,
         "duration_hint": f"{int(low)}-{int(high)}s",
         "has_question": has_question(caption),
         "hashtag_count": len(hashtags),
         "hashtags_ok": MIN_HASHTAGS <= len(hashtags) <= MAX_HASHTAGS,
         "generic_risk": is_generic_caption(caption),
+        "persona_risk": has_persona_risk(caption),
+        "persona_ok": not has_persona_risk(caption),
         "has_hook": bool(str(clip.get("hook_line") or "").strip()),
         "has_first_comment": bool(str(clip.get("first_comment") or "").strip()),
     }
@@ -320,7 +581,8 @@ def apply_clip_rules(clip, segments, mode="hook"):
     snap_clip_end(clip, segments, mode=mode)
 
     clip["caption"] = ensure_closing_question(
-        clean_caption(clip.get("caption", ""), mode=mode), mode=mode
+        clean_caption(clip.get("caption", ""), mode=mode), mode=mode,
+        specific=clip.get("closing_question"),
     )
     clip["hashtags"] = normalize_hashtags(clip.get("hashtags"), mode=mode)
 

@@ -15,10 +15,11 @@ from backend.analyzer import (
     extract_json_block,
     PermanentLLMError,
 )
-from backend.content_rules import apply_content_rules
+from backend.content_rules import apply_content_rules, snap_clip_boundaries
 from backend.renderer import extract_and_format_clip
 from backend.utils import (
     log,
+    env_float,
     DEFAULT_LLM_MODEL,
     DEFAULT_ENDPOINT,
     DEFAULT_API_KEY,
@@ -54,7 +55,7 @@ def _parse_render_indices(raw_indices, clip_count):
     return indices
 
 
-def _llm_json_with_retries(prompt, compact_prompt, llm_endpoint, llm_key, llm_model, job_id=None, label="analisis"):
+def _llm_json_with_retries(prompt, compact_prompt, llm_endpoint, llm_key, llm_model, job_id=None, label="analisis", temperature=None):
     """Call the LLM with retries + compact-transcript fallback; return parsed JSON dict.
 
     PermanentLLMError (bad key / blocked model) is re-raised immediately —
@@ -74,6 +75,7 @@ def _llm_json_with_retries(prompt, compact_prompt, llm_endpoint, llm_key, llm_mo
             llm_response = call_llm_api(
                 active_prompt, llm_model, llm_endpoint, llm_key,
                 job_id=job_id, compact_prompt=compact_prompt,
+                temperature=temperature,
             )
             data = extract_json_block(llm_response, job_id=job_id)
             if isinstance(data, dict) and data:
@@ -245,6 +247,7 @@ def main():
             data = _llm_json_with_retries(
                 discovery_prompt, compact_discovery, llm_endpoint, llm_key, llm_model,
                 job_id, label="tahap-1 discovery",
+                temperature=env_float("ROUTER_LLM_DISCOVERY_TEMPERATURE", 0.3, min_val=0.0, max_val=1.5),
             )
             candidates = data.get("candidates", []) if isinstance(data, dict) else []
             video_summary = ((data.get("video_summary") or "") if isinstance(data, dict) else "").strip()
@@ -265,6 +268,8 @@ def main():
                         continue
                     raw["start"] = round(s, 2)
                     raw["end"] = round(e, 2)
+                    # Selaraskan batas kandidat ke batas kata & kalimat alami transkrip
+                    snap_clip_boundaries(raw, segments, mode=args.mode)
                     valid_candidates.append(raw)
                 except (TypeError, ValueError):
                     continue
@@ -309,6 +314,7 @@ def main():
             enriched = _llm_json_with_retries(
                 enrich_prompt, None, llm_endpoint, llm_key, llm_model,
                 job_id, label="tahap-2 enrichment",
+                temperature=env_float("ROUTER_LLM_ENRICH_TEMPERATURE", 0.75, min_val=0.0, max_val=1.5),
             )
             by_index = {
                 item.get("index"): item
@@ -320,6 +326,8 @@ def main():
                 for key in ("title_options", "caption", "hashtags"):
                     if extra.get(key):
                         c[key] = extra[key]
+                if extra.get("closing_question"):
+                    c["closing_question"] = extra["closing_question"]
                 if not c.get("title_options"):
                     c["title_options"] = [c.get("title", "Untitled")]
 
