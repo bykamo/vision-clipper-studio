@@ -19,7 +19,10 @@ HOME_TOKEN_FILE = os.path.join(os.path.expanduser("~"), ".visionclipper_youtube_
 TOKEN_FILE = HOME_TOKEN_FILE
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
-    "https://www.googleapis.com/auth/youtube.readonly"
+    "https://www.googleapis.com/auth/youtube.readonly",
+    # force-ssl = izin penuh: perlu untuk EDIT metadata video yang sudah ada
+    # (videos.update: judul, deskripsi, tags, thumbnail, privacy).
+    "https://www.googleapis.com/auth/youtube.force-ssl"
 ]
 
 # Pending OAuth states: state -> {"created_at": timestamp, "code_verifier": optional}

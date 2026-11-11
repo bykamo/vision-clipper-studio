@@ -15,6 +15,27 @@ VisionClipper is a local AI video clipper. Pipeline: download/resolve source →
 
 Drive it through the helper script `scripts/vclip.py`. It prints **one JSON object on stdout**, progress logs on stderr, and exits `0` on success / `1` on failure (`"ok": false`, `"error"`, `"log_tail"`).
 
+## Standing workflow with this user (jack profile)
+
+The user's standing instruction (11 Nov 2026): *"begitu gw kirim link video yt ke sini lo langsung kerjain pake skill visionclipper ... jangan langsung upload kecuali udh gw approve mana aja yang oke"*.
+
+- **A pasted YouTube link IS the request.** No further instruction needed — run `doctor` → `analyze` → `render` yourself and come back with the clip list. Don't ask what to do with the link.
+- **NEVER upload to YouTube without per-clip approval.** Rendering is the deliverable; publishing is a separate step the user authorizes by naming which clips are OK. Approval for one clip is **not** approval for the next batch, and never pre-schedule or arm an upload queue on your own initiative.
+- When clips are ready, present them compactly (number, title, `viral_score`, duration, size) and ask which to publish.
+- After approval: upload via the clipper / `queue_upload.py` with title + description + hashtags complete (never a bare upload), default `private`. If the user vetoes a set of clips, add its project to `queue/exclude.txt` **the same turn**.
+- Spread approved uploads across slots (3-6/day, >=30 min apart) — hygiene for per-clip feed testing, not a fix for anything.
+- One job at a time: never run analyze/render in parallel with another render or with a dashboard job.
+- YouTube downloads from this IP hit the bot check — **`cookies.txt` is already exported in the project root** (mode 600, from the logged-in Brave session) and `downloads`/`backend` pick it up automatically, so `doctor` reports `cookies_txt: true`. Refresh it with `yt-dlp --cookies-from-browser brave --cookies cookies.txt --skip-download <any-URL>` if downloads ever start failing again.
+
+One-shot for a pasted link (analyze + render in a single call, then stop and report):
+
+```bash
+cd /home/kamo/dev/myapp/vision-clipper
+python3 skills/vision-clipper/scripts/vclip.py auto --source "<URL>" --num-clips 5 --mode hook --lang id
+```
+
+Use `--mode affiliate` instead when the source is a selling/promo video. Runs 30 min+ for 5+ clips — raise the command timeout. Output lands in `clips/<video name>/` as `.mp4` + `.txt` (titles, hook, caption, hashtags); read the `.txt` files to build the approval list.
+
 ## MCP server
 
 If you are an MCP-capable agent, VisionClipper is also available as an MCP
@@ -97,7 +118,7 @@ python3 scripts/vclip.py clips --project "<folder>"  # clips + metadata of one p
 - Rendering is long-running. Run it in the foreground and wait for the JSON; do not poll or kill it early. If your harness has a command timeout, raise it (≥ 30 min for 5+ clips).
 - Analysis files in `temp/` expire after ~24 h (cleaned when the server starts). If `render` reports "Analysis file not found", run `analyze` again — transcripts are cached in `downloads/transcripts/`, so it is fast.
 - Prefer passing a local path when the user has one; YouTube downloads from datacenter IPs may need a `cookies.txt` in the project root (`doctor` → `cookies_txt`).
-- Only upload or post clips when the user explicitly asks. YouTube upload needs OAuth, done once in the dashboard — see [references/http-api.md](references/http-api.md).
+- Only upload or post clips when the user explicitly approves **that clip** — a pasted link authorizes clipping, never uploading. Approval for one clip is not approval for the next batch.
 - Respect copyright: remind the user they need rights to repost third-party content when relevant.
 
 ## Troubleshooting
@@ -110,6 +131,25 @@ python3 scripts/vclip.py clips --project "<folder>"  # clips + metadata of one p
 | `Sign in to confirm you're not a bot` | Export YouTube cookies (Netscape format) to `cookies.txt` in the project root |
 | `FFmpeg not found` | Install FFmpeg and make sure it is on `PATH` |
 | `Seleksi keberagaman: 2/5 klip lolos` (log) | Not an error — the video had fewer distinct moments; result is still valid |
+
+## Editing metadata & measuring results (use the Data API, never the Studio UI)
+
+- `videos.update` (retitle/description/tags) needs the scope **`youtube.force-ssl`**. It is in `SCOPES` in `backend/youtube_uploader.py`; a token created before that change must be re-authorized once (dashboard → ⚙️ Settings → YouTube → "Hubungkan YouTube", or `bash auth-youtube.sh`, verify with `bash auth-youtube.sh --check`).
+- **Do not automate the YouTube Studio editor.** Under browser automation the Save button never enables and many requests get blocked (Brave shields), so JS/mouse clicks silently do nothing while the API still reports the old title. Always write metadata through the Data API.
+- Write metadata with a dry-run-first script: print `old title -> new title` for every video, back up the old values to JSON, then apply with `--apply`, and finally **re-read via the API** to confirm.
+- `track_views.py` in the repo root snapshots every video's views/likes/comments into `analytics/views_history.csv` and prints the delta versus the previous snapshot — run it instead of guessing whether a change worked.
+- For "why is this video stuck at 0 views", read facts, not vibes: `videos.list(part='fileDetails')` (owner only) gives width/height/codec/duration, `contentDetails.duration` the length, `statistics` the views. A video at literally 0 views was never tested in the Shorts feed — that is a distribution fact, not a quality verdict.
+- Publish cadence is **not** what kills distribution. Minute-level `publishedAt` data shows clips uploaded minutes apart all performing (3 in 9 min -> all ~1.2k views), so never recommend 1/day or 6-hour gaps as a fix. What matters: publish every clip with title + description + hashtags (placeholder titles with empty descriptions cluster with 0 views), and pick clips on a strong first-3-seconds hook. When the user wants 3-6 clips/day, use `queue_upload.py` to spread them across slots with >=30 min gaps as hygiene, and say plainly that the gap is not the cause.
+
+## Pitfalls seen on this machine
+
+| Symptom | Cause / fix |
+|---|---|
+| `User location is not supported for the API use` on analyze | `ag/gemini-*` routes are geo-blocked from this network — use `ROUTER_LLM_MODEL=tip/deepseek-v-4.1-flash-1017` |
+| Groq `403` (Cloudflare 1010) on transcription | Groq rejects a Python User-Agent; send a browser UA on those requests |
+| JS `element.click()` does nothing on Google/YouTube pages | Trusted events required — drive the page with playwright-core over CDP (`connectOverCDP('http://127.0.0.1:9222')`) and real locator clicks; use the logged-in Brave session for OAuth consent |
+| OAuth link "expired"/dead | Auth URLs live ~10 min and the dashboard mints a new one per click — regenerate immediately before using it |
+| `skill_manage` cannot find `vision-clipper` | It is a symlink into the project; edit `<repo>/skills/vision-clipper/SKILL.md` directly |
 
 ## Other interfaces
 

@@ -489,26 +489,46 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             # Dynamic punchy scale effect on entry
             f.write(f"Dialogue: 0,{start_ass},{end_ass},WordPopStyle,,0,0,0,,{{\\fs{fs}}}{{\\t(0,60,\\fscx110\\fscy110)}}{{\\t(60,120,\\fscx100\\fscy100)}}{text}\n")
 
-def detect_speaker_anchors(video_path, start_time, end_time, width, height, target_width):
+def detect_speaker_anchors(video_path, start_time, end_time, width, height, target_width, tracking_engine=None):
     """
     Scan the clip to find stable discrete speaker anchors (Left, Right, or Center).
     Prevents the camera from wandering into empty spaces or the center of tables.
+    Uses the active tracking engine (YuNet face primary + YOLOv8/Haar fallback) at
+    downscaled resolution for fast and reliable multi-speaker detection.
     """
-    yunet_detector = None
-    if os.path.exists(YUNET_MODEL_PATH) and hasattr(cv2, 'FaceDetectorYN'):
-        try:
-            yunet_detector = cv2.FaceDetectorYN.create(
-                YUNET_MODEL_PATH, "", (width, height),
-                score_threshold=0.60, nms_threshold=0.3
-            )
-        except Exception:
-            yunet_detector = None
+    engine_plan = select_tracking_engine(preferred=tracking_engine)
+    primary = engine_plan["primary"]
+    fallback = engine_plan["fallback"]
+    device = engine_plan["device"]
+
+    ana_w = min(int(width), ANALYSIS_MAX_WIDTH)
+    ana_w = max(2, ana_w - (ana_w % 2))
+    ana_h = max(2, int(round(height * ana_w / float(width))))
+    ana_h = max(2, ana_h - (ana_h % 2))
+    scale_x = float(width) / float(ana_w)
+
+    yunet_detector = _get_yunet_detector(ana_w, ana_h, score_threshold=0.55) if "yunet" in (primary, fallback) else None
+    yolo_model = _get_yolo_model() if primary == "yolo" else None
+    haar_detectors = _get_haar_detectors() if "haar" in (primary, fallback) else None
 
     MIN_CENTER_X = target_width / 2
     MAX_CENTER_X = width - (target_width / 2)
 
     def _clamp(cx):
         return max(MIN_CENTER_X, min(cx, MAX_CENTER_X))
+
+    def _run_engine(eng, bgr_small):
+        nonlocal yolo_model
+        if eng == "yunet" and yunet_detector is not None:
+            return _detect_faces_yunet(yunet_detector, bgr_small, ana_w, ana_h, min_w_ratio=0.035, max_cy_ratio=0.90)
+        if eng == "yolo":
+            if yolo_model is None:
+                yolo_model = _get_yolo_model()
+            if yolo_model is not None:
+                return _detect_persons_yolo(yolo_model, bgr_small, ana_w, ana_h, device=device, min_w_ratio=0.05)
+        if eng == "haar" and haar_detectors:
+            return _detect_faces_haar(haar_detectors, bgr_small, ana_w, ana_h, min_w_ratio=0.04)
+        return []
 
     sample_times = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0]
     clip = None
@@ -519,37 +539,38 @@ def detect_speaker_anchors(video_path, start_time, end_time, width, height, targ
     try:
         clip = VideoFileClip(video_path).subclipped(start_time, min(end_time, start_time + 6.0))
         for st in sample_times:
-            if st >= clip.duration: break
+            if st >= clip.duration:
+                break
             frame = clip.get_frame(st)
-            if yunet_detector is not None:
-                bgr_img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) if len(frame.shape) == 3 and frame.shape[2] == 3 else frame
-                _, raw_faces = yunet_detector.detect(bgr_img)
-                if raw_faces is not None:
-                    faces_in_frame = []
-                    for f in raw_faces:
-                        x, y, w, h = int(f[0]), int(f[1]), int(f[2]), int(f[3])
-                        cx = x + w / 2
-                        cy = y + h / 2
-                        if cx < width * 0.05 or cx > width * 0.95: continue
-                        if cy < height * 0.10 or cy > height * 0.90: continue
-                        if w < width * 0.035 or h < height * 0.05: continue
-                        faces_in_frame.append(cx)
-                    
-                    if len(faces_in_frame) == 1:
-                        solo_positions.append(faces_in_frame[0])
-                        if faces_in_frame[0] < width * 0.50:
-                            left_positions.append(faces_in_frame[0])
-                        else:
-                            right_positions.append(faces_in_frame[0])
-                    elif len(faces_in_frame) >= 2:
-                        faces_in_frame.sort()
+            bgr_img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) if len(frame.shape) == 3 and frame.shape[2] == 3 else frame
+            if bgr_img.shape[1] != ana_w or bgr_img.shape[0] != ana_h:
+                bgr_small = cv2.resize(bgr_img, (ana_w, ana_h), interpolation=cv2.INTER_AREA)
+            else:
+                bgr_small = bgr_img
+
+            detections = _run_engine(primary, bgr_small)
+            if not detections and fallback:
+                detections = _run_engine(fallback, bgr_small)
+
+            if detections:
+                faces_in_frame = [d["cx"] * scale_x for d in detections]
+                if len(faces_in_frame) == 1:
+                    solo_positions.append(faces_in_frame[0])
+                    if faces_in_frame[0] < width * 0.50:
                         left_positions.append(faces_in_frame[0])
-                        right_positions.append(faces_in_frame[-1])
+                    else:
+                        right_positions.append(faces_in_frame[0])
+                elif len(faces_in_frame) >= 2:
+                    faces_in_frame.sort()
+                    left_positions.append(faces_in_frame[0])
+                    right_positions.append(faces_in_frame[-1])
         clip.close()
     except Exception:
         if clip:
-            try: clip.close()
-            except Exception: pass
+            try:
+                clip.close()
+            except Exception:
+                pass
 
     # Compute median / average anchors
     left_anchor = _clamp(np.median(left_positions)) if left_positions else _clamp(width * 0.25)
@@ -562,7 +583,8 @@ def detect_speaker_anchors(video_path, start_time, end_time, width, height, targ
         "left_anchor": float(left_anchor),
         "right_anchor": float(right_anchor),
         "solo_anchor": float(solo_anchor),
-        "is_multi_speaker": is_multi_speaker
+        "is_multi_speaker": is_multi_speaker,
+        "engine": primary,
     }
 
 def apply_split_screen(video_path, start_time, end_time, output_path, anchors=None, job_id=None):
@@ -933,10 +955,16 @@ def build_audio_filter(fade_out_start, pre_chain, target_lufs, measurement=None,
     return ",".join(parts), mode
 
 _YOLO_MODEL_CACHE = {}
+_YUNET_DETECTOR_CACHE = {}
+_HAAR_CASCADE_CACHE = {}
+_YUNET_LOCK = threading.Lock()
 
-# Lebar maksimum frame untuk Pass 1 (deteksi). Deteksi tidak butuh resolusi penuh,
-# jadi decode di resolusi kecil jauh lebih cepat, terutama untuk sumber 1440p/4K.
-ANALYSIS_MAX_WIDTH = 960
+VALID_TRACKING_ENGINES = ("auto", "yunet", "yolo", "haar")
+
+# Lebar maksimum frame untuk Pass 1 (deteksi). 640px (360p untuk 16:9) adalah
+# sweet-spot untuk YuNet (dilatih pada 320x320) maupun YOLOv8 (imgsz=384):
+# memangkas bandwidth pipe FFmpeg & waktu inferensi YuNet >50% dibanding 960p.
+ANALYSIS_MAX_WIDTH = 640
 
 # Fallback statis jika tracking gagal: kunci kursi pembicara (kiri ~28%), BUKAN tengah meja (50%).
 STATIC_FALLBACK_CROP_CHAIN = (
@@ -945,8 +973,195 @@ STATIC_FALLBACK_CROP_CHAIN = (
 )
 
 
+def _is_yunet_available():
+    """Return True jika OpenCV FaceDetectorYN dan model ONNX YuNet tersedia."""
+    try:
+        return bool(
+            hasattr(cv2, "FaceDetectorYN")
+            and os.path.isfile(YUNET_MODEL_PATH)
+            and os.path.getsize(YUNET_MODEL_PATH) > 0
+        )
+    except OSError:
+        return False
+
+
+def _is_yolo_available():
+    """Return True jika paket ultralytics dan bobot yolov8n.pt tersedia (tanpa import berat)."""
+    try:
+        if not (os.path.isfile(YOLO_MODEL_PATH) and os.path.getsize(YOLO_MODEL_PATH) > 0):
+            return False
+        if "ultralytics" in sys.modules:
+            return sys.modules["ultralytics"] is not None
+        import importlib.util
+        return importlib.util.find_spec("ultralytics") is not None
+    except Exception:
+        return False
+
+
+def _is_haar_available():
+    """Return True jika OpenCV CascadeClassifier dan file XML Haar tersedia."""
+    try:
+        return bool(
+            hasattr(cv2, "CascadeClassifier")
+            and os.path.isfile(CASCADE_PATH)
+            and os.path.getsize(CASCADE_PATH) > 0
+        )
+    except OSError:
+        return False
+
+
+def _get_torch_device():
+    try:
+        # Hindari import torch yang lambat di Linux CPU-only jika tidak ada device NVIDIA
+        if (
+            "torch" not in sys.modules
+            and sys.platform.startswith("linux")
+            and not os.path.exists("/dev/nvidia0")
+            and not os.path.exists("/proc/driver/nvidia")
+        ):
+            return "cpu"
+        import torch
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            return "mps"
+        if torch.cuda.is_available():
+            return "cuda"
+    except Exception:
+        pass
+    return "cpu"
+
+
+def detect_tracking_engines():
+    """
+    Deteksi engine face/person tracking yang tersedia di sistem saat ini
+    (YuNet ONNX, YOLOv8, Haar Cascade) beserta akselerator perangkat kerasnya.
+    """
+    yunet_ok = _is_yunet_available()
+    yolo_ok = _is_yolo_available()
+    haar_ok = _is_haar_available()
+    device = _get_torch_device()
+
+    available = []
+    if yunet_ok:
+        available.append("yunet")
+    if yolo_ok:
+        available.append("yolo")
+    if haar_ok:
+        available.append("haar")
+
+    # YuNet diutamakan sebagai primary karena mendeteksi titik tengah WAJAH secara
+    # langsung dan berjalan jauh lebih ringan/cepat di OpenCV C++ DNN (~8-12ms/frame),
+    # sedangkan YOLOv8 menjadi fallback otomatis saat wajah terhalang/menoleh jauh.
+    if yunet_ok:
+        recommended = "yunet"
+        fallback = "yolo" if yolo_ok else ("haar" if haar_ok else None)
+    elif yolo_ok:
+        recommended = "yolo"
+        fallback = "haar" if haar_ok else None
+    elif haar_ok:
+        recommended = "haar"
+        fallback = None
+    else:
+        recommended = "none"
+        fallback = None
+
+    raw_cfg = (
+        os.environ.get("VC_TRACKING_ENGINE")
+        or os.environ.get("VC_FACE_ENGINE")
+        or "auto"
+    ).strip().lower()
+
+    return {
+        "yunet": yunet_ok,
+        "yolo": yolo_ok,
+        "haar": haar_ok,
+        "device": device,
+        "available": available,
+        "recommended": recommended,
+        "fallback": fallback,
+        "configured": raw_cfg,
+    }
+
+
+def select_tracking_engine(preferred=None, job_id=None):
+    """
+    Pilih engine tracking (primary & fallback) paling efisien berdasarkan engine
+    yang terdeteksi di sistem dan preferensi pengguna (`auto`, `yunet`, `yolo`, `haar`).
+    """
+    info = detect_tracking_engines()
+    req = (preferred or info["configured"] or "auto").strip().lower()
+    if req in ("yolov8", "ultralytics"):
+        req = "yolo"
+    if req not in VALID_TRACKING_ENGINES:
+        log(f"Warning: VC_TRACKING_ENGINE='{req}' tidak dikenal, kembali ke 'auto'.", job_id=job_id)
+        req = "auto"
+
+    primary = info["recommended"]
+    fallback = info["fallback"]
+
+    if req == "yunet":
+        if info["yunet"]:
+            primary = "yunet"
+            fallback = "haar" if info["haar"] else None
+        else:
+            log(f"Warning: Engine 'yunet' diminta tetapi tidak tersedia, beralih ke '{primary}'.", job_id=job_id)
+    elif req == "yolo":
+        if info["yolo"]:
+            primary = "yolo"
+            fallback = "yunet" if info["yunet"] else ("haar" if info["haar"] else None)
+        else:
+            log(f"Warning: Engine 'yolo' diminta tetapi tidak tersedia, beralih ke '{primary}'.", job_id=job_id)
+    elif req == "haar":
+        if info["haar"]:
+            primary = "haar"
+            fallback = None
+        else:
+            log(f"Warning: Engine 'haar' diminta tetapi tidak tersedia, beralih ke '{primary}'.", job_id=job_id)
+
+    return {
+        "requested": req,
+        "primary": primary,
+        "fallback": fallback,
+        "device": info["device"],
+        "available": info["available"],
+    }
+
+
+def _get_yunet_detector(width, height, score_threshold=0.55, nms_threshold=0.3):
+    """Ambil atau buat instance OpenCV FaceDetectorYN (YuNet) dengan ukuran input yang sesuai."""
+    if not _is_yunet_available():
+        return None
+    w, h = int(width), int(height)
+    key = (round(float(score_threshold), 2), round(float(nms_threshold), 2))
+    with _YUNET_LOCK:
+        det = _YUNET_DETECTOR_CACHE.get(key)
+        if det is None:
+            try:
+                det = cv2.FaceDetectorYN.create(
+                    YUNET_MODEL_PATH, "", (w, h),
+                    score_threshold=float(score_threshold),
+                    nms_threshold=float(nms_threshold),
+                )
+                _YUNET_DETECTOR_CACHE[key] = det
+            except Exception:
+                return None
+        else:
+            try:
+                det.setInputSize((w, h))
+            except Exception:
+                try:
+                    det = cv2.FaceDetectorYN.create(
+                        YUNET_MODEL_PATH, "", (w, h),
+                        score_threshold=float(score_threshold),
+                        nms_threshold=float(nms_threshold),
+                    )
+                    _YUNET_DETECTOR_CACHE[key] = det
+                except Exception:
+                    return None
+        return det
+
+
 def _get_yolo_model(job_id=None):
-    """Load YOLOv8 sekali per proses lalu dipakai ulang untuk semua klip."""
+    """Load YOLOv8 sekali per proses (lazy) lalu dipakai ulang untuk semua klip."""
     if "model" not in _YOLO_MODEL_CACHE:
         try:
             from ultralytics import YOLO
@@ -957,16 +1172,136 @@ def _get_yolo_model(job_id=None):
     return _YOLO_MODEL_CACHE["model"]
 
 
-def _get_torch_device():
+def _get_haar_detectors():
+    """Load Haar Cascade frontal & profile sebagai fallback ringan terakhir."""
+    if "detectors" not in _HAAR_CASCADE_CACHE:
+        detectors = []
+        if _is_haar_available():
+            for path in (CASCADE_PATH, PROFILE_CASCADE_PATH):
+                if os.path.isfile(path):
+                    try:
+                        c = cv2.CascadeClassifier(path)
+                        if not c.empty():
+                            detectors.append(c)
+                    except Exception:
+                        pass
+        _HAAR_CASCADE_CACHE["detectors"] = detectors
+    return _HAAR_CASCADE_CACHE["detectors"]
+
+
+def _detect_faces_yunet(yunet_detector, frame, ana_w, ana_h, min_w_ratio=0.035, max_cy_ratio=0.80):
+    """Deteksi wajah dengan YuNet; kembalikan list dict terurut dari area terbesar."""
+    if yunet_detector is None:
+        return []
     try:
-        import torch
-        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-            return "mps"
-        if torch.cuda.is_available():
-            return "cuda"
+        with _YUNET_LOCK:
+            yunet_detector.setInputSize((int(ana_w), int(ana_h)))
+            _, raw_faces = yunet_detector.detect(frame)
     except Exception:
-        pass
-    return "cpu"
+        return []
+    if raw_faces is None or len(raw_faces) == 0:
+        return []
+
+    valid = []
+    for f in raw_faces:
+        fx, fy, fw, fh = float(f[0]), float(f[1]), float(f[2]), float(f[3])
+        score = float(f[-1]) if len(f) > 4 else 1.0
+        cx = fx + fw / 2.0
+        cy = fy + fh / 2.0
+        if fw < ana_w * min_w_ratio or fh < ana_h * 0.04:
+            continue
+        if cx < ana_w * 0.03 or cx > ana_w * 0.97:
+            continue
+        if cy < ana_h * 0.05 or cy > ana_h * max_cy_ratio:
+            continue
+        valid.append({
+            "cx": cx,
+            "cy": cy,
+            "w": fw,
+            "h": fh,
+            "area": fw * fh,
+            "score": score,
+            "engine": "yunet",
+        })
+    valid.sort(key=lambda d: d["area"], reverse=True)
+    return valid
+
+
+def _detect_persons_yolo(yolo_model, frame, ana_w, ana_h, device="cpu", min_w_ratio=0.05):
+    """Deteksi narasumber (person class=0) dengan YOLOv8; kembalikan list dict terurut dari area terbesar."""
+    if yolo_model is None:
+        return []
+    try:
+        results = yolo_model.predict(
+            source=frame,
+            classes=[0],
+            conf=0.30,
+            imgsz=384,
+            device=device,
+            verbose=False,
+        )
+    except Exception:
+        return []
+    if not results or results[0].boxes is None or len(results[0].boxes) == 0:
+        return []
+
+    try:
+        boxes = results[0].boxes.xyxy.cpu().numpy()
+    except Exception:
+        return []
+
+    valid = []
+    for box in boxes:
+        bx1, by1, bx2, by2 = float(box[0]), float(box[1]), float(box[2]), float(box[3])
+        bw = bx2 - bx1
+        bh = by2 - by1
+        if bw <= ana_w * min_w_ratio or bh <= 0:
+            continue
+        valid.append({
+            "cx": bx1 + bw / 2.0,
+            "cy": by1 + bh / 2.0,
+            "w": bw,
+            "h": bh,
+            "area": bw * bh,
+            "score": 1.0,
+            "engine": "yolo",
+        })
+    valid.sort(key=lambda d: d["area"], reverse=True)
+    return valid
+
+
+def _detect_faces_haar(haar_detectors, frame, ana_w, ana_h, min_w_ratio=0.04):
+    """Fallback deteksi wajah memakai OpenCV Haar Cascade jika YuNet & YOLO tidak tersedia."""
+    if not haar_detectors:
+        return []
+    try:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
+        min_w = max(16, int(ana_w * min_w_ratio))
+        valid = []
+        for cascade in haar_detectors:
+            rects = cascade.detectMultiScale(gray, scaleFactor=1.15, minNeighbors=5, minSize=(min_w, min_w))
+            if rects is not None and len(rects) > 0:
+                for (x, y, w, h) in rects:
+                    fw, fh = float(w), float(h)
+                    cx = float(x) + fw / 2.0
+                    cy = float(y) + fh / 2.0
+                    if cy > ana_h * 0.85:
+                        continue
+                    valid.append({
+                        "cx": cx,
+                        "cy": cy,
+                        "w": fw,
+                        "h": fh,
+                        "area": fw * fh,
+                        "score": 1.0,
+                        "engine": "haar",
+                    })
+                if valid:
+                    break
+        valid.sort(key=lambda d: d["area"], reverse=True)
+        return valid
+    except Exception:
+        return []
 
 
 def _probe_video_stream(video_path):
@@ -1050,7 +1385,7 @@ def _trajectory_cache_key(video_path, start_time, end_time):
     ).hexdigest()[:16]
     return h, os.path.join(TEMP_DIR, f"trajectory_{h}.json")
 
-def get_or_compute_smart_crop_trajectory(video_path, start_time, end_time, job_id=None):
+def get_or_compute_smart_crop_trajectory(video_path, start_time, end_time, job_id=None, tracking_engine=None):
     """
     Kembalikan trajektori smart crop, memakai cache JSON berbasis file supaya
     preview (server utama) dan render (worker subprocess) memakai nilai yang
@@ -1068,7 +1403,9 @@ def get_or_compute_smart_crop_trajectory(video_path, start_time, end_time, job_i
             except Exception:
                 pass
 
-        trajectory = compute_smart_crop_trajectory(video_path, start_time, end_time, job_id=job_id)
+        trajectory = compute_smart_crop_trajectory(
+            video_path, start_time, end_time, job_id=job_id, tracking_engine=tracking_engine
+        )
         # Konversi ke int EVEN, sama persis dengan _write_crop_commands, supaya
         # posisi yang dipreview == posisi crop di render final.
         positions = [(int(round(float(x))) // 2) * 2 for x in trajectory["positions"]]
@@ -1081,6 +1418,7 @@ def get_or_compute_smart_crop_trajectory(video_path, start_time, end_time, job_i
             "crop_y": int(trajectory["crop_y"]),
             "positions": positions,
             "cut_frames": [int(c) for c in trajectory.get("cut_frames", [])],
+            "engine": str(trajectory.get("engine") or "auto"),
         }
         tmp_path = cache_path + f".{os.getpid()}.tmp"
         with open(tmp_path, "w", encoding="utf-8") as f:
@@ -1088,11 +1426,11 @@ def get_or_compute_smart_crop_trajectory(video_path, start_time, end_time, job_i
         os.replace(tmp_path, cache_path)
         return payload
 
-def compute_smart_crop_trajectory(video_path, start_time, end_time, job_id=None):
+def compute_smart_crop_trajectory(video_path, start_time, end_time, job_id=None, tracking_engine=None):
     """
-    Pass 1 Turbo Cinema Clipper: scan narasumber (YOLOv8 person / YuNet face) di frame resolusi kecil,
-    lalu hasilkan trajektori posisi crop 9:16 per frame (koordinat resolusi ASLI) yang sudah
-    di-deadzone + Gaussian smoothing. Tidak ada encoding video di tahap ini.
+    Pass 1 Turbo Cinema Clipper: deteksi engine yang tersedia secara otomatis (YuNet ONNX / YOLOv8 / Haar),
+    scan narasumber di frame resolusi kecil (640p), lalu hasilkan trajektori posisi crop 9:16 per frame
+    (koordinat resolusi ASLI) yang sudah di-deadzone + Gaussian smoothing per shot.
     """
     orig_w, orig_h, fps = _probe_video_stream(video_path)
     duration = max(0.1, float(end_time) - float(start_time))
@@ -1111,7 +1449,8 @@ def compute_smart_crop_trajectory(video_path, start_time, end_time, job_id=None)
     crop_y = max(0, ((orig_h - crop_h) // 2) // 2 * 2)
 
     # Resolusi analisis (downscaled)
-    ana_w = min(orig_w, ANALYSIS_MAX_WIDTH)
+    max_ana_w = int(env_float("VC_ANALYSIS_MAX_WIDTH", ANALYSIS_MAX_WIDTH, 320, 1280))
+    ana_w = min(orig_w, max_ana_w)
     ana_w -= ana_w % 2
     ana_h = max(2, int(round(orig_h * ana_w / orig_w)))
     ana_h -= ana_h % 2
@@ -1126,26 +1465,58 @@ def compute_smart_crop_trajectory(video_path, start_time, end_time, job_id=None)
     scene_threshold = env_float("VC_SCENE_CUT_THRESHOLD", SCENE_CUT_DEFAULT_THRESHOLD, 5.0, 100.0)
     cut_detector = SceneCutDetector(fps, threshold=scene_threshold)
 
-    device = _get_torch_device()
-    yolo_model = _get_yolo_model(job_id=job_id)
+    engine_plan = select_tracking_engine(preferred=tracking_engine, job_id=job_id)
+    primary = engine_plan["primary"]
+    fallback = engine_plan["fallback"]
+    device = engine_plan["device"]
+
+    # Inisialisasi detector sesuai rencana (YOLOv8 hanya di-load di awal jika menjadi primary;
+    # jika berperan sebagai fallback di CPU, YOLOv8 di-load secara LAZY hanya saat dibutuhkan)
+    yunet_detector = _get_yunet_detector(ana_w, ana_h, score_threshold=0.55) if "yunet" in (primary, fallback) else None
+    yolo_model = _get_yolo_model(job_id=job_id) if primary == "yolo" else None
+    haar_detectors = _get_haar_detectors() if "haar" in (primary, fallback) else None
+
+    if primary == "yolo" and yolo_model is None and fallback:
+        primary, fallback = fallback, None
+        if primary == "yunet" and yunet_detector is None:
+            yunet_detector = _get_yunet_detector(ana_w, ana_h, score_threshold=0.55)
+    elif primary == "yunet" and yunet_detector is None and fallback:
+        primary, fallback = fallback, None
+        if primary == "yolo" and yolo_model is None:
+            yolo_model = _get_yolo_model(job_id=job_id)
+
+    fallback_label = f" + fallback {fallback.upper()}" if fallback else ""
     log(
-        f"Applying Turbo Cinema Clipper (YOLOv8 [{device.upper()}] + Stride {stride} + Scene-Cut Aware Gaussian 9:16) | "
+        f"Applying Turbo Cinema Clipper (Engine: {primary.upper()}{fallback_label} [{device.upper()}] | "
+        f"Stride {stride} + Scene-Cut Aware Gaussian 9:16) | "
         f"Sumber {orig_w}x{orig_h} @ {fps:.2f}fps -> crop {crop_w}x{crop_h}",
         job_id=job_id,
     )
     if crop_w < 1080:
         log(f"Info: lebar crop {crop_w}px < 1080px, video akan di-upscale. Sumber resolusi lebih tinggi = hasil lebih tajam.", job_id=job_id)
 
-    # Fallback detector (YuNet DNN) jika YOLOv8 tidak tersedia
-    yunet_detector = None
-    if yolo_model is None and os.path.exists(YUNET_MODEL_PATH) and hasattr(cv2, 'FaceDetectorYN'):
-        try:
-            yunet_detector = cv2.FaceDetectorYN.create(
-                YUNET_MODEL_PATH, "", (ana_w, ana_h),
-                score_threshold=0.55, nms_threshold=0.3
-            )
-        except Exception:
-            yunet_detector = None
+    # Di CPU, fallback YOLOv8 dipicu secara hemat: saat frame awal/cut gagal mendeteksi wajah,
+    # atau ketika YuNet gagal berturut-turut >= 2 sampel (mengabaikan kedipan/toleh sesaat).
+    yolo_lazy_min_misses = 1 if device in ("cuda", "mps") else 2
+    yolo_lazy_logged = False
+    miss_streak = 0
+    engine_hits = {"yunet": 0, "yolo": 0, "haar": 0}
+
+    def _run_detector(eng, frame_bgr):
+        nonlocal yolo_model, yolo_lazy_logged
+        if eng == "yunet" and yunet_detector is not None:
+            return _detect_faces_yunet(yunet_detector, frame_bgr, ana_w, ana_h, min_w_ratio=0.04, max_cy_ratio=0.75)
+        if eng == "yolo":
+            if yolo_model is None:
+                if not yolo_lazy_logged:
+                    log("Info: mengaktifkan fallback YOLOv8 person tracking untuk sudut wajah yang terhalang...", job_id=job_id)
+                    yolo_lazy_logged = True
+                yolo_model = _get_yolo_model(job_id=job_id)
+            if yolo_model is not None:
+                return _detect_persons_yolo(yolo_model, frame_bgr, ana_w, ana_h, device=device, min_w_ratio=0.05)
+        if eng == "haar" and haar_detectors:
+            return _detect_faces_haar(haar_detectors, frame_bgr, ana_w, ana_h, min_w_ratio=0.04)
+        return []
 
     # ═══════════════════════════════════════════════════════════════
     # PASS 1: TURBO SCANNING & TRAJECTORY INTERPOLATION
@@ -1160,56 +1531,32 @@ def compute_smart_crop_trajectory(video_path, start_time, end_time, job_id=None)
 
     for frame in _iter_ffmpeg_frames(video_path, start_time, duration, fps, ana_w, ana_h):
         is_cut = cut_detector.update(frame_idx, frame)
+        if is_cut:
+            miss_streak = 0
         # Di frame cut, deteksi DIPAKSA jalan agar posisi wajah di angle baru langsung diketahui
         if is_cut or frame_idx % stride == 0:
             current_target_x = None
-            detected_target = False
+            detections = _run_detector(primary, frame)
 
-            # Priority 1: YOLOv8 Person Tracking (Downscaled 384px + GPU Acceleration)
-            if yolo_model is not None:
-                try:
-                    results = yolo_model.predict(
-                        source=frame,
-                        classes=[0],
-                        conf=0.30,
-                        imgsz=384,
-                        device=device,
-                        verbose=False
-                    )
-                    if len(results) > 0 and results[0].boxes is not None and len(results[0].boxes) > 0:
-                        boxes = results[0].boxes.xyxy.cpu().numpy()
-                        best_box = None
-                        max_area = 0
+            if not detections and fallback:
+                miss_streak += 1
+                should_try_fallback = (
+                    fallback != "yolo"
+                    or yolo_model is not None
+                    or is_cut
+                    or frame_idx == 0
+                    or miss_streak >= yolo_lazy_min_misses
+                )
+                if should_try_fallback:
+                    detections = _run_detector(fallback, frame)
 
-                        for box in boxes:
-                            bx1, by1, bx2, by2 = box
-                            bw = bx2 - bx1
-                            bh = by2 - by1
-                            area = bw * bh
-
-                            if area > max_area and bw > (ana_w * 0.05):
-                                max_area = area
-                                best_box = box
-
-                        if best_box is not None:
-                            detected_target = True
-                            bx1, by1, bx2, by2 = best_box
-                            current_target_x = (bx1 + (bx2 - bx1) / 2.0) * scale_x
-                except Exception:
-                    pass
-
-            # Priority 2: YuNet Face Fallback
-            if not detected_target and yunet_detector is not None:
-                try:
-                    _, raw_faces = yunet_detector.detect(frame)
-                    if raw_faces is not None and len(raw_faces) > 0:
-                        best_face = max(raw_faces, key=lambda f: float(f[2]) * float(f[3]))
-                        fx, fy, fw, fh = float(best_face[0]), float(best_face[1]), float(best_face[2]), float(best_face[3])
-                        if fw >= (ana_w * 0.04) and (fy + fh / 2) < ana_h * 0.75:
-                            detected_target = True
-                            current_target_x = (fx + (fw / 2.0)) * scale_x
-                except Exception:
-                    pass
+            if detections:
+                miss_streak = 0
+                best = detections[0]
+                current_target_x = best["cx"] * scale_x
+                hit_eng = best.get("engine")
+                if hit_eng in engine_hits:
+                    engine_hits[hit_eng] += 1
 
             sample_indices.append(frame_idx)
             sample_positions.append(current_target_x)
@@ -1249,7 +1596,8 @@ def compute_smart_crop_trajectory(video_path, start_time, end_time, job_id=None)
     smooth_crop_x = smooth_center_x - (crop_w / 2.0)
     smooth_crop_x = np.clip(smooth_crop_x, 0, orig_w - crop_w)
 
-    log(f"[Pass 1/2] Tracking selesai ({frame_idx} frames).", job_id=job_id)
+    hits_summary = ", ".join(f"{k}={v}" for k, v in engine_hits.items() if v > 0) or "none"
+    log(f"[Pass 1/2] Tracking selesai ({frame_idx} frames, deteksi: {hits_summary}).", job_id=job_id)
     return {
         "fps": fps,
         "orig_w": orig_w,
@@ -1259,6 +1607,8 @@ def compute_smart_crop_trajectory(video_path, start_time, end_time, job_id=None)
         "crop_y": crop_y,
         "positions": smooth_crop_x,
         "cut_frames": cut_frames,
+        "engine": primary,
+        "engine_hits": engine_hits,
     }
 
 
