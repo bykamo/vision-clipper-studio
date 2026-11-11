@@ -319,11 +319,14 @@ class SplitScreenAndSubtitleEnhancementTest(unittest.TestCase):
             with open(ass_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            self.assertIn("Style: GlassSource,Plus Jakarta Sans,32", content)
-            self.assertIn("Style: GlassAccount,Plus Jakarta Sans,34", content)
-            self.assertIn("&H70181412", content)  # Smoked glass color
-            self.assertIn("Dialogue: 0,0:00:00.00,0:00:05.00,GlassSource,,0,0,0,,▶  Source: Deddy Corbuzier", content)
-            self.assertIn("Dialogue: 0,0:00:00.00,0:00:05.00,GlassAccount,,0,0,0,,@visionclipper", content)
+            self.assertIn("Style: GlassSource,Plus Jakarta Sans,34", content)
+            self.assertIn("Style: GlassAccount,Plus Jakarta Sans,36", content)
+            # Liquid glass: BorderStyle=1 (tanpa background box BorderStyle=3 / &H70181412)
+            self.assertNotIn("&H70181412", content)
+            self.assertNotIn(",3,14,3,", content)
+            self.assertNotIn("▶", content)
+            self.assertIn("Source: Deddy Corbuzier", content)
+            self.assertIn("@visionclipper", content)
             self.assertIn("ViralStyle", content)
         finally:
             if os.path.exists(ass_path):
@@ -351,7 +354,8 @@ class SplitScreenAndSubtitleEnhancementTest(unittest.TestCase):
 
             self.assertIn("Style: GlassSource", content)
             self.assertIn("Style: GlassAccount", content)
-            self.assertIn("▶  Source: Close The Door", content)
+            self.assertNotIn("▶", content)
+            self.assertIn("Source: Close The Door", content)
             self.assertIn("@myhandle", content)
             self.assertNotIn("ViralStyle", content)
         finally:

@@ -925,28 +925,23 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                   </div>
                 )}
 
-                {/* ── LIVE GLASS WATERMARK BADGES (Top Safe Zone) ── */}
+                {/* ── LIVE LIQUID GLASS WATERMARK (Top Safe Zone — No Background) ── */}
                 {/* Parent hanya mengaktifkan `watermarkEnabled` setelah step
                     Branding terbuka (pre-render), jadi badge tidak muncul di
                     tahap config awal. */}
                 {watermarkEnabled && !isRenderedClip && (
-                  <div className="absolute top-12 inset-x-3.5 flex items-center justify-between pointer-events-none z-30">
-                    <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#121418]/75 backdrop-blur-md border border-white/15 shadow-[0_4px_12px_rgba(0,0,0,0.5)] max-w-[55%]">
-                      <span className="text-[9.5px] text-white/90 font-medium truncate tracking-wide">
-                        <span className="text-cyan-400 mr-1 text-[8px]">▶</span>Source:{' '}
-                        {sourceWatermark || 'Nama Channel'}
-                      </span>
-                    </div>
+                  <div className="absolute top-12 inset-x-4 flex items-center justify-between pointer-events-none z-30">
+                    <span className="liquid-glass-text text-[10px] font-semibold tracking-wide truncate max-w-[58%]">
+                      Source: {sourceWatermark || 'Nama Channel'}
+                    </span>
 
-                    <div className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#121418]/75 backdrop-blur-md border border-white/15 shadow-[0_4px_12px_rgba(0,0,0,0.5)]">
-                      <span className="text-[10px] font-bold text-amber-300 font-mono tracking-tight">
-                        {accountWatermark
-                          ? accountWatermark.startsWith('@')
-                            ? accountWatermark
-                            : `@${accountWatermark}`
-                          : '@akun_kamu'}
-                      </span>
-                    </div>
+                    <span className="liquid-glass-text text-[10.5px] font-bold font-mono tracking-tight">
+                      {accountWatermark
+                        ? accountWatermark.startsWith('@')
+                          ? accountWatermark
+                          : `@${accountWatermark}`
+                        : '@akun_kamu'}
+                    </span>
                   </div>
                 )}
 

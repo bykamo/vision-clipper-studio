@@ -171,7 +171,7 @@ def _calc_margin_v(sub_position=68):
     return int(1920 * ((100.0 - pos) / 100.0))
 
 def _build_watermark_ass_section(clip_start, clip_end, source_watermark="", account_watermark=""):
-    """Mengembalikan (styles_str, dialogues_list) untuk watermark glass badge (Dark Smoked Glass)."""
+    """Mengembalikan (styles_str, dialogues_list) untuk watermark Liquid Glass (teks kaca transparan tanpa background box)."""
     clean_src = (source_watermark or "").strip().replace("\\", "＼").replace("{", "｛").replace("}", "｝").replace("\n", " ")
     clean_acc = (account_watermark or "").strip().replace("\\", "＼").replace("{", "｛").replace("}", "｝").replace("\n", " ")
     if clean_acc and not clean_acc.startswith("@"):
@@ -183,18 +183,26 @@ def _build_watermark_ass_section(clip_start, clip_end, source_watermark="", acco
     start_ass = "0:00:00.00"
     end_ass = format_ass_timestamp(duration)
 
+    # Liquid Glass Text: BorderStyle=1 (tanpa background box/pill):
+    # - Fill dalam kaca semi-transparan ({\1a&H65&}) sehingga warna video di belakang huruf menembus
+    # - Rim kaca putih tajam ({\3c&HFFFFFF&\3a&H18&\bord1.3}) untuk efek bias cahaya tepi huruf
+    # - Soft drop shadow ({\4c&H000000&\4a&H85&\shad2}) agar tetap terbaca di background terang maupun gelap
     if clean_src:
-        # Style GlassSource: Top-Left (Alignment 7), margin_v=160, margin_l=55
-        # BorderStyle 3 (Box/Pill), Outline 14 (padding), Shadow 3 (soft elevation)
-        # Box &H70181412 (dark smoked glass), Shadow &H90000000, teks putih tajam
-        styles.append("Style: GlassSource,Plus Jakarta Sans,32,&H00FFFFFF,&H000000FF,&H70181412,&H90000000,-1,0,0,0,100,100,0.5,0,3,14,3,7,55,55,160,1")
-        dialogues.append(f"Dialogue: 0,{start_ass},{end_ass},GlassSource,,0,0,0,,▶  Source: {clean_src}")
+        # Style GlassSource: Top-Left (Alignment 7), margin_v=160, margin_l=55, BorderStyle 1 (no background box)
+        styles.append("Style: GlassSource,Plus Jakarta Sans,34,&H65F8F4EE,&H000000FF,&H18FFFFFF,&H85000000,-1,0,0,0,100,100,1.2,0,1,1.3,2.0,7,55,55,160,1")
+        src_text = f"Source: {clean_src}"
+        dialogues.append(
+            f"Dialogue: 0,{start_ass},{end_ass},GlassSource,,0,0,0,,"
+            f"{{\\1c&HF8F4EE&\\1a&H65&\\3c&HFFFFFF&\\3a&H18&\\4c&H000000&\\4a&H85&\\bord1.3\\shad2.0\\blur0.6}}{src_text}"
+        )
 
     if clean_acc:
-        # Style GlassAccount: Top-Right (Alignment 9), margin_v=160, margin_r=55
-        # Warna teks &H004DF8FF (Amber/Gold), box &H70181412
-        styles.append("Style: GlassAccount,Plus Jakarta Sans,34,&H004DF8FF,&H000000FF,&H70181412,&H90000000,-1,0,0,0,100,100,0.5,0,3,14,3,9,55,55,160,1")
-        dialogues.append(f"Dialogue: 0,{start_ass},{end_ass},GlassAccount,,0,0,0,,{clean_acc}")
+        # Style GlassAccount: Top-Right (Alignment 9), margin_v=160, margin_r=55, BorderStyle 1 (no background box)
+        styles.append("Style: GlassAccount,Plus Jakarta Sans,36,&H60F8F4EE,&H000000FF,&H18FFFFFF,&H85000000,-1,0,0,0,100,100,1.2,0,1,1.3,2.0,9,55,55,160,1")
+        dialogues.append(
+            f"Dialogue: 0,{start_ass},{end_ass},GlassAccount,,0,0,0,,"
+            f"{{\\1c&HF8F4EE&\\1a&H60&\\3c&HFFFFFF&\\3a&H18&\\4c&H000000&\\4a&H85&\\bord1.3\\shad2.0\\blur0.6}}{clean_acc}"
+        )
 
     return "\n".join(styles), dialogues
 
