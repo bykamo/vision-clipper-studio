@@ -125,6 +125,7 @@ python3 scripts/vclip.py clips --project "<folder>"  # clips + metadata of one p
 | Symptom | Cause / fix |
 |---|---|
 | `User location is not supported for the API use` on analyze | `ag/gemini-*` routes are geo-blocked from this network — use `ROUTER_LLM_MODEL=tip/deepseek-v-4.1-flash-1017` |
+| Analyze gagal: semua model `404 No active credentials for provider: openai/gemini/openrouter`, atau log `Respons LLM ... tidak berisi konten (kemungkinan hanya token reasoning)` | Fallback pool lama (bare names: qwen-3.8-27b, deepseek-v4.1-flash, glm-5-3-flash, gemini-3.8-flash, mimo-v2.6.flash) mati di gateway; `tip/deepseek-v-4.1-flash-1017` cuma keluarin reasoning token di prompt besar (cap ~76 dtk). Fix: `ROUTER_LLM_MODEL=tip/mercury-3` + `ROUTER_FALLBACK_MODELS=ag/gemini-3.8-flash,freemax,tip/auto,groq/openai/gpt-oss-120b` di `.env` |
 | Groq `403` (Cloudflare 1010) on transcription | Groq rejects a Python User-Agent; send a browser UA on those requests |
 | JS `element.click()` does nothing on Google/YouTube pages | Trusted events required — drive the page with playwright-core over CDP (`connectOverCDP('http://127.0.0.1:9222')`) and real locator clicks; use the logged-in Brave session for OAuth consent |
 | OAuth link "expired"/dead | Auth URLs live ~10 min and the dashboard mints a new one per click — regenerate immediately before using it |

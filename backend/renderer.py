@@ -17,6 +17,7 @@ from backend.utils import (
     get_ffmpeg_binary,
     get_ffprobe_binary,
     TEMP_DIR,
+    FONTS_DIR,
 )
 
 try:
@@ -331,8 +332,8 @@ def _chunk_words(words, max_words=2, max_chars=14, uppercase=False,
     return chunks
 
 def _generate_tiktok_viral_style(words, out_ass_path, clip_start, clip_end, margin_v=600, extra_styles="", extra_dialogues=None):
-    """🎬 TikTok / CapCut Viral: Plus Jakarta Sans / Montserrat Bold + Outline Tebal Bersih + Highlight Emerald VisionClipper."""
-    styles_block = f"Style: ViralStyle,Montserrat,78,&H00FFFFFF,&H000000FF,&H00000000,&HA0000000,-1,0,0,0,100,100,0,0,1,5,2.5,2,{SAFE_MARGIN_H},{SAFE_MARGIN_H},{margin_v},1\n"
+    """🎬 TikTok / CapCut Viral: Montserrat ExtraBold + Outline Hitam Tajam + Highlight Emerald VisionClipper."""
+    styles_block = f"Style: ViralStyle,Montserrat,80,&H00FFFFFF,&H000000FF,&H00000000,&HB0000000,-1,0,0,0,100,100,0.6,0,1,5.5,2.0,2,{SAFE_MARGIN_H},{SAFE_MARGIN_H},{margin_v},1\n"
     if extra_styles:
         styles_block += f"{extra_styles}\n"
 
@@ -370,7 +371,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         display.append(f"{{\\c&H00FFFFFF&}}{raw_word}")
                     elif j == i:
                         # Kata aktif: Highlight Emerald VisionClipper (#34D399 -> &H0099D334&) dengan pop scale
-                        display.append(f"{{\\c&H0099D334&}}{{\\fs86}}{raw_word}{{\\fs78}}{{\\c&H00FFFFFF&}}")
+                        display.append(f"{{\\c&H0099D334&}}{{\\fs88}}{raw_word}{{\\fs80}}{{\\c&H00FFFFFF&}}")
                     else:
                         # Kata mendatang: tetap terlihat dalam putih solid (CapCut style: satu kalimat/frasa utuh terlihat)
                         display.append(f"{{\\c&H00FFFFFF&}}{raw_word}")
@@ -379,7 +380,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 def _generate_classic_karaoke_style(words, out_ass_path, clip_start, clip_end, margin_v=580, extra_styles="", extra_dialogues=None):
     """🎤 Classic Karaoke: Teks natural case dengan sapuan highlight Electric Cyan / Mint per kata sesuai preview."""
-    styles_block = f"Style: KaraokeStyle,Montserrat,84,&H00FFFFFF,&H000000FF,&H00000000,&HB0000000,-1,0,0,0,100,100,0,0,1,8,4,2,{SAFE_MARGIN_H},{SAFE_MARGIN_H},{margin_v},1\n"
+    styles_block = f"Style: KaraokeStyle,Montserrat,84,&H00FFFFFF,&H000000FF,&H00000000,&HB0000000,-1,0,0,0,100,100,0.6,0,1,6.5,2.5,2,{SAFE_MARGIN_H},{SAFE_MARGIN_H},{margin_v},1\n"
     if extra_styles:
         styles_block += f"{extra_styles}\n"
 
@@ -426,7 +427,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 def _generate_minimalist_style(words, out_ass_path, clip_start, clip_end, margin_v=560, extra_styles="", extra_dialogues=None):
     """✨ Minimalist: Teks putih bersih statis, elegan dan tidak mengganggu konten podcast."""
-    styles_block = f"Style: MinimalStyle,Plus Jakarta Sans,74,&H00FFFFFF,&H000000FF,&H00151515,&HAA000000,-1,0,0,0,100,100,0,0,1,5,3,2,{SAFE_MARGIN_H},{SAFE_MARGIN_H},{margin_v},1\n"
+    styles_block = f"Style: MinimalStyle,Plus Jakarta Sans,74,&H00FFFFFF,&H000000FF,&H000A0A0A,&HA8000000,-1,0,0,0,100,100,0.4,0,1,4.5,2.0,2,{SAFE_MARGIN_H},{SAFE_MARGIN_H},{margin_v},1\n"
     if extra_styles:
         styles_block += f"{extra_styles}\n"
 
@@ -977,7 +978,8 @@ ANALYSIS_MAX_WIDTH = 640
 # Fallback statis jika tracking gagal: kunci kursi pembicara (kiri ~28%), BUKAN tengah meja (50%).
 STATIC_FALLBACK_CROP_CHAIN = (
     "setpts=PTS-STARTPTS,crop=ih*9/16:ih:iw*0.14:0,"
-    "scale=1080:1920:force_original_aspect_ratio=decrease:flags=lanczos,pad=1080:1920:(ow-iw)/2:(oh-ih)/2"
+    "scale=1080:1920:force_original_aspect_ratio=decrease:flags=lanczos+accurate_rnd+full_chroma_int,"
+    "pad=1080:1920:(ow-iw)/2:(oh-ih)/2"
 )
 
 
@@ -1658,7 +1660,7 @@ def build_smart_crop_chain(trajectory, cmd_path):
         f"setpts=PTS-STARTPTS,"
         f"sendcmd=f='{_escape_filter_path(cmd_path)}',"
         f"crop={trajectory['crop_w']}:{trajectory['crop_h']}:{x0}:{trajectory['crop_y']},"
-        f"scale=1080:1920:force_original_aspect_ratio=decrease:flags=lanczos,"
+        f"scale=1080:1920:force_original_aspect_ratio=decrease:flags=lanczos+accurate_rnd+full_chroma_int,"
         f"pad=1080:1920:(ow-iw)/2:(oh-ih)/2"
     )
 
@@ -1671,7 +1673,7 @@ def build_fit_blur_graph(finish_chain, out_label="v"):
     return (
         f"[0:v]setpts=PTS-STARTPTS,split=2[bg_in][fg_in];"
         f"[bg_in]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:5,eq=brightness=-0.08[bg];"
-        f"[fg_in]scale=1080:-2:flags=lanczos[fg];"
+        f"[fg_in]scale=1080:-2:flags=lanczos+accurate_rnd+full_chroma_int[fg];"
         f"[bg][fg]overlay=(W-w)/2:(H-h)/2-(H*0.05),{finish_chain}[{out_label}]"
     )
 
@@ -1932,9 +1934,18 @@ def extract_and_format_clip(video_path, clip_info, index, segments, out_dir, job
 
     # Grading + subtitle + fade diterapkan di filtergraph yang SAMA dengan crop/layout,
     # sehingga seluruh klip hanya di-encode satu kali (tanpa file intermediate).
+    # Subtitle di-render di ruang warna RGB24 (full chroma 4:4:4) lalu dikonversi ke yuv420p
+    # dengan lanczos+accurate_rnd+full_chroma_int+full_chroma_inp agar tepi huruf & warna highlight
+    # tidak pecah/burem akibat chroma subsampling 4:2:0 default.
     grade_chain = "eq=contrast=1.1:brightness=0.02:saturation=1.2,unsharp=5:5:0.4:5:5:0.0"
     has_subtitles = os.path.exists(ass_file) and os.path.getsize(ass_file) > 0
-    subtitle_filter = f",subtitles='{escaped_ass}'" if has_subtitles else ""
+    escaped_fonts_dir = _escape_filter_path(FONTS_DIR) if (FONTS_DIR and os.path.exists(FONTS_DIR)) else ""
+    fonts_opt = f":fontsdir='{escaped_fonts_dir}'" if escaped_fonts_dir else ""
+    subtitle_filter = (
+        f",format=rgb24,subtitles='{escaped_ass}'{fonts_opt},"
+        f"scale=flags=lanczos+accurate_rnd+full_chroma_int+full_chroma_inp,format=yuv420p"
+        if has_subtitles else ""
+    )
     subtitle_stage = f"{grade_chain}{subtitle_filter}"
     fade_filter = f"fade=t=out:st={fade_out_start:.3f}:d={fade_dur:.3f}"
 

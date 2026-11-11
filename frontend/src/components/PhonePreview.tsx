@@ -490,12 +490,12 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
     switch (selectedPresetId) {
       case 'classic_karaoke': {
         const words = activeChunk ?? [
-          { word: 'KONSISTEN', start: 0, end: 0 },
-          { word: 'ITU', start: 0, end: 0 },
-          { word: 'LEBIH', start: 0, end: 0 },
+          { word: 'Konsisten', start: 0, end: 0 },
+          { word: 'itu', start: 0, end: 0 },
+          { word: 'lebih', start: 0, end: 0 },
         ];
         return (
-          <div className="flex flex-wrap items-center justify-center gap-x-1.5 font-['Montserrat',_sans-serif] font-black uppercase text-center select-none leading-tight drop-shadow-[0_2px_8px_rgba(0,0,0,1)]">
+          <div className="flex flex-wrap items-center justify-center gap-x-1.5 font-['Montserrat',_sans-serif] font-extrabold text-center select-none leading-tight drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)]">
             {words.map((w, i) => {
               const isActive =
                 activeChunkWord !== null &&
@@ -504,17 +504,27 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
               return (
                 <span
                   key={`${w.word}-${i}`}
-                  className={`text-[15px] sm:text-[16px] tracking-wide font-black ${
-                    isActive ? 'text-[#00D4F5]' : 'text-white'
+                  style={{
+                    WebkitTextStroke: '1.5px #000000',
+                    paintOrder: 'stroke fill',
+                  }}
+                  className={`inline-block text-[15.5px] sm:text-[16.5px] tracking-[0.015em] font-extrabold transition-all duration-100 ${
+                    isActive ? 'text-[#00F5D4] scale-105' : 'text-white'
                   }`}
                 >
-                  {w.word.toUpperCase()}
+                  {w.word}
                 </span>
               );
             })}
             {!hasRealTranscript && (
-              <span className="text-white text-[15px] sm:text-[16px] tracking-wide font-black">
-                DARI MOTIVASI
+              <span
+                style={{
+                  WebkitTextStroke: '1.5px #000000',
+                  paintOrder: 'stroke fill',
+                }}
+                className="text-white text-[15.5px] sm:text-[16.5px] tracking-[0.015em] font-extrabold"
+              >
+                dari motivasi
               </span>
             )}
           </div>
@@ -523,7 +533,13 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
       case 'minimalist': {
         const text = activeChunk?.map((w) => w.word).join(' ') ?? 'Konsisten itu lebih penting';
         return (
-          <div className="font-['Inter',_sans-serif] font-medium text-[12px] text-white tracking-wide text-center drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] select-none bg-black/60 px-3.5 py-1.5 rounded-lg border border-white/10 backdrop-blur-xs">
+          <div
+            style={{
+              WebkitTextStroke: '1.1px #0a0a0a',
+              paintOrder: 'stroke fill',
+            }}
+            className="font-['Plus_Jakarta_Sans',_sans-serif] font-bold text-[14px] text-white tracking-[0.01em] text-center drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] select-none leading-snug"
+          >
             <span>{text}</span>
           </div>
         );
@@ -531,7 +547,13 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
       case 'word_pop': {
         const word = activeChunk?.[0]?.word.toUpperCase() ?? 'KONSISTEN!';
         return (
-          <div className="flex flex-col items-center justify-center font-['Impact',_sans-serif] font-black uppercase text-[28px] text-[#34D399] tracking-wider text-center drop-shadow-[0_4px_10px_rgba(0,0,0,1)] select-none animate-pulse leading-none">
+          <div
+            style={{
+              WebkitTextStroke: '2px #000000',
+              paintOrder: 'stroke fill',
+            }}
+            className="flex flex-col items-center justify-center font-['Impact',_sans-serif] font-black uppercase text-[28px] text-white tracking-wider text-center drop-shadow-[0_4px_8px_rgba(0,0,0,0.95)] select-none leading-none"
+          >
             <span>{word}</span>
           </div>
         );
@@ -545,13 +567,13 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
           activeChunk && activeChunk.length > 0
             ? activeChunk
             : [
-                { word: 'KONSISTEN', start: 0, end: 0 },
-                { word: 'ITU', start: 0, end: 0 },
-                { word: 'LEBIH', start: 0, end: 0 },
-                { word: 'PENTING', start: 0, end: 0 },
+                { word: 'Konsisten', start: 0, end: 0 },
+                { word: 'itu', start: 0, end: 0 },
+                { word: 'lebih', start: 0, end: 0 },
+                { word: 'penting', start: 0, end: 0 },
               ];
         return (
-          <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 font-['Montserrat',_'Plus_Jakarta_Sans',_sans-serif] font-black uppercase text-center select-none max-w-[92%] mx-auto leading-normal">
+          <div className="flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 font-['Montserrat',_'Plus_Jakarta_Sans',_sans-serif] font-extrabold text-center select-none max-w-[92%] mx-auto leading-normal">
             {words.map((w, i) => {
               const isActive =
                 activeChunkWord !== null &&
@@ -562,16 +584,14 @@ export const PhonePreview: React.FC<PhonePreviewProps> = ({
                 <span
                   key={`${w.word}-${i}`}
                   style={{
-                    WebkitTextStroke: '1.2px #000000',
+                    WebkitTextStroke: '1.4px #000000',
                     paintOrder: 'stroke fill',
                   }}
-                  className={`inline-block text-[15px] sm:text-[16px] tracking-wide font-black transition-all duration-150 drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)] ${
-                    isHighlighted
-                      ? 'text-[#34D399] scale-105 drop-shadow-[0_0_12px_rgba(52,211,153,0.55)]'
-                      : 'text-white'
+                  className={`inline-block text-[15px] sm:text-[16px] tracking-[0.015em] font-extrabold transition-all duration-100 drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] ${
+                    isHighlighted ? 'text-[#34D399] scale-105' : 'text-white'
                   }`}
                 >
-                  {w.word.toUpperCase()}
+                  {w.word}
                 </span>
               );
             })}
