@@ -1,8 +1,0 @@
-# Klip yang TIDAK boleh diupload lagi oleh queue_upload.py.
-# Satu pola per baris; dicocokkan sebagai substring ke path klip maupun nama project.
-# Baris diawali '#' = komentar.
-
-# [2026-11-11 keputusan user] "yang ko denis gausah ada upload lagi cukup yang kemarin upload aja"
-# Projek Dennies (BANGUN TRUST ADALAH KUNCINYA) — batch 8 Nov (03, 04, 06) sudah tayang, dianggap cukup.
-# Sisa yang belum tayang & dibatalkan: 01 Dulu Dikatain Alay, 02 Ratusan Juta Masuk, 05 Komisi 10 Persen.
-DENNIES
