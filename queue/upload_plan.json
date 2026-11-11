@@ -1,0 +1,47 @@
+{
+ "items": [
+  {
+   "file": "/home/kamo/dev/myapp/vision-clipper/clips/Dokter_Tirta_Mimpiin_Saya _2c7AKTaHRRo_/05_4_hal_yang_harus_dikuasai_perempuan_menurut_dokter.mp4",
+   "project": "Dokter_Tirta_Mimpiin_Saya _2c7AKTaHRRo_",
+   "title": "4 hal yang harus dikuasai perempuan menurut dokter #Shorts",
+   "description": "Dr. Patricia kasih tau 4 skill wajib yang harus dikuasai perempuan biar gak ketergantungan sama siapa pun Lu udah punya 4-nya belum?\n\n#podcastindonesia #tipsperempuan #kemandirian\n\n#Shorts",
+   "tags": [
+    "podcastindonesia",
+    "tipsperempuan",
+    "kemandirian"
+   ],
+   "scheduled_at": "2026-11-11T17:20:00"
+  },
+  {
+   "file": "/home/kamo/dev/myapp/vision-clipper/clips/Dokter_Tirta_Mimpiin_Saya _2c7AKTaHRRo_/03_Cek_orang_kaya_lewat_posisi_water_heater_di_rumahnya.mp4",
+   "project": "Dokter_Tirta_Mimpiin_Saya _2c7AKTaHRRo_",
+   "title": "Cek orang kaya lewat posisi water heater di rumahnya #Shorts",
+   "description": "Tren TikTok ngecek level kekayaan orang dari posisi water heater, ternyata Dr. Patricia dua-duanya punya Water heater lu di dalam atau di luar?\n\n#podcastindonesia #tipsrumah #cekitahuan\n\n#Shorts",
+   "tags": [
+    "podcastindonesia",
+    "tipsrumah",
+    "cekitahuan"
+   ],
+   "scheduled_at": "2026-11-11T18:20:00"
+  },
+  {
+   "file": "/home/kamo/dev/myapp/vision-clipper/clips/Dokter_Tirta_Mimpiin_Saya _2c7AKTaHRRo_/04_4_tahun_gak_dikuras__air_water_heater_jadi_oranye.mp4",
+   "project": "Dokter_Tirta_Mimpiin_Saya _2c7AKTaHRRo_",
+   "title": "4 tahun gak dikuras, air water heater jadi oranye #Shorts",
+   "description": "Water heater yang gak pernah dikuras bisa bikin kulit merah dan gatel parah, ini pengalaman asli Dr. Patricia Lu pernah cek water heater di rumah?\n\n#tipsrumah #kesehatankulit #waterheater\n\n#Shorts",
+   "tags": [
+    "tipsrumah",
+    "kesehatankulit",
+    "waterheater"
+   ],
+   "scheduled_at": "2026-11-11T19:20:00"
+  }
+ ],
+ "per_day": 3,
+ "slots": [
+  "17:20",
+  "18:20",
+  "19:20"
+ ],
+ "gap_min": 30
+}

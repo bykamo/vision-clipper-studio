@@ -2,12 +2,15 @@ import unittest
 
 from backend.content_rules import (
     MAX_DURATION,
+    END_GRACE_SEC,
     MIN_HASHTAGS,
     apply_clip_rules,
     apply_content_rules,
+    build_quality,
     clean_caption,
     dedupe_overlapping,
     ensure_closing_question,
+    has_persona_risk,
     is_generic_caption,
     normalize_hashtags,
     snap_clip_end,
@@ -240,6 +243,52 @@ class ApplyRulesTest(unittest.TestCase):
         snap_clip_end(clip, segments, mode="hook")
         # Tidak boleh berhenti di 2.6 (kata 'karena'), melainkan menuntaskan kalimat sampai 'fokus' (3.8)
         self.assertEqual(clip["end"], 3.8)
+
+    def test_snap_boundary_works_when_segment_has_no_words_array(self):
+        # Segmen monolitik dari Whisper tanpa array words
+        segments = [
+            {"start": 10.0, "end": 25.0, "text": "Ini kalimat pembuka yang cukup panjang."},
+            {"start": 25.0, "end": 45.0, "text": "Ini kelanjutan argumen yang menuntaskan ide."},
+        ]
+        clip = {"start": 11.0, "end": 42.0}
+        snap_clip_end(clip, segments, mode="hook")
+        # Start harus diselaraskan ke awal ujaran terdekat (10.0) dan end menuntaskan ke 45.0
+        self.assertEqual(clip["start"], 10.0)
+        self.assertEqual(clip["end"], 45.0)
+
+
+class PersonaRulesTest(unittest.TestCase):
+    def test_formal_pronoun_normalized_to_lu(self):
+        cleaned = clean_caption("Review jujur ini buat kamu yang mau hemat.")
+        self.assertIn("buat lu", cleaned)
+        self.assertNotIn("kamu", cleaned)
+
+        cleaned_anda = clean_caption("Bagaimana menurut Anda?")
+        self.assertIn("lu", cleaned_anda.lower())
+        self.assertNotIn("anda", cleaned_anda.lower())
+
+    def test_persona_risk_flags_robotic_phrases(self):
+        self.assertTrue(has_persona_risk("Hal ini membuktikan bahwa sistem bekerja."))
+        self.assertTrue(has_persona_risk("Strategi tersebut sangat efektif."))
+        self.assertTrue(has_persona_risk("Sebagai kesimpulan, jangan lupa evaluasi."))
+        self.assertFalse(has_persona_risk("Kerja keras tanpa pola cuma bikin lu capek. Lu tim mana?"))
+
+    def test_quality_flags_duration_grace_and_persona(self):
+        # Durasi 48 detik (di atas MAX_DURATION 45 tapi di bawah 45 + END_GRACE_SEC 6 = 51)
+        clip = {
+            "start": 0.0,
+            "end": 48.0,
+            "caption": "Kerja cerdas lebih penting daripada kerja rodi. Lu tim strategi?",
+            "hashtags": ["#mindset", "#kerja", "#produktivitas"],
+            "hook_line": "Kerja cerdas",
+            "first_comment": "Pin comment",
+        }
+        quality = build_quality(clip, mode="hook")
+        self.assertTrue(quality["duration_ok"])
+        self.assertFalse(quality["in_target"])  # > 40s -> in_target False, tapi duration_ok True
+        self.assertTrue(quality["persona_ok"])
+        self.assertFalse(quality["persona_risk"])
+
 
 if __name__ == "__main__":
     unittest.main()

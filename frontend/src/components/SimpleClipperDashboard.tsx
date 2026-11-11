@@ -92,6 +92,8 @@ interface ClipQuality {
   hashtag_count: number;
   hashtags_ok: boolean;
   generic_risk: boolean;
+  persona_risk?: boolean;
+  persona_ok?: boolean;
   has_hook: boolean;
   has_first_comment: boolean;
 }
@@ -2527,6 +2529,14 @@ export const SimpleClipperDashboard: React.FC = () => {
                                   title="Caption terasa quote generik — tambahkan opini tegas atau angka"
                                 >
                                   ⚠ generik
+                                </span>
+                              )}
+                              {clip.quality.persona_risk && (
+                                <span
+                                  className="text-[10px] font-bold text-orange-300 bg-orange-500/10 border border-orange-500/25 px-1.5 py-0.5 rounded-full"
+                                  title="Caption terdeteksi kaku / gaya AI — gunakan gaya bicara santai to-the-point"
+                                >
+                                  🤖 kaku
                                 </span>
                               )}
                               {!clip.quality.has_question && (

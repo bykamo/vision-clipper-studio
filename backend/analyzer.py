@@ -33,9 +33,31 @@ class PermanentLLMError(RuntimeError):
     (e.g. location restriction, missing credentials). Retrying won't help."""
 
 
+DEFAULT_PERSONA_GUIDE = (
+    "PERSONA KURATOR INDONESIA (100% HUMAN CREATOR, ZERO AI VIBE):\n"
+    "- Suara: Kurator klip/podcast lokal yang ceplas-ceplos, santai, tajam, dan to-the-point.\n"
+    "- Bicara langsung ke 1 orang (pakai 'lu/gw/lo', BUKAN 'Anda/kamu/saudara').\n"
+    "- Buka langsung di punchline atau klaim paling tajam; DILARANG basa-basi/runway ('jadi gini...', 'sebelumnya gw mau cerita...').\n"
+    "- Maksimal 12-14 kata per kalimat. Kalau lebih panjang, pecah jadi dua kalimat pendek yang nendang.\n"
+    "- Kata khas yang diutamakan: 'ujung-ujungnya', 'padahal', 'yang bikin', 'aslinya', 'realitanya', 'parah'.\n"
+    "- DILARANG TOTAL frasa kaku AI: 'Apakah kamu', 'Ini dia', 'Pernahkah Anda', 'Yuk simak', 'Tonton sampai habis', "
+    "'Tahukah kamu', 'Fakta menarik', 'Jangan lewatkan', 'Simak penjelasannya', 'hal ini', 'tersebut', 'sebagai kesimpulan'."
+)
+
+
+def get_persona_guide():
+    """Return custom persona from ROUTER_PERSONA env var or the default human curator persona."""
+    custom = (os.environ.get("ROUTER_PERSONA") or "").strip()
+    return custom if custom else DEFAULT_PERSONA_GUIDE
+
+
 def build_viral_prompt(transcript_text, num_clips, mode="hook"):
+    persona_guide = get_persona_guide()
     if mode == "affiliate":
         prompt = f"""You are an elite affiliate marketing content strategist specializing in short-form video platforms (TikTok, YouTube Shorts, Instagram Reels). You have deep expertise in SALES PSYCHOLOGY, CONVERSION OPTIMIZATION, and VIRAL CONTENT MECHANICS.
+
+## YOUR PERSONA & VOICE
+{persona_guide}
 
 ## YOUR MISSION
 Analyze the transcript below and extract exactly {num_clips} high-converting segments optimized for AFFILIATE SALES + VIRAL REACH. Each must work as a standalone 9:16 short that a cold viewer finishes watching.
@@ -143,6 +165,9 @@ Each line: [HH:MM:SS.mmm --> HH:MM:SS.mmm] spoken text
 """
     else:
         prompt = f"""You are an elite short-form content strategist who has grown small Indonesian accounts from zero. You know exactly which clips get 500 views and which get 50.000, and the difference is almost never the topic — it is STANCE, LENGTH, and the first 3 seconds.
+
+## YOUR PERSONA & VOICE
+{persona_guide}
 
 ## YOUR MISSION
 Analyze the transcript below and extract exactly {num_clips} segments that can each stand alone as a 9:16 short. Optimize for COMPLETION RATE first (the strongest distribution signal), then comments, then follows.
@@ -511,7 +536,7 @@ def _read_error_message(response):
     except (ValueError, TypeError):
         return body[:500]
 
-def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None, compact_prompt=None):
+def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None, compact_prompt=None, temperature=None):
     if not (endpoint or "").strip():
         raise PermanentLLMError("ROUTER_API_ENDPOINT kosong. Isi endpoint AI di Pengaturan Studio.")
     if not (api_key or "").strip():
@@ -534,6 +559,12 @@ def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None, compact_pro
     if not candidate_models:
         raise PermanentLLMError("ROUTER_LLM_MODEL kosong. Pilih model AI di Pengaturan Studio.")
 
+    effective_temp = (
+        float(temperature)
+        if temperature is not None
+        else env_float("ROUTER_LLM_TEMPERATURE", 0.4)
+    )
+
     last_error = None
     permanent_only = True
     # Streaming is ON by default: the gateway hard-caps buffered (non-stream)
@@ -549,7 +580,7 @@ def call_llm_api(prompt, model_name, endpoint, api_key, job_id=None, compact_pro
                 "model": m,
                 "messages": [{"role": "user", "content": active_prompt}],
                 "stream": use_stream,
-                "temperature": env_float("ROUTER_LLM_TEMPERATURE", 0.4),
+                "temperature": effective_temp,
             }
 
             log(f"Sending transcript to '{m}' via {endpoint} for analysis...", job_id=job_id)
@@ -811,8 +842,12 @@ controversial product opinion, unexpected comparison, "I was today years old" mo
 
     lo, hi = TARGET_DURATION.get(mode, TARGET_DURATION["hook"])
     hard_max = MAX_DURATION.get(mode, MAX_DURATION["hook"])
+    persona_guide = get_persona_guide()
 
     return f"""You are an elite viral content strategist for short-form video (TikTok, YouTube Shorts, Instagram Reels).
+
+## YOUR PERSONA & SELECTION TASTE
+{persona_guide}
 
 ## YOUR MISSION
 Analyze the transcript below and {mission}. You are a SCOUT, not the final editor: return UP TO {max_candidates} candidates ranked by viral_score. A later step picks the final clips and enforces topic diversity — so find MORE strong moments than needed, each centered on a DIFFERENT idea. Quality over quota: if only 6 moments are truly great, return 6.
@@ -907,8 +942,12 @@ def build_clip_enrichment_prompt(clips_with_slices, video_summary="", mode="hook
             f"(working title: {c.get('title', '')})\n{(c.get('transcript') or '').strip()}"
         )
     clips_block = "\n\n".join(blocks) if blocks else "(no clips)"
+    persona_guide = get_persona_guide()
 
     return f"""You are an elite short-form copywriter. Write like {tone}. Use natural, everyday colloquial Indonesian (lu-gue/gw/lo/aja/nih/banget/kan/parah/asli).
+
+## YOUR PERSONA & VOICE
+{persona_guide}
 
 ## YOUR MISSION
 For EACH clip below, write 3 title_options (hook overlay text), 1 caption, and hashtags. These clips were already selected as the strongest moments — your job is packaging, not selection.

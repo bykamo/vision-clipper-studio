@@ -10,6 +10,7 @@ import numpy as np
 from backend.renderer import (
     SceneCutDetector,
     _build_shot_trajectory,
+    _natural_padding,
     _parse_loudnorm_json,
     _write_crop_commands,
     build_audio_filter,
@@ -520,6 +521,29 @@ class TrackingEngineSelectionTest(unittest.TestCase):
 
         mock_get_yolo.assert_called_once()
         self.assertGreater(traj["engine_hits"]["yolo"], 0)
+
+
+class NaturalPaddingTest(unittest.TestCase):
+    def test_tail_does_not_leak_into_next_word(self):
+        # Kata saat ini selesai di 20.00, kata berikutnya mulai di 20.05 (gap cuma 50ms)
+        segments = [
+            {"words": [{"word": "terakhir", "start": 18.0, "end": 20.0}]},
+            {"words": [{"word": "berikutnya", "start": 20.05, "end": 21.0}]},
+        ]
+        lead, tail = _natural_padding(segments, clip_start=18.0, clip_end=20.0)
+        # 20.0 + tail HARUS kurang dari 20.05 (tidak boleh menabrak kata berikutnya)
+        self.assertLess(20.0 + tail, 20.05)
+        self.assertGreaterEqual(tail, 0.0)
+
+    def test_tail_allows_natural_decay_when_silence_follows(self):
+        # Ada jeda hening panjang setelah 20.0 (kata berikutnya baru di 25.0)
+        segments = [
+            {"words": [{"word": "terakhir", "start": 18.0, "end": 20.0}]},
+            {"words": [{"word": "berikutnya", "start": 25.0, "end": 26.0}]},
+        ]
+        lead, tail = _natural_padding(segments, clip_start=18.0, clip_end=20.0)
+        self.assertGreater(tail, 0.1)
+        self.assertLessEqual(tail, 0.50)
 
 
 if __name__ == "__main__":

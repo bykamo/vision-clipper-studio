@@ -1818,9 +1818,15 @@ def _natural_padding(segments, clip_start, clip_end, lead_max=0.20, tail_max=0.5
 
     # Cari kata pertama setelah clip_end
     next_starts = [s_ for s_, e in words if s_ >= clip_end - 0.05]
-    next_start = min(next_starts) if next_starts else (clip_end + tail_max)
-    gap_after = max(0.0, next_start - clip_end)
-    tail = min(tail_max, max(0.12, gap_after * 0.6))
+    if next_starts:
+        next_start = min(next_starts)
+        gap_after = max(0.0, next_start - clip_end)
+        # Jaga jarak aman minimal 40ms sebelum kata berikutnya agar suku kata tidak bocor
+        safe_gap = max(0.0, gap_after - 0.04)
+        tail = min(tail_max, min(safe_gap, gap_after * 0.6))
+    else:
+        # Tidak ada kata setelahnya di transkrip: beri tail nafas alami
+        tail = min(tail_max, 0.30)
 
     return lead, tail
 

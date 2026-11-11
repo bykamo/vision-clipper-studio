@@ -61,6 +61,24 @@ BANNED_AI_PHRASES = (
     "mari kita bahas",
     "jangan lewatkan",
     "ini dia",
+    "sebagai kesimpulan",
+    "perlu diketahui",
+    "dalam video ini",
+    "pada kesempatan ini",
+)
+
+ROBOTIC_PHRASES = (
+    "hal ini",
+    "tersebut",
+    "sebagai kesimpulan",
+    "perlu diingat",
+    "dapat disimpulkan",
+    "sebagai informasi",
+    "perlu diketahui",
+    "dalam video ini",
+    "pada video ini",
+    "sebagai konten kreator",
+    "sebagai seorang",
 )
 
 # Generic engagement bait the prompt used to forbid entirely. A *specific*
@@ -152,6 +170,13 @@ def clean_caption(caption, mode="hook"):
 
     text = re.sub(r"\s{2,}", " ", text).strip()
     text = re.sub(r"[ \t]*([,.!?])", r"\1", text)
+
+    # Normalisasi sapaan kaku ("Anda", "kamu") ke gaya lu-gw agar konsisten
+    def _swap_pronoun(m):
+        w = m.group(0)
+        return "Lu" if w[0].isupper() and m.start() == 0 else "lu"
+
+    text = re.sub(r"\b(anda|kamu)\b", _swap_pronoun, text, flags=re.IGNORECASE)
 
     if len(text) > MAX_CAPTION_CHARS:
         cut = text[:MAX_CAPTION_CHARS]
@@ -269,6 +294,23 @@ def is_generic_caption(caption) -> bool:
     return not (has_number or has_contrast or concrete)
 
 
+def has_persona_risk(caption) -> bool:
+    """Deteksi caption yang masih berbau AI kaku atau kalimat kelewat panjang."""
+    text = str(caption or "").strip()
+    if not text:
+        return False
+    lowered = text.lower()
+    if any(phrase in lowered for phrase in ROBOTIC_PHRASES + BANNED_AI_PHRASES):
+        return True
+    if re.search(r"\b(anda|saudara|hadirin|pembaca|pemirsa)\b", lowered):
+        return True
+    # Kalimat tunggal terlalu panjang (>18 kata tanpa jeda titik/tanya/seru) terasa seperti paragraf AI
+    for sentence in re.split(r"[.!?]+", text):
+        if len(sentence.split()) > 18:
+            return True
+    return False
+
+
 def _iter_words(segments):
     for seg in segments or []:
         words = seg.get("words") or []
@@ -297,6 +339,32 @@ END_GRACE_SEC = 6.0        # Toleransi tambahan di atas MAX_DURATION demi menyel
 START_BACKTRACK_SEC = 3.5  # Maksimal detik mundur untuk menangkap pembukaan kalimat utuh
 
 
+def _split_segment_words(text, start, end):
+    """Pecah teks segmen menjadi kata dengan timestamp proporsional.
+
+    Salinan lokal dari `backend.transcriber.split_segment_into_words` supaya
+    modul ini tetap bebas dependency (mengimpor transcriber akan menarik
+    `backend.utils`, yang memuat `.env` saat import).
+    """
+    words_split = str(text or "").strip().split()
+    if not words_split:
+        return []
+    try:
+        start = float(start)
+        end = float(end)
+    except (TypeError, ValueError):
+        return []
+
+    duration = max(0.0, end - start)
+    total_chars = sum(len(w) for w in words_split)
+    words_list = []
+    current = start
+    for word in words_split:
+        word_dur = (len(word) / total_chars) * duration if total_chars > 0 else (duration / len(words_split))
+        words_list.append({"word": word, "start": current, "end": current + word_dur})
+        current += word_dur
+    return words_list
+
 def _build_speech_units(segments):
     """Mengekstrak unit kata/ujaran berurutan beserta status akhir kalimat & jeda suara.
 
@@ -304,6 +372,10 @@ def _build_speech_units(segments):
     sedangkan tanda baca (titik, tanda tanya, tanda seru) berada pada teks segmen.
     Fungsi ini menyinkronkan tanda baca segmen ke kata terakhirnya dan menghitung
     jeda hening (gap) ke kata berikutnya.
+
+    Kalau segmen tidak punya `words` sama sekali, teksnya dipecah proporsional
+    supaya snapping tetap punya unit kata — bukan satu blok beku multi-detik
+    yang membuat start/end tidak bisa diselaraskan.
     """
     units = []
     for seg in segments or []:
@@ -311,14 +383,9 @@ def _build_speech_units(segments):
         words = [w for w in (seg.get("words") or []) if str(w.get("word", "")).strip()]
 
         if not words:
-            if seg_text:
-                units.append({
-                    "text": seg_text,
-                    "start": float(seg.get("start", 0.0)),
-                    "end": float(seg.get("end", 0.0)),
-                    "sent_end": seg_text.endswith(SENTENCE_ENDINGS),
-                })
-            continue
+            words = _split_segment_words(seg_text, seg.get("start", 0.0), seg.get("end", 0.0))
+            if not words:
+                continue
 
         for i, w in enumerate(words):
             raw_w = str(w.get("word", "")).strip()
@@ -355,11 +422,8 @@ def _snap_start_boundary(units, start):
         return start
 
     target_unit = units[idx]
-    # Jika unit terlalu panjang (segmen besar tanpa word timestamps) atau
-    # start berjarak jauh dari batas unit, jangan paksa snap jauh
-    if (target_unit["end"] - target_unit["start"]) > 6.0 and abs(start - target_unit["start"]) > 2.0:
-        return start
-
+    # Jika start berjarak terlalu jauh dari batas unit, jangan paksa snap
+    # (tapi momen masih lampau yang jauh tidak boleh ditarik ke tengah kalimat)
     if abs(start - target_unit["start"]) > 2.5:
         return start
 
@@ -380,25 +444,25 @@ def _snap_start_boundary(units, start):
 
 def _snap_end_boundary(units, start, end, min_dur, max_dur):
     """Selaraskan end agar tidak memotong isi penting/payoff di tengah jalan."""
-    hard_max_with_grace = start + max_dur + END_GRACE_SEC
-
-    # 1. Prioritas utama: jika kalimat sedang berlangsung di dekat 'end',
-    # tuntaskan kalimat tersebut (sent_end) dengan grace period
-    for u in units:
-        if u["end"] < end - 0.4:
-            continue
-        if u["end"] > hard_max_with_grace:
-            break
-        # Jika selisih terlalu jauh (> 6.0s), jangan melompat
-        if (u["end"] - end) > 6.0:
-            break
-        if _is_good_sentence_end(u, require_sentence=True):
-            return u["end"]
-
-    # 2. Jika kalimat belum selesai tapi melewati batas grace, cari akhir kalimat
-    # atau jeda hening terbaik di dalam jendela legal [start + min_dur, start + max_dur]
     lo = start + min_dur
     hi = start + max_dur
+    hard_max_with_grace = hi + END_GRACE_SEC
+    # Batas pencarian maju: tetap boleh menuntaskan kalimat yang sedang berjalan
+    # sepanjang masih di dalam jendela legal (hi) atau paling lambat end + END_GRACE_SEC.
+    lookahead_limit = min(hard_max_with_grace, max(hi, end + END_GRACE_SEC))
+
+    # 1. Prioritas utama: jika kalimat sedang berlangsung di dekat 'end'
+    #    (dan 'end' belum jauh melampaui hard_max_with_grace), tuntaskan kalimat tersebut.
+    if end <= hard_max_with_grace:
+        for u in units:
+            if u["end"] < end - 0.4:
+                continue
+            if u["end"] > lookahead_limit:
+                break
+            if _is_good_sentence_end(u, require_sentence=True):
+                return u["end"]
+
+    # 2. Cari akhir kalimat penuh dulu, baru jeda hening di dalam jendela legal [lo, hi]
     window = [u for u in units if lo <= u["end"] <= hi]
 
     for require_sent in (True, False):
@@ -406,10 +470,10 @@ def _snap_end_boundary(units, start, end, min_dur, max_dur):
         if good_candidates:
             return good_candidates[-1]["end"]
 
-    # 3. Fallback: ambil unit dengan jeda hening terpanjang yang bukan hanging word
+    # 3. Fallback: ambil unit bukan hanging word dengan jeda terbesar (tie-break: yang paling akhir)
     non_hanging = [u for u in window if re.sub(r"[^\w]+", "", u["text"].lower()) not in HANGING_WORDS]
     if non_hanging:
-        best_pause = max(non_hanging, key=lambda u: u.get("gap_after", 0.0))
+        best_pause = max(non_hanging, key=lambda u: (round(u.get("gap_after", 0.0), 2), u["end"]))
         return best_pause["end"]
 
     if window:
@@ -487,17 +551,23 @@ def build_quality(clip, mode="hook"):
     caption = clip.get("caption", "")
     hashtags = clip.get("hashtags") or []
 
+    # Toleransi END_GRACE_SEC agar klip yang menuntaskan kalimat (misal 48s)
+    # tidak ditandai error duration_ok di UI dashboard
+    legal_ceiling = hard_max + END_GRACE_SEC
+
     return {
         "duration": duration,
-        # `ok` allows the full legal window; `in_target` is the ideal band the
-        # UI highlights so a 45s clip is not shown as broken, just not ideal.
-        "duration_ok": low <= duration <= hard_max,
+        # `ok` allows the full legal window with sentence grace; `in_target`
+        # is the ideal band the UI highlights for maximum completion rate.
+        "duration_ok": low <= duration <= legal_ceiling,
         "in_target": low <= duration <= high,
         "duration_hint": f"{int(low)}-{int(high)}s",
         "has_question": has_question(caption),
         "hashtag_count": len(hashtags),
         "hashtags_ok": MIN_HASHTAGS <= len(hashtags) <= MAX_HASHTAGS,
         "generic_risk": is_generic_caption(caption),
+        "persona_risk": has_persona_risk(caption),
+        "persona_ok": not has_persona_risk(caption),
         "has_hook": bool(str(clip.get("hook_line") or "").strip()),
         "has_first_comment": bool(str(clip.get("first_comment") or "").strip()),
     }
