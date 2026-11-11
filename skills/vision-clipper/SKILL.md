@@ -15,27 +15,6 @@ VisionClipper is a local AI video clipper. Pipeline: download/resolve source →
 
 Drive it through the helper script `scripts/vclip.py`. It prints **one JSON object on stdout**, progress logs on stderr, and exits `0` on success / `1` on failure (`"ok": false`, `"error"`, `"log_tail"`).
 
-## Standing workflow with this user (jack profile)
-
-The user's standing instruction (11 Nov 2026): *"begitu gw kirim link video yt ke sini lo langsung kerjain pake skill visionclipper ... jangan langsung upload kecuali udh gw approve mana aja yang oke"*.
-
-- **A pasted YouTube link IS the request.** No further instruction needed — run `doctor` → `analyze` → `render` yourself and come back with the clip list. Don't ask what to do with the link.
-- **NEVER upload to YouTube without per-clip approval.** Rendering is the deliverable; publishing is a separate step the user authorizes by naming which clips are OK. Approval for one clip is **not** approval for the next batch, and never pre-schedule or arm an upload queue on your own initiative.
-- When clips are ready, present them compactly (number, title, `viral_score`, duration, size) and ask which to publish.
-- After approval: upload via the clipper / `queue_upload.py` with title + description + hashtags complete (never a bare upload), default `private`. If the user vetoes a set of clips, add its project to `queue/exclude.txt` **the same turn**.
-- Spread approved uploads across slots (3-6/day, >=30 min apart) — hygiene for per-clip feed testing, not a fix for anything.
-- One job at a time: never run analyze/render in parallel with another render or with a dashboard job.
-- YouTube downloads from this IP hit the bot check — **`cookies.txt` is already exported in the project root** (mode 600, from the logged-in Brave session) and `downloads`/`backend` pick it up automatically, so `doctor` reports `cookies_txt: true`. Refresh it with `yt-dlp --cookies-from-browser brave --cookies cookies.txt --skip-download <any-URL>` if downloads ever start failing again.
-
-One-shot for a pasted link (analyze + render in a single call, then stop and report):
-
-```bash
-cd /home/kamo/dev/myapp/vision-clipper
-python3 skills/vision-clipper/scripts/vclip.py auto --source "<URL>" --num-clips 5 --mode hook --lang id
-```
-
-Use `--mode affiliate` instead when the source is a selling/promo video. Runs 30 min+ for 5+ clips — raise the command timeout. Output lands in `clips/<video name>/` as `.mp4` + `.txt` (titles, hook, caption, hashtags); read the `.txt` files to build the approval list.
-
 ## MCP server
 
 If you are an MCP-capable agent, VisionClipper is also available as an MCP
